@@ -1,0 +1,222 @@
+/* ============================================================
+   BASE.CSS — Reset · Tokens · Typography
+   Warm Design System v1.0
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+/* ─── DESIGN TOKENS ─── */
+:root {
+  /* Core Palette */
+  --color-black:         rgba(0,0,0,0.95);
+  --color-white:         #ffffff;
+  --color-accent:        #0075de;
+  --color-accent-active: #005bab;
+  --color-accent-focus:  #097fe8;
+  --color-deep-navy:     #213183;
+
+  /* Warm Neutral Scale */
+  --warm-white:    #f6f5f4;
+  --warm-dark:     #31302e;
+  --warm-gray-500: #615d59;
+  --warm-gray-300: #a39e98;
+
+  /* Semantic Accents */
+  --color-teal:   #2a9d99;
+  --color-green:  #1aae39;
+  --color-orange: #dd5b00;
+  --color-pink:   #ff64c8;
+  --color-purple: #391c57;
+  --color-brown:  #523410;
+
+  /* Badge */
+  --badge-bg:   #f2f9ff;
+  --badge-text: #097fe8;
+
+  /* Semantic Aliases */
+  --bg-page:    #ffffff;
+  --bg-surface: #ffffff;
+  --bg-warm:    #f6f5f4;
+  --bg-overlay: rgba(0,0,0,0.40);
+
+  --text-primary:   rgba(0,0,0,0.95);
+  --text-secondary: #615d59;
+  --text-muted:     #a39e98;
+  --text-link:      #0075de;
+
+  --border-whisper: 1px solid rgba(0,0,0,0.1);
+  --border-color:   rgba(0,0,0,0.1);
+  --border-medium:  1px solid rgba(0,0,0,0.18);
+  --border-focus:   #097fe8;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, system-ui, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'Roboto Mono', 'Consolas', 'Menlo', monospace;
+
+  --text-display: 4rem;
+  --text-h1:      3rem;
+  --text-h3:      1.625rem;
+  --text-h4:      1.375rem;
+  --text-body-lg: 1.25rem;
+  --text-body:    1rem;
+  --text-nav:     0.9375rem;
+  --text-caption: 0.875rem;
+  --text-badge:   0.75rem;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* Spacing (8px Base Grid) */
+  --space-1:  0.25rem;   /*  4px */
+  --space-2:  0.5rem;    /*  8px */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.5rem;    /* 24px */
+  --space-6:  2rem;      /* 32px */
+  --space-7:  3rem;      /* 48px */
+  --space-8:  4rem;      /* 64px */
+  --space-9:  5rem;      /* 80px */
+  --space-10: 6rem;      /* 96px */
+  --space-11: 7.5rem;    /* 120px */
+
+  /* Border Radius */
+  --radius-micro:  4px;
+  --radius-subtle: 5px;
+  --radius-sm:     8px;
+  --radius-md:     12px;
+  --radius-lg:     16px;
+  --radius-pill:   9999px;
+  --radius-circle: 100%;
+
+  /* Shadows — Multi-Layer Soft Stacks */
+  --shadow-card:
+    rgba(0,0,0,0.040) 0px 4px    18px   0px,
+    rgba(0,0,0,0.027) 0px 2.025px 7.85px 0px,
+    rgba(0,0,0,0.020) 0px 0.8px   2.93px 0px,
+    rgba(0,0,0,0.010) 0px 0.175px 1.04px 0px;
+
+  --shadow-deep:
+    rgba(0,0,0,0.010) 0px 1px   3px  0px,
+    rgba(0,0,0,0.020) 0px 3px   7px  0px,
+    rgba(0,0,0,0.020) 0px 7px  15px  0px,
+    rgba(0,0,0,0.040) 0px 14px 28px  0px,
+    rgba(0,0,0,0.050) 0px 23px 52px  0px;
+
+  --shadow-focus:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #097fe8;
+
+  /* Transitions */
+  --dur-fast:    100ms;
+  --dur-base:    150ms;
+  --dur-slow:    250ms;
+  --dur-slower:  350ms;
+  --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:    cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Z-Index */
+  --z-nav:     200;
+  --z-overlay: 300;
+  --z-modal:   400;
+  --z-toast:   500;
+
+  /* App-Specific */
+  --th: 120px;
+}
+
+/* ─── DARK MODE OVERRIDES ─── */
+[data-theme="dark"] {
+  --bg-page:         #191919;
+  --bg-surface:      #202020;
+  --bg-warm:         #252525;
+  --bg-overlay:      rgba(0,0,0,0.65);
+
+  --text-primary:    rgba(255,255,255,0.92);
+  --text-secondary:  #9b9a97;
+  --text-muted:      #6b6b69;
+  --text-link:       #4d9de0;
+
+  --border-color:    rgba(255,255,255,0.09);
+  --border-whisper:  1px solid rgba(255,255,255,0.09);
+  --border-medium:   1px solid rgba(255,255,255,0.15);
+
+  --color-accent:        #4d9de0;
+  --color-accent-active: #3a7fc1;
+  --color-accent-focus:  #4d9de0;
+
+  --badge-bg:   rgba(77,157,224,0.12);
+  --badge-text: #4d9de0;
+
+  --warm-gray-500: #9b9a97;
+  --warm-gray-300: #6b6b69;
+
+  --shadow-card:
+    rgba(0,0,0,0.25) 0px 4px 18px 0px,
+    rgba(0,0,0,0.20) 0px 2px  7px  0px;
+
+  --shadow-deep:
+    rgba(0,0,0,0.30) 0px  1px  3px  0px,
+    rgba(0,0,0,0.35) 0px  7px 15px  0px,
+    rgba(0,0,0,0.40) 0px 23px 52px  0px;
+
+  --shadow-focus:
+    0 0 0 2px #202020,
+    0 0 0 4px #4d9de0;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --bg-page:         #191919;
+    --bg-surface:      #202020;
+    --bg-warm:         #252525;
+    --bg-overlay:      rgba(0,0,0,0.65);
+    --text-primary:    rgba(255,255,255,0.92);
+    --text-secondary:  #9b9a97;
+    --text-muted:      #6b6b69;
+    --text-link:       #4d9de0;
+    --border-color:    rgba(255,255,255,0.09);
+    --border-whisper:  1px solid rgba(255,255,255,0.09);
+    --border-medium:   1px solid rgba(255,255,255,0.15);
+    --color-accent:        #4d9de0;
+    --color-accent-active: #3a7fc1;
+    --color-accent-focus:  #4d9de0;
+    --badge-bg:   rgba(77,157,224,0.12);
+    --badge-text: #4d9de0;
+    --warm-gray-500: #9b9a97;
+    --warm-gray-300: #6b6b69;
+    --shadow-card: rgba(0,0,0,0.25) 0px 4px 18px 0px, rgba(0,0,0,0.20) 0px 2px 7px 0px;
+    --shadow-deep: rgba(0,0,0,0.30) 0px 1px 3px 0px, rgba(0,0,0,0.35) 0px 7px 15px 0px, rgba(0,0,0,0.40) 0px 23px 52px 0px;
+    --shadow-focus: 0 0 0 2px #202020, 0 0 0 4px #4d9de0;
+  }
+}
+
+/* ─── RESET ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--fw-regular);
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar          { width: 5px; height: 5px; }
+::-webkit-scrollbar-track     { background: var(--bg-warm); }
+::-webkit-scrollbar-thumb     { background: var(--border-color); border-radius: var(--radius-pill); }
+::-webkit-scrollbar-thumb:hover { background: var(--warm-gray-300); }

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SoundBoard</title>
+
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/utilities.css">
+  <!-- Lucide Icons — https://lucide.dev (replaces broken FA icon variants) -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+
+<body>
+
+  <div class="app-shell">
+
+    <!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════
+       Slim top bar: logo + theme toggle only. Always visible.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="app-navbar" aria-label="Hauptnavigation">
+
+      <div class="app-logo" aria-label="SoundBoard Pro">
+        <i class="fa-solid fa-sliders app-logo__icon" aria-hidden="true"></i>
+        SoundBoard
+      </div>
+
+      <!-- Theme toggle: icon changes based on active theme (synced by syncThemeIcon()) -->
+      <!-- data-lucide swapped by syncThemeIcon() — sun=dark-mode-active, moon=light-mode-active -->
+      <button class="navbar-theme-btn" id="btnTheme" aria-label="Dark Mode aktivieren" title="Dark Mode aktivieren">
+        <i data-lucide="moon" aria-hidden="true"></i>
+      </button>
+
+    </nav>
+
+    <!-- ══════════════════════════════ MENUBAR ═══════════════════════════════
+       Main action bar: volume + primary action buttons.
+       Labels always visible — no icon-only design.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <div class="app-menubar" role="toolbar" aria-label="Hauptwerkzeuge">
+
+      <!-- Volume group: slider + number input, fully synced -->
+      <div class="menubar-volume" aria-label="Master-Lautstärke">
+        <span class="menubar-volume__label">
+          <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+          Lautstärke
+        </span>
+        <input type="range" id="masterVol" class="slider menubar-volume__slider" min="0" max="1" step=".01" value="1"
+          aria-label="Lautstärke Slider">
+        <input type="number" id="masterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
+          aria-label="Lautstärke Prozent">
+        <span class="menubar-volume__label u-text-badge">%</span>
+      </div>
+
+      <div class="menubar-sep" aria-hidden="true"></div>
+
+      <!-- Stop: ends all currently playing sounds -->
+      <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle laufenden Sounds sofort stoppen"
+        aria-label="Alle Sounds stoppen">
+        <i class="fa-solid fa-square" aria-hidden="true"></i>
+        Stop
+      </button>
+
+      <!-- New Macro: opens macro creation dialog -->
+      <button class="menubar-btn" id="btnNewMacro" title="Neues Makro erstellen (automatisierte Abfolge von Sounds)"
+        aria-label="Neues Makro erstellen">
+        <i class="fa-solid fa-scroll" aria-hidden="true"></i>
+        Makro
+      </button>
+
+      <!-- Arrange: enter tile arrangement mode -->
+      <button class="menubar-btn" id="btnArrange" title="Kacheln neu anordnen, ausrichten und verschieben"
+        aria-label="Anordnungs-Modus">
+        <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+        Anordnen
+      </button>
+
+      <!-- Swap rows/cols: open move bar -->
+      <button class="menubar-btn" id="btnMoveMode" title="Ganze Reihen oder Spalten tauschen"
+        aria-label="Reihen und Spalten tauschen">
+        <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+        Tauschen
+      </button>
+
+      <!-- Audio options: overlap, replay, multiclick -->
+      <button class="menubar-btn" id="btnOptsToggle" title="Audio-Einstellungen und Daten verwalten"
+        aria-label="Audio-Optionen ein-/ausblenden" aria-expanded="false" aria-controls="optsBar">
+        <i class="fa-solid fa-music" aria-hidden="true"></i>
+        Audio
+      </button>
+
+      <!-- Save: persist to localStorage -->
+      <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
+        aria-label="Speichern">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+        Speichern
+      </button>
+
+    </div>
+
+
+
+    <!-- ════════════════════════════ OPTIONS BAR ═════════════════════════════
+       Collapsible audio settings + data management
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="options-bar" id="optsBar" aria-label="Audio-Optionen" aria-hidden="true">
+      <div class="options-bar__inner">
+
+        <span class="toolbar__label">Wiedergabe</span>
+        <label title="Mehrere Sounds können gleichzeitig abspielen">
+          <input type="checkbox" id="setOverlap" checked>
+          Überlagern
+        </label>
+        <label title="Klick auf laufenden Sound stoppt ihn">
+          <input type="checkbox" id="setStopReplay">
+          Stop bei Neustart
+        </label>
+        <label title="Mehrfachklick erzeugt überlagerte Kopien">
+          <input type="checkbox" id="setMultiClick" checked>
+          Mehrfachklick
+        </label>
+
+        <div class="toolbar__separator" aria-hidden="true"></div>
+
+        <span class="toolbar__label">Daten</span>
+        <button class="btn btn--sm" id="btnExport" title="Alle Profile als JSON-Datei herunterladen"
+          aria-label="Daten exportieren">
+          <i class="fa-solid fa-download" aria-hidden="true"></i> Export
+        </button>
+        <button class="btn btn--sm" id="btnImportTrigger" title="JSON-Datei laden und Profile importieren"
+          aria-label="Daten importieren">
+          <i class="fa-solid fa-upload" aria-hidden="true"></i> Import
+        </button>
+        <input type="file" id="importFile" accept=".json" class="u-hidden" aria-hidden="true">
+        <button class="btn btn--sm btn--danger" id="btnReset" title="Alle Daten löschen und App zurücksetzen"
+          aria-label="Alles zurücksetzen">
+          <i class="fa-solid fa-trash" aria-hidden="true"></i> Reset
+        </button>
+
+      </div>
+    </nav>
+
+    <!-- ════════════════════════════ ARRANGE BAR ═════════════════════════════ -->
+    <nav class="arrange-bar is-hidden" id="arrangeBar" role="toolbar" aria-label="Anordnungs-Werkzeuge">
+      <span class="arrange-bar__label">
+        <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+        Anordnen
+      </span>
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <span class="toolbar__label u-text-muted">Reihen</span>
+      <button class="btn btn--sm" id="arrRowLeft" title="Sounds in jeder Reihe linksbündig" aria-label="Linksbündig">
+        <i class="fa-solid fa-align-left" aria-hidden="true"></i> Links
+      </button>
+      <button class="btn btn--sm" id="arrRowCenter" title="Sounds in jeder Reihe zentrieren" aria-label="Mittig">
+        <i class="fa-solid fa-align-center" aria-hidden="true"></i> Mitte
+      </button>
+      <button class="btn btn--sm" id="arrRowRight" title="Sounds in jeder Reihe rechtsbündig" aria-label="Rechtsbündig">
+        <i class="fa-solid fa-align-right" aria-hidden="true"></i> Rechts
+      </button>
+      <button class="btn btn--sm" id="arrRowJustify" title="Sounds gleichmäßig in jeder Reihe verteilen"
+        aria-label="Gleichmäßig verteilen">
+        <i class="fa-solid fa-align-justify" aria-hidden="true"></i> Verteilt
+      </button>
+
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <span class="toolbar__label u-text-muted">Spalten</span>
+      <button class="btn btn--sm" id="arrColTop" title="Sounds in jeder Spalte nach oben verschieben"
+        aria-label="Nach oben">
+        <i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Oben
+      </button>
+      <button class="btn btn--sm" id="arrColBottom" title="Sounds in jeder Spalte nach unten verschieben"
+        aria-label="Nach unten">
+        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i> Unten
+      </button>
+
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <button class="btn btn--sm" id="arrCompact" title="Alle Lücken schließen und Sounds komprimieren"
+        aria-label="Lücken schließen">
+        <i class="fa-solid fa-compress" aria-hidden="true"></i> Komprimieren
+      </button>
+      <button class="btn btn--sm" id="btnLockToggle"
+        title="Kacheln sperren: gesperrte Kacheln werden beim Anordnen nicht bewegt" aria-label="Sperren-Modus">
+        <i class="fa-solid fa-lock" aria-hidden="true"></i> Sperren
+      </button>
+      <button class="btn btn--sm" id="btnUndoArrange" title="Letzte Anordnungsoperation rückgängig machen"
+        aria-label="Rückgängig">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Rückgängig
+      </button>
+
+      <span class="u-ml-auto"></span>
+      <!-- <button class="btn btn--sm btn--danger" id="btnCloseArrange" aria-label="Anordnungs-Modus beenden">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Schließen
+      </button> -->
+    </nav>
+
+    <!-- ═══════════════════════════════ MOVE BAR ═════════════════════════════ -->
+    <nav class="move-bar is-hidden" id="moveBar" role="toolbar" aria-label="Reihen und Spalten tauschen">
+      <span class="move-bar__label">
+        <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+        Reihen / Spalten tauschen
+      </span>
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <div class="move-bar__select-group">
+        <span>Reihe</span>
+        <select id="mvRowA" aria-label="Reihe A">
+          <option value="">A</option>
+        </select>
+        <span aria-hidden="true">↔</span>
+        <select id="mvRowB" aria-label="Reihe B">
+          <option value="">B</option>
+        </select>
+        <button class="btn btn--sm" id="btnSwapRows" aria-label="Reihen tauschen">
+          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Tauschen
+        </button>
+      </div>
+
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <div class="move-bar__select-group">
+        <span>Spalte</span>
+        <select id="mvColA" aria-label="Spalte A">
+          <option value="">A</option>
+        </select>
+        <span aria-hidden="true">↔</span>
+        <select id="mvColB" aria-label="Spalte B">
+          <option value="">B</option>
+        </select>
+        <button class="btn btn--sm" id="btnSwapCols" aria-label="Spalten tauschen">
+          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Tauschen
+        </button>
+      </div>
+
+      <span class="u-ml-auto"></span>
+      <!-- <button class="btn btn--sm" id="btnCloseMoveMode" aria-label="Tausch-Modus beenden">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Schließen
+      </button> -->
+    </nav>
+    <!-- ════════════════════════════ PROFILE TABS ════════════════════════════ -->
+    <nav class="profile-bar" id="profBar" aria-label="Profile">
+      <!-- Tabs rendered by JS (renderProfileTabs) -->
+      <button class="profile-add" id="btnAddProfile" title="Neues Profil erstellen" aria-label="Neues Profil erstellen">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        Profil
+      </button>
+    </nav>
+
+    <!-- ═══════════════════════════════ TOOLBAR ══════════════════════════════
+       Grid size controls + category filter tabs
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="toolbar" role="toolbar" aria-label="Raster-Steuerung">
+      <span class="toolbar__label">Raster</span>
+
+      <!-- Columns: icon + controls -->
+      <div class="grid-control-group" aria-label="Spalten anpassen">
+        <i data-lucide="columns-3" class="grid-control-group__icon" aria-hidden="true" title="Spalten"></i>
+        <div class="grid-adj">
+          <button class="btn btn--icon" id="btnColMinus" title="Eine Spalte entfernen" aria-label="Spalte entfernen">
+            <i class="fa-solid fa-minus" aria-hidden="true"></i>
+          </button>
+          <input type="number" id="maxCols" class="toolbar__number" min="1" max="32" value="10"
+            aria-label="Anzahl Spalten">
+          <button class="btn btn--icon" id="btnColPlus" title="Eine Spalte hinzufügen" aria-label="Spalte hinzufügen">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <span class="toolbar__label u-text-muted" aria-hidden="true">×</span>
+
+      <!-- Rows: icon + controls -->
+      <div class="grid-control-group" aria-label="Reihen anpassen">
+        <i data-lucide="rows-3" class="grid-control-group__icon" aria-hidden="true" title="Reihen"></i>
+        <div class="grid-adj">
+          <button class="btn btn--icon" id="btnRowMinus" title="Eine Reihe entfernen" aria-label="Reihe entfernen">
+            <i class="fa-solid fa-minus" aria-hidden="true"></i>
+          </button>
+          <input type="number" id="maxRows" class="toolbar__number" min="1" max="32" value="10"
+            aria-label="Anzahl Reihen">
+          <button class="btn btn--icon" id="btnRowPlus" title="Eine Reihe hinzufügen" aria-label="Reihe hinzufügen">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <input type="hidden" id="tileW" value="120">
+      <input type="hidden" id="tileH" value="120">
+
+      <div class="toolbar__separator" aria-hidden="true"></div>
+
+      <!-- Category filter — populated by updateCategories() -->
+      <div class="category-tabs" id="catTabs" role="tablist" aria-label="Kategorien">
+        <!-- "Alle" = show all sound tiles regardless of category (filter reset) -->
+        <button class="category-tab is-active" style="display: none;" data-cat="all" role="tab" aria-selected="true"
+          title="Alle Kategorien anzeigen">Alle</button>
+      </div>
+    </nav>
+
+    <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
+    <main class="board" aria-label="Soundboard">
+      <div class="tile-grid" id="grid" role="grid" aria-label="Sound-Kacheln"></div>
+    </main>
+
+    <!-- ══════════════════════════════ STATUS BAR ════════════════════════════ -->
+    <footer class="status-bar" aria-label="Status">
+      <div class="status-dot" id="sdot" aria-hidden="true"></div>
+      <span id="stxt" aria-live="polite">BEREIT</span>
+      <span id="profLbl" class="u-text-muted u-text-mono u-text-badge"></span>
+      <span class="u-ml-auto u-text-mono u-text-badge" id="scnt" aria-live="polite">0 S · 0 M</span>
+    </footer>
+
+  </div><!-- /.app-shell -->
+
+  <!-- ════════════════════════════ TOASTS ═════════════════════════════════════ -->
+  <div class="toast-container" id="toasts" aria-live="assertive" aria-atomic="true"></div>
+
+
+  <!-- ═══════════════════════════ SOUND MODAL ══════════════════════════════════ -->
+  <div class="modal fade" id="soundModal" tabindex="-1" aria-labelledby="sMTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="sMTitle">Sound</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="row g-3">
+
+            <!-- Column 1: Slots + Playback settings -->
+            <div class="col-lg-5">
+              <div class="mb-2">
+                <label class="form-label" for="eName">Name</label>
+                <input class="form-control" id="eName" placeholder="Sound-Name…">
+              </div>
+
+              <div class="mb-2">
+                <div class="u-flex-between mb-1">
+                  <label class="form-label u-mb-0">
+                    Sound-Slots
+                    <small class="u-text-muted u-text-badge"> (rotiert bei Klick)</small>
+                  </label>
+                  <div class="u-flex u-gap-1">
+                    <button class="btn btn--sm" id="btnBulk" title="Mehrere Audio-Dateien gleichzeitig laden"
+                      aria-label="Mehrere Dateien laden">
+                      <i class="fa-solid fa-layer-group" aria-hidden="true"></i> Bulk
+                    </button>
+                    <button class="btn btn--sm" id="btnAddSlot" title="Weiteren leeren Slot hinzufügen"
+                      aria-label="Slot hinzufügen">
+                      <i class="fa-solid fa-plus" aria-hidden="true"></i> Slot
+                    </button>
+                  </div>
+                </div>
+                <div class="slot-list" id="slotList"></div>
+                <input type="file" id="slotFile" accept="audio/*" class="u-hidden" aria-hidden="true">
+                <input type="file" id="bulkFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
+                <div class="waveform u-mt-2" id="wvDisp" aria-hidden="true">
+                  <span>Keine Dateien geladen</span>
+                </div>
+              </div>
+
+              <div class="row g-2">
+                <!-- Volume: slider + number input synced -->
+                <div class="col-12">
+                  <label class="form-label" for="eVol">Lautstärke</label>
+                  <div class="u-flex u-gap-2" style="align-items:center">
+                    <input type="range" class="slider" style="flex:1" id="eVol" min="0" max="1" step=".01" value="1"
+                      aria-label="Lautstärke Slider">
+                    <input type="number" id="eVolNum" class="vol-number-input" min="0" max="100" value="100"
+                      aria-label="Lautstärke Prozent">
+                    <span class="u-text-muted u-text-badge">%</span>
+                  </div>
+                </div>
+                <!-- Pitch -->
+                <div class="col-12">
+                  <label class="form-label" for="ePitch">
+                    Pitch
+                    <span id="pitchLbl" class="u-text-accent" aria-live="polite">1.0×</span>
+                  </label>
+                  <input type="range" class="slider u-full-width" id="ePitch" min=".25" max="4" step=".05" value="1"
+                    aria-label="Pitch (Tonhöhe)">
+                </div>
+                <div class="col-4">
+                  <div class="form-check form-switch mt-1">
+                    <input class="form-check-input" type="checkbox" id="eLoop">
+                    <label class="form-check-label" for="eLoop">Loop</label>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="form-check form-switch mt-1">
+                    <input class="form-check-input" type="checkbox" id="eFade">
+                    <label class="form-check-label" for="eFade">Fade-Out</label>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="form-check form-switch mt-1">
+                    <input class="form-check-input" type="checkbox" id="eRnd">
+                    <label class="form-check-label" for="eRnd">Zufall</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Column 2: Icon picker + colors + category -->
+            <div class="col-lg-4">
+              <div class="mb-2">
+                <label class="form-label">Icon</label>
+                <!-- Icon picker widget injected by buildIconGrid() -->
+                <div id="iconGrid" class="icon-grid" aria-hidden="true"></div>
+                <input class="form-control u-mt-2" id="eIcon" placeholder="🔊" maxlength="4"
+                  style="font-size:1.05rem;text-align:center" aria-label="Emoji direkt eingeben">
+              </div>
+              <div class="mb-2">
+                <label class="form-label">Akzentfarbe</label>
+                <div class="color-row" id="clrOpts" role="radiogroup" aria-label="Akzentfarbe wählen"></div>
+              </div>
+              <!-- Tile background: same swatch component, placed directly below accent color -->
+              <div class="mb-2">
+                <label class="form-label">Kachel-Hintergrund</label>
+                <div class="color-row" id="eTileClrOpts" role="radiogroup" aria-label="Kachel-Hintergrundfarbe"></div>
+                <input type="hidden" id="eTileClr">
+              </div>
+              <div class="mb-2">
+                <label class="form-label" for="eCat">Kategorie</label>
+                <input class="form-control" id="eCat" placeholder="z.B. Waffen"
+                  title="Kategorie zum Filtern der Kacheln">
+              </div>
+            </div>
+
+            <!-- Column 3: Hotkey -->
+            <div class="col-lg-3">
+              <div class="mb-3">
+                <label class="form-label" for="eHotkey">Hotkey</label>
+                <input type="text" class="hotkey-field" id="eHotkey" placeholder="Klicken, dann Taste…" readonly
+                  aria-describedby="eHotkeyHelp">
+                <small id="eHotkeyHelp" class="u-text-muted u-text-badge d-block u-mt-1">
+                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                  Shift / Alt / Ctrl + Taste. ESC oder Backspace zum Löschen.
+                </small>
+              </div>
+              <input type="hidden" id="eTileW">
+              <input type="hidden" id="eTileH">
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <div class="u-flex u-gap-2">
+            <button class="btn btn--danger" id="btnDelSound" style="display:none" aria-label="Sound löschen">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+            </button>
+            <button class="btn" id="btnPreviewSound" aria-label="Sound Vorschau abspielen">
+              <i class="fa-solid fa-play u-text-accent" aria-hidden="true"></i> Vorschau
+            </button>
+          </div>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnSaveSound">Speichern</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ MACRO MODAL ══════════════════════════════════ -->
+  <div class="modal fade" id="macroModal" tabindex="-1" aria-labelledby="mMTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="mMTitle">Makro</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="row g-3 mb-2">
+            <div class="col-sm-4">
+              <label class="form-label" for="mName">Name</label>
+              <input class="form-control" id="mName" placeholder="Makro-Name">
+            </div>
+            <div class="col-sm-2">
+              <label class="form-label" for="mRepeat">Wiederholen</label>
+              <input type="number" class="form-control" id="mRepeat" min="1" max="999" value="1">
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label" for="mRepDelay">Pause Wdh. (ms)</label>
+              <input type="number" class="form-control" id="mRepDelay" min="0" value="500">
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label" for="mHotkey">Hotkey</label>
+              <input type="text" class="hotkey-field" id="mHotkey" placeholder="Klick + Tasten" readonly>
+            </div>
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-12">
+              <label class="form-label">Icon</label>
+              <div id="mIconGrid" class="icon-grid-makro" aria-hidden="true"></div>
+              <input class="form-control u-mt-2" id="mIcon" placeholder="🪄" maxlength="4"
+                style="font-size:1rem;text-align:center" aria-label="Emoji direkt eingeben">
+            </div>
+            <input type="hidden" id="mTileW">
+            <input type="hidden" id="mTileH">
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-sm-6">
+              <label class="form-label" for="mPlayMode">Abspiel-Modus</label>
+              <select class="form-select" id="mPlayMode">
+                <option value="parallel">Parallel — alle gleichzeitig</option>
+                <option value="sequential">Sequenziell — nacheinander warten</option>
+                <option value="random">Zufällig — zufällige Reihenfolge</option>
+              </select>
+            </div>
+            <div class="col-sm-6 u-flex" style="align-items:flex-end">
+              <small class="u-text-muted u-text-badge u-line-height-sm">
+                <strong>Sequenziell:</strong> nächster Schritt startet wenn vorheriger Sound fertig ist.
+                <strong>Parallel:</strong> alle starten sofort.
+              </small>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label">Farbe (Akzent)</label>
+            <div class="color-row" id="mClrOpts" role="radiogroup" aria-label="Farbe wählen"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Kachel-Hintergrund</label>
+            <!-- Same color palette — free color picker removed -->
+            <div class="color-row" id="mTileClrOpts" role="radiogroup" aria-label="Makro Kachel-Hintergrundfarbe"></div>
+            <input type="hidden" id="mTileClr">
+          </div>
+
+          <label class="form-label">
+            Schritte
+            <small class="u-text-muted u-text-badge">
+              — Sounds, Makros oder Aktionen (Stop, Fade, Lautstärke)
+            </small>
+          </label>
+          <div id="mStepList" aria-label="Makro-Schritte"></div>
+
+          <div class="u-flex u-gap-2 u-mt-2 u-wrap macro-step-action-btns">
+            <button class="btn btn--sm" id="btnAddStep" title="Sound oder Makro als Schritt hinzufügen"
+              aria-label="Sound/Makro-Schritt hinzufügen">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Sound/Makro
+            </button>
+            <button class="btn btn--sm" id="btnAddStepStop" title="Schritt: Einen bestimmten Sound stoppen"
+              aria-label="Stop-Schritt hinzufügen">
+              <i class="fa-solid fa-square" aria-hidden="true"></i> Stop
+            </button>
+            <button class="btn btn--sm" id="btnAddStepFade" title="Schritt: Sound langsam ausblenden"
+              aria-label="Fade-Out-Schritt hinzufügen">
+              <i class="fa-solid fa-volume-xmark" aria-hidden="true"></i> Fade-Out
+            </button>
+            <button class="btn btn--sm" id="btnAddStepVol" title="Schritt: Master-Lautstärke ändern"
+              aria-label="Lautstärke-Schritt hinzufügen">
+              <i class="fa-solid fa-sliders" aria-hidden="true"></i> Lautstärke
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <div class="u-flex u-gap-2">
+            <button class="btn" id="btnTestMacro" aria-label="Makro testen">
+              <i class="fa-solid fa-play" aria-hidden="true"></i> Test
+            </button>
+            <button class="btn btn--danger" id="btnDelMacro" style="display:none" aria-label="Makro löschen">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+            </button>
+          </div>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnSaveMacro">Speichern</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ TRIM MODAL ═══════════════════════════════════ -->
+  <div class="modal fade" id="trimModal" tabindex="-1" aria-labelledby="trimModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="trimModalLabel">
+            <i class="fa-solid fa-scissors" aria-hidden="true"></i> Audio zuschneiden
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <p id="trimSlotInfo" class="u-text-muted u-text-caption u-mb-2" aria-live="polite"></p>
+
+          <div style="position:relative;margin-bottom:var(--space-3)">
+            <canvas id="trimCanvas"
+              style="width:100%;height:90px;border-radius:var(--radius-subtle);cursor:crosshair;display:block;border:var(--border-whisper)"
+              aria-label="Wellenform — Linksklick: Start setzen, Rechtsklick: Ende setzen, Ziehen: Auswahl"></canvas>
+          </div>
+
+          <div class="u-flex u-gap-3 u-wrap u-mb-2" style="align-items:center">
+            <div class="u-flex u-gap-2" style="align-items:center">
+              <label class="form-label u-nowrap u-mb-0" for="trimStart">Start (s)</label>
+              <input type="number" id="trimStart" class="form-control" style="width:84px;font-size:var(--text-caption)"
+                min="0" step=".01" value="0">
+            </div>
+            <div class="u-flex u-gap-2" style="align-items:center">
+              <label class="form-label u-nowrap u-mb-0" for="trimEnd">Ende (s)</label>
+              <input type="number" id="trimEnd" class="form-control" style="width:84px;font-size:var(--text-caption)"
+                min="0" step=".01">
+            </div>
+            <span id="trimDurLabel" class="u-text-mono u-text-badge u-text-accent" aria-live="polite"></span>
+            <div class="u-ml-auto u-flex u-gap-2">
+              <button class="btn btn--sm" id="btnTrimReset" aria-label="Trim zurücksetzen">
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reset
+              </button>
+              <button class="btn btn--sm" id="btnTrimPreview" aria-label="Zugeschnittenen Bereich vorhören">
+                <i class="fa-solid fa-play" aria-hidden="true"></i> Vorschau
+              </button>
+              <button class="btn btn--sm" id="btnTrimStop" aria-label="Vorschau stoppen">
+                <i class="fa-solid fa-square" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="u-flex u-gap-4 u-wrap"
+            style="align-items:center;padding:var(--space-3);background:var(--bg-warm);border-radius:var(--radius-subtle);border:var(--border-whisper)">
+            <span class="u-text-badge u-text-accent u-text-semibold u-uppercase">Fade</span>
+            <div class="u-flex u-gap-2" style="align-items:center">
+              <label class="form-label u-nowrap u-mb-0 u-text-muted" for="trimFadeIn">
+                <i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> Fade-In (s)
+              </label>
+              <input type="number" id="trimFadeIn" class="form-control" style="width:76px;font-size:var(--text-caption)"
+                min="0" step=".05" value="0">
+            </div>
+            <div class="u-flex u-gap-2" style="align-items:center">
+              <label class="form-label u-nowrap u-mb-0 u-text-muted" for="trimFadeOut">
+                <i class="fa-solid fa-arrow-trend-down" aria-hidden="true"></i> Fade-Out (s)
+              </label>
+              <input type="number" id="trimFadeOut" class="form-control"
+                style="width:76px;font-size:var(--text-caption)" min="0" step=".05" value="0">
+            </div>
+          </div>
+
+          <p class="u-text-muted u-text-badge u-mt-2">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            Linksklick → Start · Rechtsklick → Ende · Ziehen zum Auswählen
+          </p>
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <div></div>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnTrimSave">Übernehmen</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ PROFILE MODAL ════════════════════════════════ -->
+  <div class="modal fade" id="profModal" tabindex="-1" aria-labelledby="profModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="profModalTitle">Profil</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label" for="profNameInput">Name</label>
+          <input class="form-control" id="profNameInput" placeholder="z.B. Zauberer Sammy">
+
+          <label class="form-label u-mt-3">Emoji / Icon</label>
+          <!-- Icon picker injected by buildIconGrid() -->
+          <div id="profIconGrid" class="icon-grid" aria-hidden="true"></div>
+          <input class="form-control u-mt-2" id="profIconInput" placeholder="🧙" maxlength="4"
+            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <button class="btn btn--danger" id="btnDelProfile" style="display:none" aria-label="Profil löschen">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+          </button>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnSaveProfile">Speichern</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+
+</body>
+
+</html>

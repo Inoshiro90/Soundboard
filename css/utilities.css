@@ -1,0 +1,58 @@
+/* ============================================================
+   UTILITIES.CSS — Helper Classes
+   ============================================================ */
+
+/* ─── DISPLAY ─── */
+.u-hidden   { display: none !important; }
+.u-flex     { display: flex; }
+.u-flex-center { display: flex; align-items: center; justify-content: center; }
+.u-flex-between { display: flex; align-items: center; justify-content: space-between; }
+.u-inline-flex { display: inline-flex; align-items: center; }
+.u-wrap     { flex-wrap: wrap; }
+
+/* ─── SPACING ─── */
+.u-gap-1    { gap: var(--space-1); }
+.u-gap-2    { gap: var(--space-2); }
+.u-gap-3    { gap: var(--space-3); }
+.u-gap-4    { gap: var(--space-4); }
+
+.u-mt-1     { margin-top: var(--space-1); }
+.u-mt-2     { margin-top: var(--space-2); }
+.u-mt-3     { margin-top: var(--space-3); }
+.u-mb-2     { margin-bottom: var(--space-2); }
+.u-mb-3     { margin-bottom: var(--space-3); }
+.u-ml-auto  { margin-left: auto; }
+
+/* ─── TEXT ─── */
+.u-text-muted     { color: var(--text-muted); }
+.u-text-secondary { color: var(--text-secondary); }
+.u-text-accent    { color: var(--color-accent); }
+.u-text-danger    { color: var(--color-orange); }
+.u-text-success   { color: var(--color-teal); }
+.u-text-mono      { font-family: var(--font-mono); }
+.u-text-badge     { font-size: var(--text-badge); }
+.u-text-caption   { font-size: var(--text-caption); }
+.u-text-bold      { font-weight: var(--fw-bold); }
+.u-text-semibold  { font-weight: var(--fw-semibold); }
+.u-nowrap         { white-space: nowrap; }
+.u-uppercase      { text-transform: uppercase; letter-spacing: 0.125px; }
+.u-line-height-sm { line-height: 1.3; }
+
+/* ─── STRUCTURAL ─── */
+.u-separator-v {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+
+.u-full-width  { width: 100%; }
+.u-flex-shrink-0 { flex-shrink: 0; }
+
+/* ─── BACKGROUND ─── */
+.u-bg-warm    { background: var(--bg-warm); }
+.u-bg-surface { background: var(--bg-surface); }
+
+/* ─── BORDER ─── */
+.u-rounded-sm { border-radius: var(--radius-sm); }
+.u-border     { border: var(--border-whisper); }
