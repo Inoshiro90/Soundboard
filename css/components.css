@@ -1251,3 +1251,588 @@ i[data-lucide] {
 	align-items: center;
 	justify-content: center;
 }
+
+/* ──────────────────────────────────────────────────────────
+   AUDIO EFFECTS PANEL (Phase 1)
+   ────────────────────────────────────────────────────────── */
+
+.fx-section {
+  border-top: var(--border-whisper);
+  background: var(--bg-warm);
+}
+
+.fx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-whisper);
+  background: var(--bg-surface);
+}
+
+.fx-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.fx-header__title .fa-waveform-lines {
+  color: var(--color-accent);
+}
+
+/* Toggle switch */
+.fx-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fx-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.fx-toggle__track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--border-color);
+  transition: background var(--dur-base) var(--ease);
+  flex-shrink: 0;
+}
+
+.fx-toggle__track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: transform var(--dur-base) var(--ease);
+}
+
+.fx-toggle input:checked ~ .fx-toggle__track {
+  background: var(--color-accent);
+}
+
+.fx-toggle input:checked ~ .fx-toggle__track::after {
+  transform: translateX(14px);
+}
+
+.fx-toggle__label {
+  font-size: var(--text-badge);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+/* Panel body */
+#fxPanel {
+  padding: var(--space-3) var(--space-4);
+  transition: opacity 0.15s ease;
+}
+
+.fx-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: var(--space-2) 0;
+}
+
+/* Row for single-value controls (preset) */
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.fx-label {
+  font-size: var(--text-badge);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 52px;
+}
+
+.fx-preset-select {
+  flex: 1;
+  font-size: var(--text-badge) !important;
+  padding: 3px var(--space-2) !important;
+  height: auto !important;
+}
+
+/* Effect group */
+.fx-group {
+  margin-bottom: var(--space-2);
+}
+
+.fx-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+}
+
+.fx-check-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-badge);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.fx-check-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.fx-value-badge {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  background: var(--badge-bg);
+  border-radius: var(--radius-micro);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* Controls area */
+.fx-controls {
+  padding-left: var(--space-3);
+  transition: opacity 0.12s ease;
+}
+
+.fx-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fx-slider {
+  flex: 1;
+  height: 3px !important;
+}
+
+.fx-slider-min,
+.fx-slider-max {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  min-width: 30px;
+  font-family: var(--font-mono);
+}
+
+.fx-slider-max {
+  text-align: right;
+}
+
+/* Dark mode overrides */
+[data-theme='dark'] .fx-section {
+  background: var(--bg-warm);
+}
+
+[data-theme='dark'] .fx-header {
+  background: var(--bg-surface);
+}
+
+[data-theme='dark'] .fx-toggle__track {
+  background: rgba(255,255,255,0.18);
+}
+
+[data-theme='dark'] .fx-value-badge {
+  background: rgba(0,117,222,0.15);
+}
+
+/* ──────────────────────────────────────────────────────────
+   PHASE 2: EQ / Compressor / Limiter / Distortion additions
+   ────────────────────────────────────────────────────────── */
+
+/* EQ: color-code the three bands subtly */
+#fxEqLow  { accent-color: #e07b00; }
+#fxEqMid  { accent-color: var(--color-accent); }
+#fxEqHigh { accent-color: #2a9d99; }
+
+/* Compressor GR meter placeholder — pure CSS, no JS needed for Phase 2 */
+.comp-gr-track {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  flex: 1;
+}
+.comp-gr-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  transition: width 0.05s linear;
+}
+
+/* Distortion oversample select: compact */
+#fxDistOversample {
+  font-size: 0.72rem !important;
+  padding: 2px var(--space-2) !important;
+}
+
+/* WAV export strip */
+.fx-export-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-whisper);
+  background: var(--bg-surface);
+}
+
+/* Trim modal: zoom row */
+#trimZoom {
+  height: 4px !important;
+}
+
+/* Trim canvas cursor feedback */
+#trimCanvas {
+  user-select: none;
+  touch-action: none;
+}
+
+/* ──────────────────────────────────────────────────────────
+   PHASE 3: 10-Band EQ / Envelope / Analyzer / IR-Reverb
+   ────────────────────────────────────────────────────────── */
+
+/* 10-Band EQ Grid */
+.fx-eq10-grid {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  height: 88px;
+  padding: 4px 0 2px;
+}
+
+.fx-eq10-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 2px;
+}
+
+.fx-eq10-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 18px;
+  height: 60px;
+  flex-shrink: 0;
+  accent-color: var(--color-accent);
+  cursor: ns-resize;
+}
+
+/* Firefox vertical slider fallback */
+@supports not (appearance: slider-vertical) {
+  .fx-eq10-slider {
+    transform: rotate(-90deg);
+    width: 60px;
+    height: 18px;
+    margin: 21px -21px;
+  }
+}
+
+.fx-eq10-lbl {
+  font-size: 0.6rem;
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  text-align: center;
+  min-width: 18px;
+  line-height: 1;
+}
+
+.fx-eq10-freq {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Envelope canvas */
+#envCanvas {
+  background: var(--bg-warm);
+  cursor: default;
+}
+
+/* Analyzer canvas */
+#analyzerCanvas {
+  background: var(--bg-warm);
+  transition: opacity 0.2s;
+}
+
+/* Phase 3 section header style */
+.fx-section + .fx-section {
+  border-top: 2px solid var(--border-color);
+}
+
+/* Pitch badge color */
+#fxPitchSemitonesLbl {
+  color: #a855f7;
+}
+
+/* IR Reverb: impulse select */
+#fxIrImpulse {
+  font-size: 0.72rem !important;
+}
+
+/* Analyzer mode select */
+#fxAnalyzerMode {
+  font-size: 0.72rem !important;
+  padding: 2px var(--space-2) !important;
+}
+
+/* Dark mode tweaks */
+[data-theme='dark'] #envCanvas,
+[data-theme='dark'] #analyzerCanvas {
+  background: var(--bg-surface);
+}
+
+/* Export full button */
+.btn-export-full {
+  border: 1px dashed var(--border-color);
+  font-size: var(--text-badge);
+  color: var(--text-secondary);
+}
+
+/* ──────────────────────────────────────────────────────────
+   PHASE 4: Timeline / Audio Lab / Master Meter / History
+   ────────────────────────────────────────────────────────── */
+
+/* ── Master Meter ─────────────── */
+.master-meter {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+  padding: 2px 6px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-micro);
+  border: var(--border-whisper);
+}
+.master-meter__bar {
+  width: 6px;
+  height: 18px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+.master-meter__fill {
+  width: 100%;
+  height: 0%;
+  background: #3a3;
+  transition: height 0.05s linear;
+  border-radius: 2px;
+}
+
+/* ── Timeline ─────────────────── */
+.view-timeline {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  overflow: hidden;
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+}
+
+.tl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) 0;
+}
+
+.tl-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tl-toolbar__sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 var(--space-1);
+}
+
+.tl-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  background: var(--bg-surface);
+}
+
+/* ── Audio Lab ────────────────── */
+.view-lab {
+  padding: var(--space-4);
+  height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.lab-layout {
+  display: flex;
+  gap: var(--space-4);
+  height: 100%;
+}
+
+.lab-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  overflow-y: auto;
+  background: var(--bg-surface);
+}
+
+.lab-sidebar__title {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-badge);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border-bottom: var(--border-whisper);
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+}
+
+.lab-sound-list {
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lab-sound-item {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-micro);
+  cursor: pointer;
+  font-size: var(--text-badge);
+  transition: background var(--dur-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-sound-item:hover { background: var(--border-color); }
+.lab-sound-item.is-active { background: var(--color-accent); color: #fff; }
+
+.lab-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.lab-waveform-wrap {
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  background: var(--bg-warm);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lab-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.lab-ops-group {
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lab-ops-group__title {
+  font-size: var(--text-badge);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-1);
+}
+
+.lab-history {
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-micro);
+  font-size: 0.7rem;
+}
+
+.history-entry.is-current {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.history-entry.is-future {
+  opacity: 0.4;
+}
+
+.history-entry__idx {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  min-width: 18px;
+}
+
+.history-entry__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 3D Spatial (Phase 4) ─────── */
+#fxSpatialX, #fxSpatialY, #fxSpatialZ { accent-color: #a855f7; }
+#fxSpatialRolloff { accent-color: #e07b00; }

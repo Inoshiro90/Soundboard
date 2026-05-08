@@ -99,7 +99,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .menubar-volume__label {
   font-size: var(--text-caption);
@@ -109,6 +111,9 @@
 }
 .menubar-volume__slider {
   width: 80px;
+  max-width: 120px;
+  flex-shrink: 1;
+  min-width: 40px;
 }
 .menubar-volume__number {
   width: 52px;
@@ -427,4 +432,12 @@
   /* On portrait, stack menubar buttons but keep labels */
   .app-menubar       { overflow-x: auto; flex-wrap: nowrap; }
   .menubar-btn       { padding: var(--space-2); font-size: 0.7rem; min-height: 34px; }
+}
+
+/* BUGFIX: Volume slider overlap on small screens */
+@media (max-width: 480px) {
+  .menubar-volume__slider { width: 56px; max-width: 56px; display: block !important; }
+  .menubar-volume__number { display: none; }
+  /* Ensure volume group itself is always visible */
+  .menubar-volume { display: flex !important; flex-shrink: 0; }
 }

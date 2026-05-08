@@ -6,7 +6,6 @@
 export const APP = {
   profiles: [],
   activeProfileId: null,
-  // masterVol: 1.0 = 100% default volume
   globalSettings: { overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0 },
   audioBuffers: {},
   activeAudio:  {},
@@ -17,7 +16,31 @@ export const APP = {
   activeCategory: 'all',
   arrangeMode: false, lockMode: false, arrangeHistory: [],
   moveMode: false,
-  trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null }
+  trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null,
+           zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null },
+  // Phase 3
+  analyzer:     { node: null, canvas: null, rafId: null, mode: 'bars', active: false },
+  irCache:      {},
+  idbReady:     false,
+  pitchWorkletReady: false,
+  // Phase 4
+  history:      { stack: [], pointer: -1, maxSize: 50 },
+  timeline:     {
+    tracks:     [],          // [{ id, name, clips[], vol, pan, mute, solo }]
+    playing:    false,
+    playheadSec: 0,
+    loopEnabled: false,
+    loopStart:  0,
+    loopEnd:    8,
+    pixelsPerSec: 80,
+    rafId:      null,
+    startWallClock: null,
+    startPlayhead:  0
+  },
+  appMode:      'soundboard',  // 'soundboard' | 'timeline' | 'lab'
+  labSound:     null,          // sound currently in Audio Lab
+  masterBus:    { limiterEnabled: true, threshold: -1, peakL: 0, peakR: 0, rafId: null },
+  noiseProfile: null           // Float32Array spectral floor for noise reduction
 };
 
 export function CP()       { return APP.profiles.find(p => p.id === APP.activeProfileId) || APP.profiles[0]; }
