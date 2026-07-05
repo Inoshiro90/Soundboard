@@ -64,16 +64,102 @@ async function runIdbMigrationIfNeeded() {
       }
     }
   }
+  if (!needs) {
+    ambOuter: for (const ap of (APP.ambient?.profiles || [])) {
+      for (const t of (ap.tracks || [])) {
+        for (const f of (t.files || [])) {
+          if (f && isBase64Data(f.data)) { needs = true; break ambOuter; }
+        }
+      }
+    }
+  }
   if (!needs) return;
   toast('Migriere Audio zu IndexedDB…');
   try {
     const count = await migrateAudioToIdb(APP.profiles);
+    let ambCount = 0;
+    for (const ap of (APP.ambient?.profiles || [])) {
+      for (const t of (ap.tracks || [])) {
+        for (const f of (t.files || [])) {
+          if (f && isBase64Data(f.data)) {
+            await idbSet(audioKey(f.id, 0), f.data);
+            f.data = IDB_SENTINEL;
+            ambCount++;
+          }
+        }
+      }
+    }
     _saveRaw();
-    toast(`Migration abgeschlossen (${count} Slots)`, 'ok');
+    toast(`Migration abgeschlossen (${count + ambCount} Slots)`, 'ok');
   } catch(e) {
     console.error('[storage] IDB migration error:', e);
     toast('Migration fehlgeschlagen — Fallback aktiv', 'err');
   }
+}
+
+// ─── AMBIENT NORMALISATION ────────────────────────────────────
+// Accepts either the current scene-profile shape ({ profiles:[{tracks}] })
+// or the legacy flat shape from an earlier version ({ tracks:[...] }) and
+// always returns a valid, non-empty scene-profile structure. Also migrates
+// each track from the old single-file shape ({ data, fileName }) to the
+// current multi-variant shape ({ files:[{id,data,fileName}], variantMode }).
+function _normalizeAmbientTrack(t) {
+  if (!t.id) t.id = uid();
+  if (!Array.isArray(t.files)) {
+    // Legacy single-file track → one variant, reusing the track's own id so
+    // its existing IndexedDB blob (stored under `${trackId}:0`) still resolves.
+    t.files = [{ id: t.id, data: (t.data !== undefined ? t.data : null), fileName: t.fileName || '' }];
+  }
+  delete t.data;
+  delete t.fileName;
+  t.files.forEach(f => {
+    if (!f.id) f.id = uid();
+    if (f.data === undefined) f.data = null;
+    if (typeof f.fileName !== 'string') f.fileName = '';
+    if (typeof f.trimStart !== 'number') f.trimStart = 0;
+    if (f.trimEnd === undefined) f.trimEnd = null;
+  });
+  if (t.variantMode !== 'random' && t.variantMode !== 'rotate') t.variantMode = 'random';
+  if (!t.name) t.name = 'Ambient';
+  if (!t.icon) t.icon = '🌫️';
+  if (typeof t.vol !== 'number')  t.vol  = 0.7;
+  if (typeof t.loop !== 'boolean') t.loop = true;
+  if (typeof t.fadeIn !== 'number')  t.fadeIn  = 2;
+  if (typeof t.fadeOut !== 'number') t.fadeOut = 2;
+  if (typeof t.intervalMode !== 'boolean') t.intervalMode = false;
+  if (typeof t.intervalMin !== 'number') t.intervalMin = 10;
+  if (typeof t.intervalMax !== 'number') t.intervalMax = 30;
+  return t;
+}
+
+function _normalizeAmbient(raw) {
+  const a = (raw && typeof raw === 'object') ? raw : {};
+  let profiles = Array.isArray(a.profiles) ? a.profiles : null;
+
+  if (!profiles && Array.isArray(a.tracks)) {
+    // Legacy single-list format → wrap into one default scene
+    profiles = [{ id: uid(), name: 'Ambient', icon: '🌫️', tracks: a.tracks }];
+  }
+  if (!profiles || !profiles.length) {
+    profiles = [mkAmbientProfile('Ambient', '🌫️')];
+  }
+  profiles.forEach(p => {
+    if (!p.id)   p.id   = uid();
+    if (!p.name) p.name = 'Ambient';
+    if (!p.icon) p.icon = '🌫️';
+    if (!Array.isArray(p.tracks)) p.tracks = [];
+    p.tracks = p.tracks.map(_normalizeAmbientTrack);
+  });
+
+  let activeProfileId = a.activeProfileId;
+  if (!activeProfileId || !profiles.find(p => p.id === activeProfileId)) {
+    activeProfileId = profiles[0].id;
+  }
+  return {
+    profiles,
+    activeProfileId,
+    masterVol: typeof a.masterVol === 'number' ? a.masterVol : 1.0
+  };
 }
 
 // ─── DECODE ALL AUDIO ────────────────────────────────────────
@@ -92,6 +178,10 @@ export async function decodeAllAudio() {
 export function mkProfile(name, icon) {
   return { id: uid(), name, icon: icon || '🎵', items: [],
            settings: { maxCols: 10, maxRows: 10, tileW: 120, tileH: 120 } };
+}
+
+export function mkAmbientProfile(name, icon) {
+  return { id: uid(), name: name || 'Ambient', icon: icon || '🌫️', tracks: [] };
 }
 
 export function mkSound(d, order) {
@@ -136,6 +226,10 @@ export function initDefaults() {
     p.items.push(i < defs.length ? mkSound(defs[i], i) : mkPH(i));
   }
   APP.profiles.push(p); APP.activeProfileId = p.id;
+
+  const amb = mkAmbientProfile('Ambient', '🌫️');
+  APP.ambient = { profiles: [amb], activeProfileId: amb.id, masterVol: 1.0 };
+  APP.viewMode = 'sound';
 }
 
 // ─── SAVE ────────────────────────────────────────────────────
@@ -146,6 +240,8 @@ export function _saveRaw() {
       profiles:        APP.profiles,
       activeProfileId: APP.activeProfileId,
       globalSettings:  APP.globalSettings,
+      ambient:         APP.ambient,
+      viewMode:        APP.viewMode,
       _idbMigrated:    true
     }));
   } catch(e) { console.error('[storage] save error:', e); }
@@ -167,6 +263,8 @@ export async function load() {
     APP.profiles        = d.profiles || [];
     APP.activeProfileId = d.activeProfileId || null;
     APP.globalSettings  = { ...APP.globalSettings, ...(d.globalSettings || {}) };
+    APP.ambient          = _normalizeAmbient(d.ambient);
+    APP.viewMode         = d.viewMode === 'ambient' ? 'ambient' : 'sound';
     if (!APP.profiles.length) {
       initDefaults();
     } else {
@@ -184,9 +282,27 @@ export async function load() {
 
 // ─── EXPORT / IMPORT ─────────────────────────────────────────
 
+async function _resolveAmbientAudio(ambientClone) {
+  for (const ap of (ambientClone?.profiles || [])) {
+    for (const t of (ap.tracks || [])) {
+      for (const f of (t.files || [])) {
+        if (f && isIdbRef(f.data)) {
+          try {
+            const b64 = await idbGet(audioKey(f.id, 0));
+            if (b64) f.data = b64;
+          } catch (err) {
+            console.warn('[storage] ambient export: IDB read failed for', f.id, err);
+          }
+        }
+      }
+    }
+  }
+}
+
 export async function exportData() {
   toast('Bereite Export vor…');
-  const clone = JSON.parse(JSON.stringify(APP.profiles));
+  const clone   = JSON.parse(JSON.stringify(APP.profiles));
+  const ambient = JSON.parse(JSON.stringify(APP.ambient || { profiles: [] }));
   for (const prof of clone) {
     for (const item of (prof.items || [])) {
       if (item.type !== 'sound') continue;
@@ -203,9 +319,10 @@ export async function exportData() {
       }
     }
   }
+  await _resolveAmbientAudio(ambient);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(
-    [JSON.stringify({ profiles: clone, activeProfileId: APP.activeProfileId, globalSettings: APP.globalSettings }, null, 2)],
+    [JSON.stringify({ profiles: clone, activeProfileId: APP.activeProfileId, globalSettings: APP.globalSettings, ambient }, null, 2)],
     { type: 'application/json' }
   ));
   a.download = 'soundboard_pro.json'; a.click();
@@ -214,7 +331,8 @@ export async function exportData() {
 
 export async function exportDataWithAudio() {
   toast('Bereite vollständigen Export vor…');
-  const clone = JSON.parse(JSON.stringify(APP.profiles));
+  const clone   = JSON.parse(JSON.stringify(APP.profiles));
+  const ambient = JSON.parse(JSON.stringify(APP.ambient || { profiles: [] }));
   for (const prof of clone) {
     for (const item of (prof.items || [])) {
       if (item.type !== 'sound') continue;
@@ -227,9 +345,10 @@ export async function exportDataWithAudio() {
       }
     }
   }
+  await _resolveAmbientAudio(ambient);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(
-    [JSON.stringify({ profiles: clone, activeProfileId: APP.activeProfileId, globalSettings: APP.globalSettings }, null, 2)],
+    [JSON.stringify({ profiles: clone, activeProfileId: APP.activeProfileId, globalSettings: APP.globalSettings, ambient }, null, 2)],
     { type: 'application/json' }
   ));
   a.download = 'soundboard_pro_full.json'; a.click();
@@ -244,6 +363,7 @@ export async function importData(file, { onSuccess }) {
       APP.profiles        = d.profiles        || [];
       APP.activeProfileId = d.activeProfileId || APP.profiles[0]?.id;
       APP.globalSettings  = { ...APP.globalSettings, ...(d.globalSettings || {}) };
+      APP.ambient          = _normalizeAmbient(d.ambient);
       migrateEffects();
       await runIdbMigrationIfNeeded();
       onSuccess();

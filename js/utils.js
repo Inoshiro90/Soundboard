@@ -73,3 +73,48 @@ export function fmtDur(s) {
   if (s == null || isNaN(s)) return '';
   return s.toFixed(1) + 's';
 }
+
+/**
+ * Icons throughout the app are either a short emoji string, or — for
+ * custom-uploaded icons (PNG/JPEG/GIF/WEBP/BMP/SVG) — a `data:image/...`
+ * URI. This is the single shared convention every renderer checks.
+ * @param {string} icon
+ * @returns {boolean}
+ */
+export function isCustomIcon(icon) {
+  return typeof icon === 'string' && icon.startsWith('data:image');
+}
+
+/**
+ * Renders an icon as HTML: an <img> for custom-uploaded images, or the
+ * emoji character itself as plain text otherwise. Used by every tile/tab/row
+ * template so custom icons work consistently everywhere (sound tiles, macro
+ * tiles, profile tabs, ambient scene tabs, ambient track rows).
+ * @param {string} icon
+ * @param {string} [cls]   extra class(es) for the <img>, e.g. for sizing
+ * @returns {string} HTML
+ */
+export function iconHtml(icon, cls = '') {
+  if (isCustomIcon(icon)) {
+    return `<img src="${icon}" class="icon-img${cls ? ' ' + cls : ''}" alt="" draggable="false">`;
+  }
+  return icon ?? '';
+}
+
+/**
+ * Text-only counterpart to iconHtml() — for contexts that can't render HTML
+ * (element.textContent, <option> labels inside <select>). Custom-uploaded
+ * images fall back to a neutral picture glyph since an <img> can't be shown.
+ * @param {string} icon
+ * @param {string} [fallback]  shown when icon is empty/unset
+ * @returns {string} plain text
+ */
+export function iconGlyph(icon, fallback = '') {
+  if (isCustomIcon(icon)) return '🖼️';
+  return icon || fallback;
+}
+
+/** Convenience: iconHtml() with a fallback emoji for when no icon is set at all. */
+export function iconHtmlOr(icon, fallback, cls = '') {
+  return icon ? iconHtml(icon, cls) : fallback;
+}

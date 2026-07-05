@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/ambient.css">
   <link rel="stylesheet" href="css/utilities.css">
   <link rel="stylesheet" href="css/mobile.css"><!-- Phase 5 -->
   <link rel="stylesheet" href="css/fixes.css"><!-- Bugfixes -->
@@ -33,6 +34,17 @@
       <div class="app-logo" aria-label="SoundBoard Pro">
         <i class="fa-solid fa-sliders app-logo__icon" aria-hidden="true"></i>
         SoundBoard
+      </div>
+
+      <!-- Sound / Ambient view-mode toggle — both icons always visible,
+           the inactive icon is clickable to switch focus to that mode. -->
+      <div class="mode-toggle" role="group" aria-label="Ansicht wechseln">
+        <button class="mode-toggle__btn is-active" id="btnModeSound" title="Soundeffekte" aria-label="Soundeffekte anzeigen" aria-pressed="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.32a7.43 7.43 0 0 1 0 7.36"/><path d="M9.46 6.21a11.76 11.76 0 0 1 0 11.58"/><path d="M12.91 4.1a15.91 15.91 0 0 1 .01 15.8"/><path d="M16.37 2a20.16 20.16 0 0 1 0 20"/></svg>
+        </button>
+        <button class="mode-toggle__btn" id="btnModeAmbient" title="Ambientszenen" aria-label="Ambientszenen anzeigen" aria-pressed="false">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"/></svg>
+        </button>
       </div>
 
       <!-- Theme toggle: icon changes based on active theme (synced by syncThemeIcon()) -->
@@ -64,6 +76,40 @@
 
       <div class="menubar-sep" aria-hidden="true"></div>
 
+      <!-- Data: export/import/reset — global, works in either view -->
+      <button class="menubar-btn" id="btnOptsToggle" title="Daten exportieren, importieren oder zurücksetzen"
+        aria-label="Daten-Optionen ein-/ausblenden" aria-expanded="false" aria-controls="optsBar">
+        <i class="fa-solid fa-database" aria-hidden="true"></i>
+        Daten
+      </button>
+
+      <!-- Save: persist to localStorage -->
+      <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
+        aria-label="Speichern">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+        Speichern
+      </button>
+
+      <div class="menubar-sep" aria-hidden="true"></div>
+
+      <!-- Phase 4: Undo / Redo -->
+      <button class="menubar-btn" id="btnUndo" title="Rückgängig (Ctrl+Z)" aria-label="Rückgängig" disabled>
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+        Undo
+      </button>
+      <button class="menubar-btn" id="btnRedo" title="Wiederholen (Ctrl+Y)" aria-label="Wiederholen" disabled>
+        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+        Redo
+      </button>
+
+    </div>
+
+    <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
+       Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
+       betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
+
       <!-- Stop: ends all currently playing sounds -->
       <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle laufenden Sounds sofort stoppen"
         aria-label="Alle Sounds stoppen">
@@ -92,43 +138,10 @@
         Tauschen
       </button>
 
-      <!-- Audio options: overlap, replay, multiclick -->
-      <button class="menubar-btn" id="btnOptsToggle" title="Audio-Einstellungen und Daten verwalten"
-        aria-label="Audio-Optionen ein-/ausblenden" aria-expanded="false" aria-controls="optsBar">
-        <i class="fa-solid fa-music" aria-hidden="true"></i>
-        Audio
-      </button>
-
-      <!-- Save: persist to localStorage -->
-      <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
-        aria-label="Speichern">
-        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-        Speichern
-      </button>
-
       <div class="menubar-sep" aria-hidden="true"></div>
 
-      <!-- Phase 4: Undo / Redo -->
-      <button class="menubar-btn" id="btnUndo" title="Rückgängig (Ctrl+Z)" aria-label="Rückgängig" disabled>
-        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-        Undo
-      </button>
-      <button class="menubar-btn" id="btnRedo" title="Wiederholen (Ctrl+Y)" aria-label="Wiederholen" disabled>
-        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-        Redo
-      </button>
-
-    </div>
-
-
-
-    <!-- ════════════════════════════ OPTIONS BAR ═════════════════════════════
-       Collapsible audio settings + data management
-  ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="options-bar" id="optsBar" aria-label="Audio-Optionen" aria-hidden="true">
-      <div class="options-bar__inner">
-
-        <span class="toolbar__label">Wiedergabe</span>
+      <!-- Playback behaviour for sound tiles -->
+      <div class="options-bar__inner" style="padding:0;gap:var(--space-3);flex-wrap:nowrap">
         <label title="Mehrere Sounds können gleichzeitig abspielen">
           <input type="checkbox" id="setOverlap" checked>
           Überlagern
@@ -141,8 +154,17 @@
           <input type="checkbox" id="setMultiClick" checked>
           Mehrfachklick
         </label>
+      </div>
 
-        <div class="toolbar__separator" aria-hidden="true"></div>
+    </div>
+
+
+
+    <!-- ════════════════════════════ OPTIONS BAR ═════════════════════════════
+       Collapsible audio settings + data management
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="options-bar" id="optsBar" aria-label="Daten-Optionen" aria-hidden="true">
+      <div class="options-bar__inner">
 
         <span class="toolbar__label">Daten</span>
         <button class="btn btn--sm" id="btnExport" title="Alle Profile als JSON-Datei herunterladen"
@@ -261,7 +283,9 @@
         <i class="fa-solid fa-xmark" aria-hidden="true"></i> Schließen
       </button> -->
     </nav>
-    <!-- ════════════════════════════ PROFILE TABS ════════════════════════════ -->
+    <!-- ════════════════════════════ PROFILE TABS ════════════════════════════
+       Sound-effect profiles. Hidden while in Ambient view (setViewMode()).
+  ══════════════════════════════════════════════════════════════════════════ -->
     <nav class="profile-bar" id="profBar" aria-label="Profile">
       <!-- Tabs rendered by JS (renderProfileTabs) -->
       <button class="profile-add" id="btnAddProfile" title="Neues Profil erstellen" aria-label="Neues Profil erstellen">
@@ -271,9 +295,9 @@
     </nav>
 
     <!-- ═══════════════════════════════ TOOLBAR ══════════════════════════════
-       Grid size controls + category filter tabs
+       Grid size controls + category filter tabs. Hidden in Ambient view.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="toolbar" role="toolbar" aria-label="Raster-Steuerung">
+    <nav class="toolbar" id="soundToolbar" role="toolbar" aria-label="Raster-Steuerung">
       <span class="toolbar__label">Raster</span>
 
       <!-- Columns: icon + controls -->
@@ -322,9 +346,59 @@
     </nav>
 
     <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
-    <main class="board" aria-label="Soundboard">
+    <main class="board" id="soundBoard" aria-label="Soundboard">
       <div class="tile-grid" id="grid" role="grid" aria-label="Sound-Kacheln"></div>
     </main>
+
+    <!-- ═══════════════════════════ AMBIENT SCENE TABS ═══════════════════════════
+       Same tab pattern as the sound profiles above — each scene (Marktplatz,
+       Höhle, Schlachtfeld, …) is its own tab. Hidden while in Sound view.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="profile-bar" id="ambProfBar" aria-label="Ambient-Szenen" hidden>
+      <!-- Tabs rendered by JS (renderAmbientProfileTabs) -->
+      <button class="profile-add" id="btnAddAmbientProfile" title="Neue Ambient-Szene erstellen" aria-label="Neue Ambient-Szene erstellen">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        Szene
+      </button>
+    </nav>
+
+    <!-- ═══════════════════════════════ AMBIENT BOARD ═══════════════════════════════
+       Looping background sounds for the active scene. Several tracks can play
+       in parallel; playback keeps running when switching back to Sound view —
+       the main Stop-button does not affect it.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <main class="board ambient-board" id="ambientBoard" aria-label="Ambient-Szene" hidden>
+      <div class="ambient-board__toolbar">
+        <span class="ambient-board__count-badge" id="ambientCount">0</span>
+
+        <div class="ambient-board__master" aria-label="Ambient-Gesamtlautstärke">
+          <i data-lucide="volume-2" aria-hidden="true"></i>
+          <input type="range" id="ambientMasterVol" class="slider ambient-board__master-slider" min="0" max="1"
+            step=".01" value="1" aria-label="Ambient-Gesamtlautstärke">
+        </div>
+
+        <span class="u-ml-auto"></span>
+
+        <button class="btn btn--sm btn--danger" id="btnAmbientStopAll" title="Alle Ambient-Sounds dieser Szene stoppen"
+          aria-label="Alle Ambient-Sounds stoppen">
+          <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
+        </button>
+
+        <button class="btn btn--sm btn--accent" id="btnAmbientAdd" title="Ambient-Sound hinzufügen"
+          aria-label="Ambient-Sound hinzufügen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Hinzufügen
+        </button>
+        <input type="file" id="ambientFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
+        <input type="file" id="ambientReplaceFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
+      </div>
+
+      <p class="ambient-empty" id="ambientEmpty">
+        Noch keine Ambient-Sounds in dieser Szene. Füge z. B. Menschenmenge, Pferdehufe, Hundegebell oder
+        Vogelgezwitscher hinzu, um sie im Hintergrund zu untermalen — mehrere Clips können gleichzeitig laufen.
+      </p>
+      <div class="ambient-list" id="ambientList" role="list" aria-label="Ambient-Sounds"></div>
+    </main>
+
 
 
     <footer class="status-bar" aria-label="Status">
@@ -384,12 +458,13 @@
             <div class="sm-section-body" id="smBasicsBody">
               <div class="row g-3 pt-2">
 
-                <!-- Column 1: Slots + Playback -->
+                <!-- Column 1: Slots/Datei-Varianten + Playback -->
                 <div class="col-lg-5">
                   <div class="mb-2">
                     <div class="u-flex-between mb-1">
                       <label class="form-label u-mb-0">
-                        Sound-Slots <small class="u-text-muted u-text-badge">(rotiert bei Klick)</small>
+                        <span class="sm-sound-only">Sound-Slots <small class="u-text-muted u-text-badge">(rotiert bei Klick)</small></span>
+                        <span class="sm-ambient-only" style="display:none">Datei-Varianten <small class="u-text-muted u-text-badge">(zufällig/rotierend gewählt)</small></span>
                       </label>
                       <div class="u-flex u-gap-1">
                         <button class="btn btn--sm" id="btnBulk" title="Mehrere Dateien laden" aria-label="Mehrere Dateien laden">
@@ -414,35 +489,76 @@
                         <span class="u-text-muted u-text-badge">%</span>
                       </div>
                     </div>
-                    <div class="col-12">
+                    <div class="col-12 sm-sound-only">
                       <label class="form-label" for="ePitch">
                         Pitch <span id="pitchLbl" class="u-text-accent" aria-live="polite">1.0×</span>
                       </label>
                       <input type="range" class="slider u-full-width" id="ePitch" min=".25" max="4" step=".05" value="1" aria-label="Pitch">
                     </div>
-                    <div class="col-4">
+                    <div class="col-4 sm-sound-only">
                       <div class="form-check form-switch mt-1">
                         <input class="form-check-input" type="checkbox" id="eLoop">
                         <label class="form-check-label" for="eLoop">Loop</label>
                       </div>
                     </div>
-                    <div class="col-4">
+                    <div class="col-4 sm-sound-only">
                       <div class="form-check form-switch mt-1">
                         <input class="form-check-input" type="checkbox" id="eFade">
                         <label class="form-check-label" for="eFade">Fade-Out</label>
                       </div>
                     </div>
-                    <div class="col-4">
+                    <div class="col-4 sm-sound-only">
                       <div class="form-check form-switch mt-1">
                         <input class="form-check-input" type="checkbox" id="eRnd">
                         <label class="form-check-label" for="eRnd">Zufall</label>
+                      </div>
+                    </div>
+
+                    <!-- Ambient-only: Loop / Intervall / Varianten-Modus / Fades -->
+                    <div class="col-4 sm-ambient-only" style="display:none">
+                      <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="ambLoop">
+                        <label class="form-check-label" for="ambLoop">Loop</label>
+                      </div>
+                    </div>
+                    <div class="col-8 sm-ambient-only" style="display:none">
+                      <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="ambIntervalMode">
+                        <label class="form-check-label" for="ambIntervalMode">Zeitversetzt (Intervall statt Loop)</label>
+                      </div>
+                    </div>
+                    <div class="col-6 sm-ambient-only" style="display:none">
+                      <label class="form-label" for="ambIntervalMin">Intervall min. (s)</label>
+                      <input type="number" class="form-control" id="ambIntervalMin" min="0" max="3600" step="1" value="10">
+                    </div>
+                    <div class="col-6 sm-ambient-only" style="display:none">
+                      <label class="form-label" for="ambIntervalMax">Intervall max. (s)</label>
+                      <input type="number" class="form-control" id="ambIntervalMax" min="0" max="3600" step="1" value="30">
+                    </div>
+                    <div class="col-6 sm-ambient-only" style="display:none">
+                      <label class="form-label" for="ambFadeIn">Fade-In (s)</label>
+                      <input type="number" class="form-control" id="ambFadeIn" min="0" max="30" step="0.5" value="2">
+                    </div>
+                    <div class="col-6 sm-ambient-only" style="display:none">
+                      <label class="form-label" for="ambFadeOut">Fade-Out (s)</label>
+                      <input type="number" class="form-control" id="ambFadeOut" min="0" max="30" step="0.5" value="2">
+                    </div>
+                    <div class="col-12 sm-ambient-only" style="display:none">
+                      <label class="form-label u-mb-1">Bei mehreren Dateien</label>
+                      <div class="u-flex u-gap-2">
+                        <button type="button" class="btn btn--sm" id="ambVariantRandom" data-mode="random">
+                          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Zufällig
+                        </button>
+                        <button type="button" class="btn btn--sm" id="ambVariantRotate" data-mode="rotate">
+                          <i class="fa-solid fa-repeat" aria-hidden="true"></i> Rotierend
+                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 <!-- Column 2: Icon + Colors -->
-                <div class="col-lg-4">
+                <div class="col-lg-4 sm-sound-only">
                   <div class="mb-2">
                     <label class="form-label">Icon</label>
                     <div id="iconGrid" class="icon-grid" aria-hidden="true"></div>
@@ -465,7 +581,7 @@
                 </div>
 
                 <!-- Column 3: Hotkey -->
-                <div class="col-lg-3">
+                <div class="col-lg-3 sm-sound-only">
                   <div class="mb-3">
                     <label class="form-label" for="eHotkey">Hotkey</label>
                     <input type="text" class="hotkey-field" id="eHotkey" placeholder="Klicken, dann Taste…" readonly aria-describedby="eHotkeyHelp">
@@ -789,7 +905,7 @@
           </div>
 
           <!-- 10. Export -->
-          <div class="sm-section">
+          <div class="sm-section sm-sound-only">
             <button class="sm-section-toggle" data-target="smFxExport">
               <span><i class="fa-solid fa-download" aria-hidden="true"></i> Export</span>
               <i class="fa-solid fa-chevron-down sm-chevron" aria-hidden="true"></i>
@@ -1085,6 +1201,67 @@
             <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
             <button class="btn btn--accent" id="btnSaveProfile">Speichern</button>
           </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ AMBIENT-SZENE: NEU / BEARBEITEN ═══════════════════════════════════ -->
+  <div class="modal fade" id="ambProfModal" tabindex="-1" aria-labelledby="ambProfModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="ambProfModalTitle">Szene</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label" for="ambProfNameInput">Name</label>
+          <input class="form-control" id="ambProfNameInput" placeholder="z.B. Marktplatz, Höhle, Schlachtfeld">
+
+          <label class="form-label u-mt-3">Emoji / Icon</label>
+          <!-- Icon picker injected by buildIconGrid() -->
+          <div id="ambProfIconGrid" class="icon-grid" aria-hidden="true"></div>
+          <input class="form-control u-mt-2" id="ambProfIconInput" placeholder="🌫️" maxlength="4"
+            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <button class="btn btn--danger" id="btnDelAmbientProfile" style="display:none" aria-label="Szene löschen">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+          </button>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnSaveAmbientProfile">Speichern</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ AMBIENT-TRACK: ICON WÄHLEN ═════════════════════════════════════════ -->
+  <div class="modal fade" id="ambTrackIconModal" tabindex="-1" aria-labelledby="ambTrackIconModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="ambTrackIconModalTitle">Icon auswählen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Icon picker injected by buildIconGrid() -->
+          <div id="ambTrackIconGrid" class="icon-grid" aria-hidden="true"></div>
+          <input class="form-control u-mt-2" id="ambTrackIconInput" placeholder="🌫️" maxlength="4"
+            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+          <button class="btn btn--accent" id="btnApplyAmbientTrackIcon">Übernehmen</button>
         </div>
 
       </div>

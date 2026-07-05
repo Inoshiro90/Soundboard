@@ -11,6 +11,7 @@ import { ensurePitchWorklet, actx, hasAudioContext } from './audio.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
 import { APP }                         from './state.js';
+import { registerAmbientEvents }       from './ambient.js';
 
 async function init() {
   await openDB();
@@ -21,6 +22,7 @@ async function init() {
   renderGrid();
   syncThemeIcon();
   registerEvents();
+  registerAmbientEvents();
 
   // Ctrl+Z / Ctrl+Y
   document.addEventListener('keydown', e => {

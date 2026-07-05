@@ -10,7 +10,7 @@
  */
 
 import { APP, CP, CItems, CSettings, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
-import { uid, bk }                        from './utils.js';
+import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils.js';
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
 import { toast }                           from './notifications.js';
@@ -31,14 +31,14 @@ export function renderProfileTabs() {
     tab.className = 'profile-tab' + (p.id === APP.activeProfileId ? ' is-active' : '');
     tab.dataset.pid = p.id;
     tab.innerHTML =
-      `<span>${p.icon || '🎵'} ${p.name}</span>` +
+      `<span>${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${p.name}</span>` +
       `<span class="profile-tab__edit" title="Profil bearbeiten" aria-label="Profil bearbeiten">` +
       `<i class="fa-solid fa-pen" aria-hidden="true"></i></span>`;
     bar.insertBefore(tab, addBtn);
   });
 
   const profLbl = document.getElementById('profLbl');
-  if (profLbl) profLbl.textContent = CP() ? `${CP().icon || ''} ${CP().name}` : '';
+  if (profLbl) profLbl.textContent = CP() ? `${iconGlyph(CP().icon)} ${CP().name}` : '';
 }
 
 // ─── GRID ─────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ export function makeSoundTile(s) {
          style="${tileStyle(s)}${accentStyle}"
          role="button" aria-label="${s.name || 'Sound'}">
       ${hkHtml}
-      <div class="tile__icon" aria-hidden="true">${s.icon || '🔊'}</div>
+      <div class="tile__icon" aria-hidden="true">${iconHtmlOr(s.icon, '🔊', 'tile__icon-img')}</div>
       <div class="tile__label">${s.name || 'SOUND'}</div>
       <div class="tile__slot-badge" aria-hidden="true"></div>
       <i class="fa-solid fa-rotate tile__loop-icon" aria-hidden="true"></i>
@@ -174,7 +174,7 @@ export function makeMacroTile(m) {
          style="${tileStyle(m)}${accentStyle}"
          role="button" aria-label="${m.name || 'Makro'}">
       ${hkHtml}
-      <div class="tile__icon" aria-hidden="true">${m.icon || '🪄'}</div>
+      <div class="tile__icon" aria-hidden="true">${iconHtmlOr(m.icon, '🪄', 'tile__icon-img')}</div>
       <div class="tile__label">${m.name || 'MAKRO'}</div>
       <div class="tile__macro-badge" aria-hidden="true">MAKRO${m.repeat > 1 ? ' ×' + m.repeat : ''}</div>
       <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
@@ -409,6 +409,64 @@ export function syncThemeIcon() {
   }
 }
 
+// ─── CUSTOM ICON IMAGES ──────────────────────────────────────
+// Users can upload their own icon (PNG/JPEG/GIF/WEBP/BMP/SVG) instead of
+// picking an emoji — e.g. a spell icon or an NPC portrait. Stored as a
+// `data:image/...` URI directly in the icon field (see utils.js isCustomIcon).
+
+const ICON_IMAGE_SIZE = 128; // every raster icon is scaled to exactly fill this square
+
+/**
+ * Reads an image file and returns a compact `data:image/...` URI.
+ * SVGs are kept as vector data (no rasterizing); raster formats are always
+ * scaled to fill the full ICON_IMAGE_SIZE square — upscaling small source
+ * images as well as downscaling large ones — so every icon appears the same
+ * size regardless of its original resolution (a tiny 16×16 upload won't look
+ * smaller than a 512×512 one or an emoji). Upscaling uses nearest-neighbour
+ * sampling (crisp/blocky) instead of smoothing (blurry/mushy).
+ * @param {File} file
+ * @returns {Promise<string>}
+ */
+async function _processIconFile(file) {
+  const isSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name);
+  if (isSvg) {
+    const text = await file.text();
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload  = () => resolve(el);
+      el.onerror = () => reject(new Error('Bild konnte nicht gelesen werden'));
+      el.src = objectUrl;
+    });
+
+    const size  = ICON_IMAGE_SIZE;
+    // No Math.min(1, …) cap: small images are deliberately upscaled to fill
+    // the square, not left tiny in the middle of empty transparent padding.
+    const scale = size / Math.max(img.naturalWidth, img.naturalHeight);
+    const w = Math.max(1, Math.round(img.naturalWidth  * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    // Upscaling: keep it crisp/pixelated rather than smoothed into a blur.
+    // Downscaling: smoothing stays on to avoid noisy aliasing.
+    ctx.imageSmoothingEnabled = scale < 1;
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+
+    let dataUri = canvas.toDataURL('image/webp', 0.85);
+    if (!dataUri.startsWith('data:image/webp')) dataUri = canvas.toDataURL('image/png');
+    return dataUri;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 // ─── ICON PICKER (v2) ─────────────────────────────────────────
 // Uses new EMOJI_CATS structure with categories, icons, keyword search
 
@@ -421,6 +479,55 @@ export function buildIconGrid(containerId, current) {
 
   const wrap = document.createElement('div');
   wrap.className = 'icon-picker-wrap';
+
+  // ── Custom image upload ──
+  const uploadRow = document.createElement('div');
+  uploadRow.className = 'icon-picker__upload';
+  uploadRow.innerHTML = `
+    <div class="icon-picker__upload-preview">${isCustomIcon(current) ? iconHtml(current) : (current || '🙂')}</div>
+    <div class="icon-picker__upload-text"><strong>Eigenes Bild</strong><br>PNG, JPG, GIF, WEBP, BMP, SVG</div>
+    <button type="button" class="btn btn--sm" data-act="upload-icon" aria-label="Eigenes Bild hochladen">
+      <i class="fa-solid fa-upload" aria-hidden="true"></i>
+    </button>
+    <button type="button" class="icon-picker__upload-clear" data-act="clear-icon" title="Bild entfernen"
+      aria-label="Bild entfernen" ${isCustomIcon(current) ? '' : 'hidden'}>
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+    </button>
+    <input type="file" class="u-hidden" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml,.svg" aria-hidden="true">
+  `;
+  wrap.appendChild(uploadRow);
+
+  const uploadPreview = uploadRow.querySelector('.icon-picker__upload-preview');
+  const uploadClearBtn = uploadRow.querySelector('[data-act="clear-icon"]');
+  const uploadFileInput = uploadRow.querySelector('input[type="file"]');
+
+  uploadRow.querySelector('[data-act="upload-icon"]').addEventListener('click', () => uploadFileInput.click());
+
+  uploadFileInput.addEventListener('change', async () => {
+    const file = uploadFileInput.files?.[0];
+    uploadFileInput.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/') && !/\.svg$/i.test(file.name)) {
+      toast('Bitte eine Bilddatei wählen', 'err'); return;
+    }
+    try {
+      const dataUri = await _processIconFile(file);
+      current = dataUri;
+      selectIco(dataUri);
+      uploadPreview.innerHTML = iconHtml(dataUri);
+      uploadClearBtn.hidden = false;
+    } catch (e) {
+      console.error('[ui] icon upload failed:', e);
+      toast('Bild konnte nicht geladen werden', 'err');
+    }
+  });
+
+  uploadClearBtn.addEventListener('click', () => {
+    current = '';
+    selectIco('');
+    uploadPreview.textContent = '🙂';
+    uploadClearBtn.hidden = true;
+  });
 
   // ── Search bar ──
   const searchWrap = document.createElement('div');
@@ -468,7 +575,7 @@ export function buildIconGrid(containerId, current) {
   if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...catBar.querySelectorAll('[data-lucide]')] });
 
   // Input ID map
-  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput' };
+  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput' };
 
   function selectIco(ico) {
     grid.querySelectorAll('.icon-opt').forEach(x => x.classList.remove('is-selected'));
@@ -1109,7 +1216,7 @@ export function renderMacroSteps() {
         <select class="form-select mstep-select js-sel" aria-label="Ziel-Sound">
           <option value="">-- wählen --</option>
           ${allTargets.filter(x => x.type === 'sound').map(x =>
-            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${x.icon || ''} ${x.name}</option>`
+            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${iconGlyph(x.icon)} ${x.name}</option>`
           ).join('')}
         </select>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
@@ -1126,7 +1233,7 @@ export function renderMacroSteps() {
         <select class="form-select mstep-select js-sel" aria-label="Ziel-Sound">
           <option value="">-- wählen --</option>
           ${allTargets.filter(x => x.type === 'sound').map(x =>
-            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${x.icon || ''} ${x.name}</option>`
+            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${iconGlyph(x.icon)} ${x.name}</option>`
           ).join('')}
         </select>
         <input type="number" class="form-control mstep-delay js-fade-dur" style="width:68px" value="${step.fadeDuration || 1000}" min="100" max="10000" aria-label="Fade-Dauer ms">
@@ -1165,7 +1272,7 @@ export function renderMacroSteps() {
         <select class="form-select mstep-select js-sel" aria-label="Ziel">
           <option value="">-- wählen --</option>
           ${allTargets.filter(x => x.type === selType).map(x =>
-            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${x.icon || ''} ${x.name}</option>`
+            `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${iconGlyph(x.icon)} ${x.name}</option>`
           ).join('')}
         </select>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
@@ -1177,7 +1284,7 @@ export function renderMacroSteps() {
       typeEl.addEventListener('change', () => {
         const t = typeEl.value;
         selEl.innerHTML = '<option value="">-- wählen --</option>' +
-          allTargets.filter(x => x.type === t).map(x => `<option value="${x.id}">${x.icon || ''} ${x.name}</option>`).join('');
+          allTargets.filter(x => x.type === t).map(x => `<option value="${x.id}">${iconGlyph(x.icon)} ${x.name}</option>`).join('');
         APP.macroSteps[i].targetId = '';
       });
       selEl.addEventListener('change', e  => { APP.macroSteps[i].targetId = e.target.value; });

@@ -1,0 +1,439 @@
+/* ============================================================
+   AMBIENT.CSS — Sound/Ambient Mode-Toggle + Ambient-Szenen
+   Rows, not tiles. Several tracks can run in parallel, independent
+   of the sound-effect grid. Scenes use the same tab pattern as
+   sound-effect profiles (see .profile-tab in components.css).
+   ============================================================ */
+
+/* setViewMode() toggles the [hidden] attribute on several elements
+   (menubars, boards, tabs) to switch between Sound/Ambient view. Some of
+   those elements set an explicit `display` in their own class rule (e.g.
+   .app-menubar{display:flex}), which — being an author rule — otherwise
+   wins over the browser's default `[hidden]{display:none}`, leaving the
+   element visible. Force it here so hiding always actually hides. */
+[hidden] { display: none !important; }
+
+/* Two stacked .app-menubar elements: the global one stays sticky under the
+   navbar, the sound-only one (hidden entirely in Ambient view) scrolls
+   normally underneath it instead of competing for the same sticky slot. */
+#soundMenubar {
+  position: static;
+}
+
+/* ─── MODE TOGGLE (navbar) ───────────────────────────────────
+   Segmented two-icon control. Both icons always visible; clicking
+   the inactive one switches focus/active mode to it. */
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+}
+.mode-toggle__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+.mode-toggle__btn:hover { color: var(--text-primary); }
+.mode-toggle__btn.is-active {
+  background: var(--bg-surface);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-card);
+}
+.mode-toggle__btn svg { display: block; }
+
+/* ─── AMBIENT-ONLY MODAL FIELDS (Grundeinstellungen) ──────────
+   Variant-mode toggle buttons inside the shared sound/ambient editor modal. */
+#ambVariantRandom.is-active,
+#ambVariantRotate.is-active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+/* ─── SCENE-TAB LIVE INDICATOR ───────────────────────────────
+   Small pulsing dot shown on an ambient scene's tab while at least
+   one of its tracks is playing — visible even from the Sound view. */
+.profile-tab__live {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-teal);
+  box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.2);
+  animation: ambient-pulse 1.6s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes ambient-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+
+/* ─── AMBIENT BOARD ───────────────────────────────────────────
+   .board base sizing (flex:1, padding) comes from layout.css;
+   this only adds the internal toolbar + list structure. */
+.ambient-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ambient-board__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ambient-board__count-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--space-2);
+  min-width: 20px;
+  text-align: center;
+}
+
+.ambient-board__master {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.ambient-board__master-slider { width: 110px; }
+
+.ambient-empty {
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+  max-width: 560px;
+  line-height: 1.5;
+}
+
+/* ─── LIST ─── */
+.ambient-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-2);
+}
+
+/* ─── ROW (not a tile: horizontal, info-dense, wraps on mobile) ─── */
+.ambient-row {
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  transition: border-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
+}
+.ambient-row.is-playing {
+  border-color: var(--color-teal);
+  box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.15);
+}
+/* Interval-mode track currently silent, waiting for its next scheduled play */
+.ambient-row.is-waiting {
+  border-color: var(--color-accent);
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.ambient-row__state {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  font-style: italic;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.ambient-row.is-playing .ambient-row__state { color: var(--color-teal); font-style: normal; }
+.ambient-row.is-waiting .ambient-row__state { color: var(--color-accent); }
+
+.ambient-row__play {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-circle);
+  border: var(--border-whisper);
+  background: var(--bg-surface);
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+}
+.ambient-row__play:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
+.ambient-row__play:disabled { opacity: .35; cursor: not-allowed; }
+.ambient-row.is-playing .ambient-row__play {
+  background: var(--color-teal);
+  color: #fff;
+  border-color: var(--color-teal);
+}
+
+.ambient-row__icon {
+  font-size: 1.05rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  padding: var(--space-1);
+  border-radius: var(--radius-micro);
+}
+.ambient-row__icon:hover { background: var(--bg-surface); }
+
+.ambient-row__name {
+  flex: 1 1 100px;
+  min-width: 70px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: var(--fw-medium);
+  padding: 2px var(--space-1);
+  outline: none;
+}
+.ambient-row__name:hover  { border-bottom-color: var(--border-color); }
+.ambient-row__name:focus  { border-bottom-color: var(--color-accent); }
+
+.ambient-row__vol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 130px;
+  min-width: 110px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.ambient-row__vol-slider { flex: 1; min-width: 60px; }
+.ambient-row__vol-pct {
+  font-family: var(--font-mono);
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.ambient-row__opt {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-micro);
+  border: var(--border-whisper);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+  font-size: 0.75rem;
+}
+.ambient-row__opt:hover { color: var(--text-primary); border-color: rgba(0, 0, 0, 0.18); }
+[data-theme='dark'] .ambient-row__opt:hover { border-color: rgba(255, 255, 255, 0.15); }
+.ambient-row__opt.is-active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--badge-bg);
+}
+.ambient-row__opt--danger:hover { color: var(--color-orange); border-color: var(--color-orange); }
+.ambient-row__opt:disabled { opacity: .35; cursor: not-allowed; }
+.ambient-row__opt:disabled:hover { color: var(--text-muted); border-color: var(--border-color); }
+
+.ambient-row__file-count {
+  position: absolute;
+  transform: translate(9px, -9px);
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 0.55rem;
+  font-family: var(--font-mono);
+  line-height: 14px;
+  text-align: center;
+}
+.ambient-row__opt { position: relative; }
+
+.ambient-row__extra {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: var(--border-whisper);
+}
+.ambient-row__extra[hidden] { display: none; }
+
+.ambient-row__num-lbl {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.ambient-row__num-lbl.is-disabled { opacity: .4; }
+
+.ambient-row__extra-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+.ambient-row__num {
+  width: 52px;
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  border-radius: var(--radius-micro);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  padding: 2px var(--space-1);
+  text-align: center;
+}
+.ambient-row__num:disabled { opacity: .5; cursor: not-allowed; }
+
+.ambient-row__filename {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+/* ─── FILE VARIANTS ───────────────────────────────────────────
+   Several audio files per track (e.g. 3 different dog-bark clips) —
+   one is picked per play, either randomly or rotated in order. */
+.ambient-row__files {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: var(--border-whisper);
+}
+
+.ambient-row__files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ambient-row__files-label {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+
+.ambient-row__vm-group {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+}
+.ambient-row__vm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-badge);
+  font-family: var(--font-sans);
+  border-radius: var(--radius-pill);
+  padding: 3px var(--space-2);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+.ambient-row__vm-btn:hover:not(:disabled) { color: var(--text-primary); }
+.ambient-row__vm-btn.is-active {
+  background: var(--color-accent);
+  color: #fff;
+}
+.ambient-row__vm-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.ambient-row__file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ambient-row__file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  border-radius: var(--radius-pill);
+  padding: 3px var(--space-2);
+  font-size: var(--text-badge);
+  color: var(--text-secondary);
+  max-width: 220px;
+}
+.ambient-row__file-chip.is-missing { border-color: var(--color-orange); color: var(--color-orange); }
+.ambient-row__file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+.ambient-row__file-chip-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 0.65rem;
+}
+.ambient-row__file-chip-btn:hover { color: var(--text-primary); background: var(--bg-warm); }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 600px) {
+  .ambient-board__toolbar        { gap: var(--space-2); }
+  .ambient-board__master-slider  { flex: 1; width: auto; }
+  .ambient-list                  { grid-template-columns: 1fr; }
+  .ambient-row                   { padding: var(--space-2); }
+  .ambient-row__vol              { flex-basis: 100%; order: 5; }
+  .ambient-row__name             { flex-basis: calc(100% - 130px); }
+  .ambient-row__state            { flex-basis: 100%; order: 4; font-size: 0.65rem; }
+  .ambient-row__extra            { gap: var(--space-2); }
+  .mode-toggle__btn              { width: 30px; height: 28px; }
+}
+
+@media (max-width: 380px) {
+  .mode-toggle__btn     { width: 26px; height: 24px; }
+  .mode-toggle__btn svg { width: 15px; height: 15px; }
+}

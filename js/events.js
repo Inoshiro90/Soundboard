@@ -4,7 +4,7 @@
  */
 
 import { APP, CP, CItems, CSettings } from './state.js';
-import { uid, hotkeyStr, hotkeyMatch, bk } from './utils.js';
+import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer } from './audio.js';
 import { invalidateBuffer } from './audioCache.js';
@@ -18,7 +18,13 @@ import {
   save, exportDataWithAudio, importData, resetAll,
   mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio
 } from './storage.js';
-import { IDB_SENTINEL } from './db.js';
+import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey } from './db.js';
+import {
+  renderAmbientPanel, resetAmbient, renderAmbientProfileTabs,
+  switchAmbientProfile, saveAmbientProfile, deleteAmbientProfile,
+  setAmbientTrackIcon, setAmbientTrackEffects, renameAmbientTrack,
+  setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
+} from './ambient.js';
 
 // ─── EFFECTS UI HELPERS ──────────────────────────────────────
 
@@ -295,8 +301,50 @@ function updateEffectSectionVisibility() {
 }
 
 // ─── SOUND MODAL ─────────────────────────────────────────────
+// The modal is shared between sound-tile editing and ambient-track effects
+// editing (same FX accordion — Filter/EQ/Dynamics/Distortion/Reverb/Delay/
+// 3D/Pitch — reused as-is). _fxEditContext tracks which one is currently open.
+let _fxEditContext = { kind: 'sound', id: null };
+let _ambVariantMode = 'random';
+
+function _setModalContext(kind) {
+  document.querySelectorAll('.sm-sound-only').forEach(el => { el.style.display = kind === 'sound' ? '' : 'none'; });
+  document.querySelectorAll('.sm-ambient-only').forEach(el => { el.style.display = kind === 'ambient' ? '' : 'none'; });
+}
+
+/**
+ * Decodes any APP.editSlots entries that don't yet have a `_ed_N` buffer cached
+ * (i.e. existing, previously-saved audio that wasn't touched this session) so
+ * the waveform/trim/preview tools work immediately, not just for newly-loaded files.
+ * Resolves the right IDB key depending on whether we're editing a sound or an
+ * ambient track (different key schemes — see _fileId on ambient slot entries).
+ */
+async function _preloadEditBuffers() {
+  const ctx = actx();
+  let changed = false;
+  for (let i = 0; i < APP.editSlots.length; i++) {
+    const sl = APP.editSlots[i];
+    if (!sl?.data || APP.audioBuffers[`_ed_${i}`]) continue;
+    try {
+      let b64 = sl.data;
+      if (isIdbRef(b64)) {
+        const key = _fxEditContext.kind === 'ambient'
+          ? audioKey(sl._fileId, 0)
+          : audioKey(_fxEditContext.id || APP._pendingSoundId, i);
+        b64 = await idbGet(key);
+      }
+      if (!b64) continue;
+      const bin = atob(b64); const arr = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+      APP.audioBuffers[`_ed_${i}`] = await ctx.decodeAudioData(arr.buffer.slice(0));
+      changed = true;
+    } catch (e) { console.warn('[events] preload edit buffer failed:', e); }
+  }
+  if (changed) renderSlotList();
+}
 
 export function openSoundModal(id, placeholderId = null) {
+  _fxEditContext      = { kind: 'sound', id };
   APP.editId          = id;
   APP._phReplacingId  = placeholderId;
   APP._pendingSoundId = id ? null : uid();
@@ -310,6 +358,7 @@ export function openSoundModal(id, placeholderId = null) {
 
   const s = id ? CItems().find(x => x.id === id) : null;
 
+  _setModalContext('sound');
   document.getElementById('sMTitle').textContent = id ? 'SOUND BEARBEITEN' : 'NEUER SOUND';
   const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
   const chk = (elId, val) => { const el = document.getElementById(elId); if (el) el.checked = val; };
@@ -337,6 +386,7 @@ export function openSoundModal(id, placeholderId = null) {
 
   APP.editSlots = s ? (s.slots || []).map(sl => ({ ...sl })) : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }];
   renderSlotList();
+  _preloadEditBuffers();
   buildIconGrid('iconGrid',  s ? s.icon  : '');
   buildColorOpts('clrOpts',  s ? s.color : 'none');
   buildColorOpts('eTileClrOpts', s && s.tileColor ? s.tileColor : 'none');
@@ -352,6 +402,60 @@ export function openSoundModal(id, placeholderId = null) {
 
   new bootstrap.Modal(document.getElementById('soundModal')).show();
 }
+
+/** Opens the same modal in "ambient" context — Grundeinstellungen mirrors the sound-tile layout
+ *  (file variants with trim, volume, loop/interval, fades, variant-mode) + the full FX accordion. */
+function openAmbientEffectsModal(trackId) {
+  const t = findAmbientTrack(trackId);
+  if (!t) return;
+  _fxEditContext = { kind: 'ambient', id: trackId };
+  APP.editId = null;
+
+  Object.keys(APP.audioBuffers).forEach(k => {
+    if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
+  });
+
+  _setModalContext('ambient');
+  document.getElementById('sMTitle').textContent = 'AMBIENT BEARBEITEN';
+  const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
+  const chk = (elId, val) => { const el = document.getElementById(elId); if (el) el.checked = val; };
+
+  set('eName',   t.name);
+  set('eVol',    t.vol ?? 0.7);
+  set('eVolNum', Math.round((t.vol ?? 0.7) * 100));
+
+  chk('ambLoop',         !!t.loop);
+  chk('ambIntervalMode', !!t.intervalMode);
+  set('ambIntervalMin',  t.intervalMin ?? 10);
+  set('ambIntervalMax',  t.intervalMax ?? 30);
+  set('ambFadeIn',       t.fadeIn  ?? 2);
+  set('ambFadeOut',      t.fadeOut ?? 2);
+
+  _ambVariantMode = t.variantMode === 'rotate' ? 'rotate' : 'random';
+  document.getElementById('ambVariantRandom')?.classList.toggle('is-active', _ambVariantMode === 'random');
+  document.getElementById('ambVariantRotate')?.classList.toggle('is-active', _ambVariantMode === 'rotate');
+
+  const delBtn = document.getElementById('btnDelSound');
+  if (delBtn) delBtn.style.display = 'none'; // deletion is handled from the ambient row itself
+
+  APP.editSlots = (t.files || []).map(f => ({
+    data: f.data, name: f.fileName || 'Datei', trimStart: f.trimStart || 0, trimEnd: f.trimEnd ?? null, _fileId: f.id
+  }));
+  if (!APP.editSlots.length) APP.editSlots = [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null }];
+  renderSlotList();
+  _preloadEditBuffers();
+
+  writeEffectsToUI(t.effects || defaultEffects());
+
+  document.getElementById('soundModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#soundModal .icon-picker__cats');
+    if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
+  }, { once: true });
+
+  new bootstrap.Modal(document.getElementById('soundModal')).show();
+}
+
+document.addEventListener('ambient:editEffects', e => openAmbientEffectsModal(e.detail?.id));
 
 // ─── MACRO MODAL ─────────────────────────────────────────────
 
@@ -415,6 +519,52 @@ function openProfileModal(id) {
   }, { once: true });
   new bootstrap.Modal(document.getElementById('profModal')).show();
 }
+
+// ─── AMBIENT SCENE MODAL ───────────────────────────────────────
+
+let _editAmbientProfileId = null;
+
+function openAmbientProfileModal(id) {
+  _editAmbientProfileId = id;
+  const p = id ? APP.ambient.profiles.find(x => x.id === id) : null;
+
+  document.getElementById('ambProfModalTitle').textContent = id ? 'SZENE BEARBEITEN' : 'NEUE SZENE';
+  const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
+  set('ambProfNameInput', p ? p.name : '');
+  set('ambProfIconInput', p ? p.icon : '');
+
+  const delBtn = document.getElementById('btnDelAmbientProfile');
+  if (delBtn) delBtn.style.display = (id && APP.ambient.profiles.length > 1) ? '' : 'none';
+
+  buildIconGrid('ambProfIconGrid', p ? p.icon : '🌫️');
+  document.getElementById('ambProfModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#ambProfModal .icon-picker__cats');
+    if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
+  }, { once: true });
+  new bootstrap.Modal(document.getElementById('ambProfModal')).show();
+}
+
+document.addEventListener('ambient:editProfile', e => openAmbientProfileModal(e.detail?.id || null));
+
+// ─── AMBIENT TRACK ICON MODAL ───────────────────────────────────
+
+let _editAmbientTrackId = null;
+
+function openAmbientTrackIconModal(trackId) {
+  _editAmbientTrackId = trackId;
+  const t = APP.ambient.profiles.flatMap(p => p.tracks).find(x => x.id === trackId);
+
+  buildIconGrid('ambTrackIconGrid', t ? t.icon : '🌫️');
+  const inp = document.getElementById('ambTrackIconInput');
+  if (inp) inp.value = t ? t.icon : '';
+  document.getElementById('ambTrackIconModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#ambTrackIconModal .icon-picker__cats');
+    if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
+  }, { once: true });
+  new bootstrap.Modal(document.getElementById('ambTrackIconModal')).show();
+}
+
+document.addEventListener('ambient:pickTrackIcon', e => openAmbientTrackIconModal(e.detail?.id));
 
 // ─── PROFILE SWITCH ───────────────────────────────────────────
 
@@ -704,6 +854,30 @@ export function registerEvents() {
     renderProfileTabs(); renderGrid(); toast('Profil gelöscht');
   });
 
+  // Ambient scene modal
+  document.getElementById('btnAddAmbientProfile')?.addEventListener('click', () => openAmbientProfileModal(null));
+  document.getElementById('btnSaveAmbientProfile')?.addEventListener('click', () => {
+    const name = document.getElementById('ambProfNameInput').value.trim() || 'Szene';
+    const icon = document.getElementById('ambProfIconInput').value.trim() || '🌫️';
+    saveAmbientProfile(_editAmbientProfileId, name, icon);
+    bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
+    toast('Szene gespeichert', 'ok');
+  });
+  document.getElementById('btnDelAmbientProfile')?.addEventListener('click', () => {
+    if (APP.ambient.profiles.length <= 1) { toast('Letzte Szene kann nicht gelöscht werden', 'err'); return; }
+    if (!confirm('Ambient-Szene wirklich löschen? Alle enthaltenen Sounds werden entfernt.')) return;
+    deleteAmbientProfile(_editAmbientProfileId);
+    bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
+    toast('Szene gelöscht');
+  });
+
+  // Ambient track icon modal
+  document.getElementById('btnApplyAmbientTrackIcon')?.addEventListener('click', () => {
+    const icon = document.getElementById('ambTrackIconInput').value.trim();
+    if (_editAmbientTrackId && icon) setAmbientTrackIcon(_editAmbientTrackId, icon);
+    bootstrap.Modal.getInstance(document.getElementById('ambTrackIconModal')).hide();
+  });
+
   // Toolbar — grid controls
   document.getElementById('btnColPlus')?.addEventListener('click',  addCol);
   document.getElementById('btnColMinus')?.addEventListener('click', removeCol);
@@ -756,13 +930,15 @@ export function registerEvents() {
     const f = this.files[0]; if (!f) return;
     importData(f, {
       onSuccess: () => {
-        applyProfileSettings(); renderProfileTabs(); renderGrid(); toast('Import ✓', 'ok');
+        applyProfileSettings(); renderProfileTabs(); renderGrid();
+        renderAmbientProfileTabs(); renderAmbientPanel();
+        toast('Import ✓', 'ok');
       }
     });
   });
   document.getElementById('btnReset')?.addEventListener('click', () => {
     resetAll({
-      onDone: () => { applyProfileSettings(); renderProfileTabs(); renderGrid(); }
+      onDone: () => { applyProfileSettings(); renderProfileTabs(); renderGrid(); resetAmbient(); }
     });
   });
 
@@ -802,7 +978,7 @@ export function registerEvents() {
 
   // Sound modal — slot management
   document.getElementById('btnAddSlot')?.addEventListener('click', () => {
-    APP.editSlots.push({ data: null, name: 'Leer', trimStart: 0, trimEnd: null });
+    APP.editSlots.push({ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null });
     renderSlotList();
   });
   document.getElementById('slotFile')?.addEventListener('change', function() {
@@ -811,11 +987,17 @@ export function registerEvents() {
     r.onload = async e => {
       const b64 = e.target.result.split(',')[1];
       const idx = APP.loadingSlotIdx;
-      // Use the pre-generated stable ID so IDB key matches the eventual sound ID.
-      const stableId = APP.editId || APP._pendingSoundId || uid();
-      if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
-      await saveSlotAudio(stableId, idx, b64, null);
-      APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
+      if (_fxEditContext.kind === 'ambient') {
+        const fileId = APP.editSlots[idx]?._fileId || uid();
+        await idbSet(audioKey(fileId, 0), b64);
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId };
+      } else {
+        // Use the pre-generated stable ID so IDB key matches the eventual sound ID.
+        const stableId = APP.editId || APP._pendingSoundId || uid();
+        if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+        await saveSlotAudio(stableId, idx, b64, null);
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
+      }
       try {
         const bin = atob(b64); const arr = new Uint8Array(bin.length);
         for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
@@ -839,10 +1021,17 @@ export function registerEvents() {
         const b64      = e.target.result.split(',')[1];
         const emptyIdx = APP.editSlots.findIndex(sl => !sl.data);
         const slotIdx  = emptyIdx >= 0 ? emptyIdx : APP.editSlots.length;
-        const stableId = APP.editId || APP._pendingSoundId || uid();
-        if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
-        await saveSlotAudio(stableId, slotIdx, b64, null);
-        const slotObj = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
+        let slotObj;
+        if (_fxEditContext.kind === 'ambient') {
+          const fileId = (emptyIdx >= 0 && APP.editSlots[emptyIdx]._fileId) || uid();
+          await idbSet(audioKey(fileId, 0), b64);
+          slotObj = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId };
+        } else {
+          const stableId = APP.editId || APP._pendingSoundId || uid();
+          if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+          await saveSlotAudio(stableId, slotIdx, b64, null);
+          slotObj = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
+        }
         if (emptyIdx >= 0) APP.editSlots[emptyIdx] = slotObj;
         else               APP.editSlots.push(slotObj);
         try {
@@ -858,6 +1047,18 @@ export function registerEvents() {
       r.readAsDataURL(f);
     });
     toast(`${files.length} Dateien geladen`, 'ok');
+  });
+
+  // Ambient basics: variant-mode toggle (Zufällig / Rotierend)
+  document.getElementById('ambVariantRandom')?.addEventListener('click', function() {
+    _ambVariantMode = 'random';
+    this.classList.add('is-active');
+    document.getElementById('ambVariantRotate')?.classList.remove('is-active');
+  });
+  document.getElementById('ambVariantRotate')?.addEventListener('click', function() {
+    _ambVariantMode = 'rotate';
+    this.classList.add('is-active');
+    document.getElementById('ambVariantRandom')?.classList.remove('is-active');
   });
   document.getElementById('ePitch')?.addEventListener('input', function() {
     const lbl = document.getElementById('pitchLbl');
@@ -1133,6 +1334,52 @@ export function registerEvents() {
   // ── SOUND MODAL SAVE ───────────────────────────────────────
 
   document.getElementById('btnSaveSound')?.addEventListener('click', () => {
+    if (_fxEditContext.kind === 'ambient') {
+      const g = id => document.getElementById(id);
+      const t = findAmbientTrack(_fxEditContext.id);
+      if (!t) { bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide(); return; }
+
+      const name = g('eName').value.trim() || 'Ambient';
+      const vol  = parseFloat(g('eVol').value);
+      renameAmbientTrack(_fxEditContext.id, name);
+      if (!isNaN(vol)) setAmbientTrackVolume(_fxEditContext.id, vol);
+      setAmbientTrackEffects(_fxEditContext.id, readEffectsFromUI());
+
+      // Reconcile file variants (incl. trim) from APP.editSlots back into t.files.
+      const keptIds  = new Set();
+      const newFiles = [];
+      APP.editSlots.forEach(sl => {
+        if (!sl || !sl.data) return;
+        const fid = sl._fileId || uid();
+        keptIds.add(fid);
+        newFiles.push({
+          id: fid, data: sl.data, fileName: sl.name || 'Datei',
+          trimStart: sl.trimStart || 0, trimEnd: sl.trimEnd ?? null
+        });
+      });
+      (t.files || []).forEach(f => {
+        if (!keptIds.has(f.id)) { invalidateBuffer(f.id, 0); idbDelete(audioKey(f.id, 0)).catch(() => {}); }
+      });
+      t.files = newFiles;
+
+      t.loop         = !!g('ambLoop').checked;
+      t.intervalMode = !!g('ambIntervalMode').checked;
+      const iMin = parseFloat(g('ambIntervalMin').value);
+      const iMax = parseFloat(g('ambIntervalMax').value);
+      if (!isNaN(iMin)) t.intervalMin = Math.max(0, iMin);
+      if (!isNaN(iMax)) t.intervalMax = Math.max(0, iMax);
+      const fIn  = parseFloat(g('ambFadeIn').value);
+      const fOut = parseFloat(g('ambFadeOut').value);
+      if (!isNaN(fIn))  t.fadeIn  = Math.max(0, fIn);
+      if (!isNaN(fOut)) t.fadeOut = Math.max(0, fOut);
+      t.variantMode = _ambVariantMode;
+
+      persistAmbientNow();
+      renderAmbientPanel();
+      bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
+      toast('Gespeichert ✓', 'ok');
+      return;
+    }
     const g = id => document.getElementById(id);
     const name     = g('eName').value.trim()      || 'SOUND';
     const vol      = parseFloat(g('eVol').value);
@@ -1206,6 +1453,7 @@ export function registerEvents() {
   });
 
   document.getElementById('btnPreviewSound')?.addEventListener('click', async () => {
+    if (_fxEditContext.kind === 'ambient') { toggleAmbientPlay(_fxEditContext.id); return; }
     const slots = APP.editSlots;
     const hasData = slots.some(sl => sl && sl.data);
     if (!hasData) { toast('Keine Audio-Dateien geladen', 'err'); return; }
@@ -1433,7 +1681,7 @@ export function registerEvents() {
         const el = document.createElement('button');
         el.className = 'tl-picker-item btn btn--ghost';
         el.setAttribute('role', 'option');
-        el.innerHTML = `<span style="font-size:1.1em;margin-right:6px">${s.icon || (s.type === 'macro' ? '🪄' : '🔊')}</span>
+        el.innerHTML = `<span style="font-size:1.1em;margin-right:6px">${iconHtmlOr(s.icon, s.type === 'macro' ? '🪄' : '🔊')}</span>
           <span style="flex:1;text-align:left">${s.name}</span>`;
         el.addEventListener('click', () => {
           list.querySelectorAll('.tl-picker-item').forEach(b => b.classList.remove('is-selected'));

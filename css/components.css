@@ -624,6 +624,20 @@
 	background: var(--badge-bg);
 }
 
+/* ─── CUSTOM IMAGE ICONS ───────────────────────────────────────
+   Rendered wherever an emoji would normally sit — sized in `em` so it
+   scales naturally with each context's font-size (tile / tab / row). */
+.icon-img {
+  width: 1em;
+  height: 1em;
+  object-fit: cover;
+  border-radius: 22%;
+  vertical-align: -0.15em;
+  display: inline-block;
+  pointer-events: none;
+}
+.icon-opt .icon-img { width: 70%; height: 70%; border-radius: 22%; }
+
 /* ─── COLOR SWATCHES ─── */
 .color-row {
 	display: flex;
@@ -957,6 +971,47 @@
 	padding-left: var(--space-4);
 	font-size: var(--text-caption);
 }
+
+/* Custom-image upload row — sits above the search bar */
+.icon-picker__upload {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2);
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-sm);
+}
+.icon-picker__upload-preview {
+	width: 34px;
+	height: 34px;
+	border-radius: var(--radius-subtle);
+	border: var(--border-whisper);
+	background: var(--bg-surface);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 1.2rem;
+	flex-shrink: 0;
+	overflow: hidden;
+}
+.icon-picker__upload-preview .icon-img { width: 100%; height: 100%; border-radius: 0; }
+.icon-picker__upload-text {
+	flex: 1;
+	font-size: var(--text-badge);
+	color: var(--text-muted);
+	min-width: 0;
+}
+.icon-picker__upload-text strong { color: var(--text-secondary); font-weight: var(--fw-medium); }
+.icon-picker__upload-clear {
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: var(--space-1);
+	flex-shrink: 0;
+}
+.icon-picker__upload-clear:hover { color: var(--color-orange); }
 
 /* Scrollable horizontal category bar — Telegram-style */
 .icon-picker__cats {
