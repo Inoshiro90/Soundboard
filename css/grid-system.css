@@ -1,0 +1,167 @@
+/* ============================================================
+   GRID-SYSTEM.CSS — Fluides Spalten-Raster (XS/SM/MD/LG/XL/XXL)
+   ============================================================
+   1:1-Umsetzung des Referenz-Rastersystems (siehe Analyse) als
+   CSS Custom Properties. --grid-row-h ist die quadratische
+   Basiseinheit (Spaltenbreite = Zeilenhöhe) und wird live per
+   calc() aus der Viewport-Breite berechnet — kein JS nötig,
+   bleibt bei jedem Resize automatisch korrekt.
+
+   WICHTIG: Chrome-Elemente (Leisten, Buttons, Tabs) verwenden
+   NICHT überall denselben Bruchteil von --grid-row-h. Die
+   Spaltenbreite ist zwischen den Breakpoints nicht monoton (SM
+   ist mit nur 4 Spalten bei bis zu 767px Breite breiter als
+   MD/LG mit mehr Spalten) — jeder Breakpoint definiert daher
+   seinen eigenen Ziel-Bruchteil, der überall auf eine
+   vergleichbare reale Höhe (~40–52px) kommt, statt einen fixen
+   Bruchteil überall anzuwenden.
+   ============================================================ */
+
+/* ─── 1. ROHE RASTER-PARAMETER JE BREAKPOINT (mobile-first) ─── */
+:root {
+  /* XS — ≤575px, 4 Spalten */
+  --grid-cols:    4;
+  --grid-margin:  16px;
+  --grid-gutter:  16px;
+
+  --h-navbar:     calc(var(--grid-row-h) * 0.625); /* ≈ 48px @375px */
+  --h-menubar:    calc(var(--grid-row-h) * 0.625);
+  --h-tabbar:     calc(var(--grid-row-h) * 0.5);
+  --h-btn:        calc(var(--grid-row-h) * 0.5);
+}
+
+@media (min-width: 576px) {
+  /* SM — 576–767px, 4 Spalten (breiteste Einzelspalte im System!) */
+  :root {
+    --grid-cols:   4;
+    --grid-margin: 24px;
+    --grid-gutter: 20px;
+
+    --h-navbar:    calc(var(--grid-row-h) * 0.375);
+    --h-menubar:   calc(var(--grid-row-h) * 0.375);
+    --h-tabbar:    calc(var(--grid-row-h) * 0.25);
+    --h-btn:       calc(var(--grid-row-h) * 0.25);
+  }
+}
+
+@media (min-width: 768px) {
+  /* MD — 768–911px, 8 Spalten */
+  :root {
+    --grid-cols:   8;
+    --grid-margin: 32px;
+    --grid-gutter: 24px;
+
+    --h-navbar:    calc(var(--grid-row-h) * 0.625);
+    --h-menubar:   calc(var(--grid-row-h) * 0.625);
+    --h-tabbar:    calc(var(--grid-row-h) * 0.5);
+    --h-btn:       calc(var(--grid-row-h) * 0.5);
+  }
+}
+
+@media (min-width: 912px) {
+  /* LG — 912–1199px, 12 Spalten (schmalste Einzelspalte im System) */
+  :root {
+    --grid-cols:   12;
+    --grid-margin: 64px;
+    --grid-gutter: 24px;
+
+    --h-navbar:    calc(var(--grid-row-h) * 0.75);
+    --h-menubar:   calc(var(--grid-row-h) * 0.875);
+    --h-tabbar:    calc(var(--grid-row-h) * 0.625);
+    --h-btn:       calc(var(--grid-row-h) * 0.5);
+  }
+}
+
+@media (min-width: 1200px) {
+  /* XL — 1200–1399px, 12 Spalten */
+  :root {
+    --grid-cols:   12;
+    --grid-margin: 120px;
+    --grid-gutter: 24px;
+
+    --h-navbar:    calc(var(--grid-row-h) * 0.625);
+    --h-menubar:   calc(var(--grid-row-h) * 0.75);
+    --h-tabbar:    calc(var(--grid-row-h) * 0.625);
+    --h-btn:       calc(var(--grid-row-h) * 0.5);
+  }
+}
+
+@media (min-width: 1400px) {
+  /* XXL — ≥1400px, 12 Spalten, Rand fließend (~13,54% der Breite) */
+  :root {
+    --grid-cols:   12;
+    --grid-margin: 13.54vw;
+    --grid-gutter: 24px;
+
+    --h-navbar:    calc(var(--grid-row-h) * 0.5);
+    --h-menubar:   calc(var(--grid-row-h) * 0.5);
+    --h-tabbar:    calc(var(--grid-row-h) * 0.375);
+    --h-btn:       calc(var(--grid-row-h) * 0.375);
+  }
+}
+
+/* ─── 2. QUADRATISCHE BASISEINHEIT ───────────────────────────
+   Spaltenbreite = Zeilenhöhe, live berechnet:
+   container = 100vw - 2·margin
+   colw      = (container - gutter·(cols-1)) / cols            */
+:root {
+  --grid-row-h: calc(
+    (100vw - 2 * var(--grid-margin) - var(--grid-gutter) * (var(--grid-cols) - 1))
+    / var(--grid-cols)
+  );
+
+  /* Breitenformel für N Spalten (Popover/Modal-Breiten):
+     width(N) = N·colw + (N-1)·gutter */
+  --w-1col:  var(--grid-row-h);
+  --w-2col:  calc(var(--grid-row-h) * 2  + var(--grid-gutter) * 1);
+  --w-3col:  calc(var(--grid-row-h) * 3  + var(--grid-gutter) * 2);
+  --w-4col:  calc(var(--grid-row-h) * 4  + var(--grid-gutter) * 3);
+  --w-5col:  calc(var(--grid-row-h) * 5  + var(--grid-gutter) * 4);
+  --w-6col:  calc(var(--grid-row-h) * 6  + var(--grid-gutter) * 5);
+  --w-7col:  calc(var(--grid-row-h) * 7  + var(--grid-gutter) * 6);
+  --w-8col:  calc(var(--grid-row-h) * 8  + var(--grid-gutter) * 7);
+  --w-9col:  calc(var(--grid-row-h) * 9  + var(--grid-gutter) * 8);
+  --w-10col: calc(var(--grid-row-h) * 10 + var(--grid-gutter) * 9);
+}
+
+/* ─── 3. MODAL-BREITEN JE DIALOG (siehe Analyse Abschnitt 5) ───
+   Nur ab MD (≥768px) gesetzt — auf XS/SM bleiben Modals bei
+   Bootstraps mobiler Default-Breite (praktisch voll). Jeder
+   Dialog bekommt seine eigene Spaltenbreite statt sich eine
+   Bootstrap-Größenklasse (.modal-lg) mit anderen Dialogen zu
+   teilen, die im Raster unterschiedlich groß sein sollen. */
+@media (min-width: 768px) {
+  #soundModal   .modal-dialog { max-width: var(--w-8col); }  /* Sound-Editor: MD = voll */
+  #soundFxModal .modal-dialog,
+  #macroModal   .modal-dialog { max-width: var(--w-7col); }
+  #trimModal    .modal-dialog { max-width: var(--w-6col); }
+  #profModal    .modal-dialog,
+  #ambProfModal .modal-dialog,
+  #ambTrackIconModal .modal-dialog { max-width: var(--w-4col); }
+  #macroItemPickerModal .modal-dialog { max-width: var(--w-5col); }
+}
+
+@media (min-width: 912px) {
+  #soundModal   .modal-dialog { max-width: var(--w-10col); }
+  #soundFxModal .modal-dialog,
+  #macroModal   .modal-dialog { max-width: var(--w-8col); }
+  #trimModal    .modal-dialog { max-width: var(--w-7col); }
+}
+
+@media (min-width: 1200px) {
+  #soundModal   .modal-dialog { max-width: var(--w-9col); }
+  #soundFxModal .modal-dialog,
+  #macroModal   .modal-dialog { max-width: var(--w-7col); }
+  #trimModal    .modal-dialog { max-width: var(--w-6col); }
+}
+
+@media (min-width: 1400px) {
+  #soundModal   .modal-dialog { max-width: var(--w-8col); }
+  #soundFxModal .modal-dialog,
+  #macroModal   .modal-dialog { max-width: var(--w-6col); }
+  #trimModal    .modal-dialog { max-width: var(--w-5col); }
+  #profModal    .modal-dialog,
+  #ambProfModal .modal-dialog,
+  #ambTrackIconModal .modal-dialog { max-width: var(--w-3col); }
+  #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
+}

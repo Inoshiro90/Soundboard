@@ -6,12 +6,13 @@
  */
 import { load }                        from './storage.js';
 import { registerEvents }              from './events.js';
-import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon } from './ui.js';
+import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, initTileAddChoice } from './ui.js';
 import { ensurePitchWorklet, actx, hasAudioContext } from './audio.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
 import { APP }                         from './state.js';
 import { registerAmbientEvents }       from './ambient.js';
+import { initDisclosure }              from './ui/disclosure.js';
 
 async function init() {
   await openDB();
@@ -23,6 +24,12 @@ async function init() {
   syncThemeIcon();
   registerEvents();
   registerAmbientEvents();
+
+  // Progressive-disclosure popovers (Einstellungen / Wiedergabe …).
+  // Purely presentational — wraps existing controls, no state logic here.
+  initDisclosure();
+  // "+"-Kachel: gemeinsames Sound/Makro-Auswahl-Popover
+  initTileAddChoice();
 
   // Ctrl+Z / Ctrl+Y
   document.addEventListener('keydown', e => {

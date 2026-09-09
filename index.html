@@ -10,11 +10,13 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 
   <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/grid-system.css"><!-- Fluides Spalten-Raster (XS–XXL) -->
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/ambient.css">
   <link rel="stylesheet" href="css/utilities.css">
   <link rel="stylesheet" href="css/mobile.css"><!-- Phase 5 -->
+  <link rel="stylesheet" href="css/disclosure.css"><!-- Progressive Disclosure: popover toolbars -->
   <link rel="stylesheet" href="css/fixes.css"><!-- Bugfixes -->
   <!-- Lucide Icons — https://lucide.dev (replaces broken FA icon variants) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -56,8 +58,11 @@
     </nav>
 
     <!-- ══════════════════════════════ MENUBAR ═══════════════════════════════
-       Main action bar: volume + primary action buttons.
-       Labels always visible — no icon-only design.
+       Primäre Werkzeugzone: Lautstärke + Stop in einer Zeile (Lautstärke
+       nimmt auf schmalen Viewports den Großteil der Zeile ein). Verwalten,
+       Speichern, Undo/Redo sind seltener gebraucht und daher in einem
+       gemeinsamen "Einstellungen"-Popover zusammengefasst statt als
+       einzelne Buttons in der Leiste.
   ══════════════════════════════════════════════════════════════════════════ -->
     <div class="app-menubar" role="toolbar" aria-label="Hauptwerkzeuge">
 
@@ -74,215 +79,105 @@
         <span class="menubar-volume__label u-text-badge">%</span>
       </div>
 
-      <div class="menubar-sep" aria-hidden="true"></div>
-
-      <!-- Data: export/import/reset — global, works in either view -->
-      <button class="menubar-btn" id="btnOptsToggle" title="Daten exportieren, importieren oder zurücksetzen"
-        aria-label="Daten-Optionen ein-/ausblenden" aria-expanded="false" aria-controls="optsBar">
-        <i class="fa-solid fa-database" aria-hidden="true"></i>
-        Daten
-      </button>
-
-      <!-- Save: persist to localStorage -->
-      <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
-        aria-label="Speichern">
-        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-        Speichern
+      <!-- Stop: nur im Sound-Modus relevant (stoppt Sound-Kacheln, nicht
+           Ambient) — Sichtbarkeit wird von setViewMode() mitgesteuert. -->
+      <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle Sounds stoppen" aria-label="Alle Sounds stoppen">
+        <i class="fa-solid fa-stop" aria-hidden="true"></i>
+        <span class="menubar-btn__label">Stop</span>
       </button>
 
       <div class="menubar-sep" aria-hidden="true"></div>
 
-      <!-- Phase 4: Undo / Redo -->
-      <button class="menubar-btn" id="btnUndo" title="Rückgängig (Ctrl+Z)" aria-label="Rückgängig" disabled>
-        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-        Undo
-      </button>
-      <button class="menubar-btn" id="btnRedo" title="Wiederholen (Ctrl+Y)" aria-label="Wiederholen" disabled>
-        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-        Redo
-      </button>
+      <!-- Einstellungen: Verwalten (Export/Import/Reset) + Speichern +
+           Undo/Redo — occasional/administrative actions (Ebene 3),
+           gebündelt statt einzeln in der Leiste. -->
+      <div class="popover-wrap">
+        <button class="menubar-btn popover-toggle" id="btnAppSettingsToggle" data-disclosure-toggle
+          aria-expanded="false" aria-controls="appSettingsPopover"
+          title="Verwalten, Speichern, Rückgängig/Wiederholen" aria-label="Einstellungen ein-/ausblenden">
+          <i class="fa-solid fa-gear" aria-hidden="true"></i>
+          <span class="menubar-btn__label">Einstellungen</span>
+          <i class="fa-solid fa-chevron-down popover-toggle__chevron" aria-hidden="true"></i>
+        </button>
+        <div class="popover-panel" id="appSettingsPopover" hidden>
+
+          <span class="popover-panel__label">Verwalten</span>
+          <div class="popover-panel__group">
+            <button class="btn btn--sm" id="btnExport" title="Alle Profile als JSON-Datei herunterladen"
+              aria-label="Daten exportieren">
+              <i class="fa-solid fa-download" aria-hidden="true"></i> Export
+            </button>
+            <button class="btn btn--sm" id="btnImportTrigger" title="JSON-Datei laden und Profile importieren"
+              aria-label="Daten importieren">
+              <i class="fa-solid fa-upload" aria-hidden="true"></i> Import
+            </button>
+            <input type="file" id="importFile" accept=".json" class="u-hidden" aria-hidden="true">
+            <button class="btn btn--sm btn--danger" id="btnReset" title="Alle Daten löschen und App zurücksetzen"
+              aria-label="Alles zurücksetzen">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Reset
+            </button>
+          </div>
+
+          <span class="popover-panel__label">Verlauf</span>
+          <div class="popover-panel__group">
+            <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
+              aria-label="Speichern">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+              Speichern
+            </button>
+            <button class="menubar-btn" id="btnUndo" title="Rückgängig (Ctrl+Z)" aria-label="Rückgängig" disabled>
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              Undo
+            </button>
+            <button class="menubar-btn" id="btnRedo" title="Wiederholen (Ctrl+Y)" aria-label="Wiederholen" disabled>
+              <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+              Redo
+            </button>
+          </div>
+
+        </div>
+      </div>
 
     </div>
 
     <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
        Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
        betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
+       Anordnen/Tauschen wurden entfernt (werden durch ein neues
+       Spalten-System ersetzt); Makro-Erstellung lebt jetzt im "+"-Menü der
+       leeren Kacheln.
   ══════════════════════════════════════════════════════════════════════════ -->
     <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
 
-      <!-- Stop: ends all currently playing sounds -->
-      <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle laufenden Sounds sofort stoppen"
-        aria-label="Alle Sounds stoppen">
-        <i class="fa-solid fa-square" aria-hidden="true"></i>
-        Stop
-      </button>
-
-      <!-- New Macro: opens macro creation dialog -->
-      <button class="menubar-btn" id="btnNewMacro" title="Neues Makro erstellen (automatisierte Abfolge von Sounds)"
-        aria-label="Neues Makro erstellen">
-        <i class="fa-solid fa-scroll" aria-hidden="true"></i>
-        Makro
-      </button>
-
-      <!-- Arrange: enter tile arrangement mode -->
-      <button class="menubar-btn" id="btnArrange" title="Kacheln neu anordnen, ausrichten und verschieben"
-        aria-label="Anordnungs-Modus">
-        <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
-        Anordnen
-      </button>
-
-      <!-- Swap rows/cols: open move bar -->
-      <button class="menubar-btn" id="btnMoveMode" title="Ganze Reihen oder Spalten tauschen"
-        aria-label="Reihen und Spalten tauschen">
-        <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
-        Tauschen
-      </button>
-
-      <div class="menubar-sep" aria-hidden="true"></div>
-
-      <!-- Playback behaviour for sound tiles -->
-      <div class="options-bar__inner" style="padding:0;gap:var(--space-3);flex-wrap:nowrap">
-        <label title="Mehrere Sounds können gleichzeitig abspielen">
-          <input type="checkbox" id="setOverlap" checked>
-          Überlagern
-        </label>
-        <label title="Klick auf laufenden Sound stoppt ihn">
-          <input type="checkbox" id="setStopReplay">
-          Stop bei Neustart
-        </label>
-        <label title="Mehrfachklick erzeugt überlagerte Kopien">
-          <input type="checkbox" id="setMultiClick" checked>
-          Mehrfachklick
-        </label>
+      <!-- Wiedergabe: playback behaviour for sound tiles. Rarely changed
+           once set, so tucked behind a popover (Ebene 3) instead of
+           sitting permanently in the menubar. -->
+      <div class="popover-wrap">
+        <button class="menubar-btn popover-toggle" id="btnPlaybackSettingsToggle" data-disclosure-toggle
+          aria-expanded="false" aria-controls="playbackSettingsPopover" title="Wiedergabe-Verhalten der Sound-Kacheln"
+          aria-label="Wiedergabe-Einstellungen ein-/ausblenden">
+          <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+          <span class="menubar-btn__label">Wiedergabe</span>
+          <i class="fa-solid fa-chevron-down popover-toggle__chevron" aria-hidden="true"></i>
+        </button>
+        <div class="popover-panel" id="playbackSettingsPopover" hidden>
+          <label class="popover-check" title="Mehrere Sounds können gleichzeitig abspielen">
+            <input type="checkbox" id="setOverlap" checked>
+            Überlagern
+          </label>
+          <label class="popover-check" title="Klick auf laufenden Sound stoppt ihn">
+            <input type="checkbox" id="setStopReplay">
+            Stop bei Neustart
+          </label>
+          <label class="popover-check" title="Mehrfachklick erzeugt überlagerte Kopien">
+            <input type="checkbox" id="setMultiClick" checked>
+            Mehrfachklick
+          </label>
+        </div>
       </div>
 
     </div>
 
-
-
-    <!-- ════════════════════════════ OPTIONS BAR ═════════════════════════════
-       Collapsible audio settings + data management
-  ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="options-bar" id="optsBar" aria-label="Daten-Optionen" aria-hidden="true">
-      <div class="options-bar__inner">
-
-        <span class="toolbar__label">Daten</span>
-        <button class="btn btn--sm" id="btnExport" title="Alle Profile als JSON-Datei herunterladen"
-          aria-label="Daten exportieren">
-          <i class="fa-solid fa-download" aria-hidden="true"></i> Export
-        </button>
-        <button class="btn btn--sm" id="btnImportTrigger" title="JSON-Datei laden und Profile importieren"
-          aria-label="Daten importieren">
-          <i class="fa-solid fa-upload" aria-hidden="true"></i> Import
-        </button>
-        <input type="file" id="importFile" accept=".json" class="u-hidden" aria-hidden="true">
-        <button class="btn btn--sm btn--danger" id="btnReset" title="Alle Daten löschen und App zurücksetzen"
-          aria-label="Alles zurücksetzen">
-          <i class="fa-solid fa-trash" aria-hidden="true"></i> Reset
-        </button>
-
-      </div>
-    </nav>
-
-    <!-- ════════════════════════════ ARRANGE BAR ═════════════════════════════ -->
-    <nav class="arrange-bar is-hidden" id="arrangeBar" role="toolbar" aria-label="Anordnungs-Werkzeuge">
-      <span class="arrange-bar__label">
-        <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
-        Anordnen
-      </span>
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <span class="toolbar__label u-text-muted">Reihen</span>
-      <button class="btn btn--sm" id="arrRowLeft" title="Sounds in jeder Reihe linksbündig" aria-label="Linksbündig">
-        <i class="fa-solid fa-align-left" aria-hidden="true"></i> Links
-      </button>
-      <button class="btn btn--sm" id="arrRowCenter" title="Sounds in jeder Reihe zentrieren" aria-label="Mittig">
-        <i class="fa-solid fa-align-center" aria-hidden="true"></i> Mitte
-      </button>
-      <button class="btn btn--sm" id="arrRowRight" title="Sounds in jeder Reihe rechtsbündig" aria-label="Rechtsbündig">
-        <i class="fa-solid fa-align-right" aria-hidden="true"></i> Rechts
-      </button>
-      <button class="btn btn--sm" id="arrRowJustify" title="Sounds gleichmäßig in jeder Reihe verteilen"
-        aria-label="Gleichmäßig verteilen">
-        <i class="fa-solid fa-align-justify" aria-hidden="true"></i> Verteilt
-      </button>
-
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <span class="toolbar__label u-text-muted">Spalten</span>
-      <button class="btn btn--sm" id="arrColTop" title="Sounds in jeder Spalte nach oben verschieben"
-        aria-label="Nach oben">
-        <i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Oben
-      </button>
-      <button class="btn btn--sm" id="arrColBottom" title="Sounds in jeder Spalte nach unten verschieben"
-        aria-label="Nach unten">
-        <i class="fa-solid fa-arrow-down" aria-hidden="true"></i> Unten
-      </button>
-
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <button class="btn btn--sm" id="arrCompact" title="Alle Lücken schließen und Sounds komprimieren"
-        aria-label="Lücken schließen">
-        <i class="fa-solid fa-compress" aria-hidden="true"></i> Komprimieren
-      </button>
-      <button class="btn btn--sm" id="btnLockToggle"
-        title="Kacheln sperren: gesperrte Kacheln werden beim Anordnen nicht bewegt" aria-label="Sperren-Modus">
-        <i class="fa-solid fa-lock" aria-hidden="true"></i> Sperren
-      </button>
-      <button class="btn btn--sm" id="btnUndoArrange" title="Letzte Anordnungsoperation rückgängig machen"
-        aria-label="Rückgängig">
-        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Rückgängig
-      </button>
-
-      <span class="u-ml-auto"></span>
-      <!-- <button class="btn btn--sm btn--danger" id="btnCloseArrange" aria-label="Anordnungs-Modus beenden">
-        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Schließen
-      </button> -->
-    </nav>
-
-    <!-- ═══════════════════════════════ MOVE BAR ═════════════════════════════ -->
-    <nav class="move-bar is-hidden" id="moveBar" role="toolbar" aria-label="Reihen und Spalten tauschen">
-      <span class="move-bar__label">
-        <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
-        Reihen / Spalten tauschen
-      </span>
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <div class="move-bar__select-group">
-        <span>Reihe</span>
-        <select id="mvRowA" aria-label="Reihe A">
-          <option value="">A</option>
-        </select>
-        <span aria-hidden="true">↔</span>
-        <select id="mvRowB" aria-label="Reihe B">
-          <option value="">B</option>
-        </select>
-        <button class="btn btn--sm" id="btnSwapRows" aria-label="Reihen tauschen">
-          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Tauschen
-        </button>
-      </div>
-
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <div class="move-bar__select-group">
-        <span>Spalte</span>
-        <select id="mvColA" aria-label="Spalte A">
-          <option value="">A</option>
-        </select>
-        <span aria-hidden="true">↔</span>
-        <select id="mvColB" aria-label="Spalte B">
-          <option value="">B</option>
-        </select>
-        <button class="btn btn--sm" id="btnSwapCols" aria-label="Spalten tauschen">
-          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Tauschen
-        </button>
-      </div>
-
-      <span class="u-ml-auto"></span>
-      <!-- <button class="btn btn--sm" id="btnCloseMoveMode" aria-label="Tausch-Modus beenden">
-        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Schließen
-      </button> -->
-    </nav>
     <!-- ════════════════════════════ PROFILE TABS ════════════════════════════
        Sound-effect profiles. Hidden while in Ambient view (setViewMode()).
   ══════════════════════════════════════════════════════════════════════════ -->
@@ -297,47 +192,21 @@
     <!-- ═══════════════════════════════ TOOLBAR ══════════════════════════════
        Grid size controls + category filter tabs. Hidden in Ambient view.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="toolbar" id="soundToolbar" role="toolbar" aria-label="Raster-Steuerung">
-      <span class="toolbar__label">Raster</span>
+    <nav class="toolbar" id="soundToolbar" role="toolbar" aria-label="Kategorien">
 
-      <!-- Columns: icon + controls -->
-      <div class="grid-control-group" aria-label="Spalten anpassen">
-        <i data-lucide="columns-3" class="grid-control-group__icon" aria-hidden="true" title="Spalten"></i>
-        <div class="grid-adj">
-          <button class="btn btn--icon" id="btnColMinus" title="Eine Spalte entfernen" aria-label="Spalte entfernen">
-            <i class="fa-solid fa-minus" aria-hidden="true"></i>
-          </button>
-          <input type="number" id="maxCols" class="toolbar__number" min="1" max="32" value="10"
-            aria-label="Anzahl Spalten">
-          <button class="btn btn--icon" id="btnColPlus" title="Eine Spalte hinzufügen" aria-label="Spalte hinzufügen">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-          </button>
-        </div>
-      </div>
-
-      <span class="toolbar__label u-text-muted" aria-hidden="true">×</span>
-
-      <!-- Rows: icon + controls -->
-      <div class="grid-control-group" aria-label="Reihen anpassen">
-        <i data-lucide="rows-3" class="grid-control-group__icon" aria-hidden="true" title="Reihen"></i>
-        <div class="grid-adj">
-          <button class="btn btn--icon" id="btnRowMinus" title="Eine Reihe entfernen" aria-label="Reihe entfernen">
-            <i class="fa-solid fa-minus" aria-hidden="true"></i>
-          </button>
-          <input type="number" id="maxRows" class="toolbar__number" min="1" max="32" value="10"
-            aria-label="Anzahl Reihen">
-          <button class="btn btn--icon" id="btnRowPlus" title="Eine Reihe hinzufügen" aria-label="Reihe hinzufügen">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-          </button>
-        </div>
-      </div>
-
+      <!-- Raster-Spalten/-Reihen-Option entfernt (siehe Auftrag) — wird
+           durch ein neues Spalten-System ersetzt. Die vier Werte bleiben
+           als reine State-Felder erhalten (renderGrid()/applyProfileSettings()
+           lesen sie weiterhin über CSettings()), damit an Datenmodell und
+           Rendering-Logik nichts geändert werden musste. -->
+      <input type="hidden" id="maxCols" value="10">
+      <input type="hidden" id="maxRows" value="10">
       <input type="hidden" id="tileW" value="120">
       <input type="hidden" id="tileH" value="120">
 
-      <div class="toolbar__separator" aria-hidden="true"></div>
-
-      <!-- Category filter — populated by updateCategories() -->
+      <!-- Category filter — populated by updateCategories(). Stays
+           permanently visible: filtering sound tiles by category is a
+           frequent action, not an advanced one. -->
       <div class="category-tabs" id="catTabs" role="tablist" aria-label="Kategorien">
         <!-- "Alle" = show all sound tiles regardless of category (filter reset) -->
         <button class="category-tab is-active" style="display: none;" data-cat="all" role="tab" aria-selected="true"
@@ -349,6 +218,18 @@
     <main class="board" id="soundBoard" aria-label="Soundboard">
       <div class="tile-grid" id="grid" role="grid" aria-label="Sound-Kacheln"></div>
     </main>
+
+    <!-- Gemeinsames "+"-Auswahl-Popover für leere Kacheln: Sound oder
+         Makro anlegen. Eine einzelne Instanz statt einer pro Kachel —
+         wird von ui.js (_openTileAddChoice) per JS positioniert. -->
+    <div class="popover-panel popover-panel--row" id="tileAddChoicePopover" role="menu" aria-label="Hinzufügen" hidden>
+      <button class="btn btn--sm" id="tileAddChoiceSound" role="menuitem">
+        <i class="fa-solid fa-music" aria-hidden="true"></i> Sound
+      </button>
+      <button class="btn btn--sm" id="tileAddChoiceMacro" role="menuitem">
+        <i class="fa-solid fa-scroll" aria-hidden="true"></i> Makro
+      </button>
+    </div>
 
     <!-- ═══════════════════════════ AMBIENT SCENE TABS ═══════════════════════════
        Same tab pattern as the sound profiles above — each scene (Marktplatz,
@@ -598,55 +479,92 @@
             </div>
           </div>
 
-          <!-- ══ EFFECTS ACCORDION ══════════════════════════════ -->
-
-          <!-- 1. Basic FX -->
-          <div class="sm-section">
-            <button class="sm-section-toggle" data-target="smFxBasic">
-              <span><i class="fa-solid fa-waveform-lines" aria-hidden="true"></i>
+          <!-- ══ AUDIO-EFFEKTE: KOMPAKTER EINSTIEG ═══════════════════════
+               Die komplette Effekt-Sektion (Filter, EQ, Dynamik, Distortion,
+               Reverb, Delay, Spatial, Erweitert, Export) ist keine essentielle
+               Grundfunktion eines Sounds — sie lebt daher in einer eigenen
+               Dialogbox (#soundFxModal) statt als lange Accordion-Liste hier
+               im Hauptformular. Hier bleibt nur der Ein/Aus-Schalter plus ein
+               Überblick, was gerade aktiv ist. ══════════════════════════════ -->
+          <div class="sm-fx-entry">
+            <div class="sm-fx-entry__head">
+              <label class="fx-toggle sm-inline-toggle" title="Effekte ein/aus">
+                <input type="checkbox" id="fxEnabled">
+                <span class="fx-toggle__track"></span>
+              </label>
+              <span class="sm-fx-entry__title">
+                <i class="fa-solid fa-waveform-lines" aria-hidden="true"></i>
                 Audio-Effekte
                 <span class="sm-fx-badge" id="smFxBadge" style="display:none">●</span>
               </span>
-              <div class="u-flex u-gap-2" style="align-items:center">
-                <label class="fx-toggle sm-inline-toggle" title="Effekte ein/aus" onclick="event.stopPropagation()">
-                  <input type="checkbox" id="fxEnabled">
-                  <span class="fx-toggle__track"></span>
-                </label>
-                <i class="fa-solid fa-chevron-down sm-chevron" aria-hidden="true"></i>
-              </div>
-            </button>
-            <div class="sm-section-body" id="smFxBasic" style="display:none">
-              <div class="fx-row u-mt-2">
-                <label class="fx-label" for="fxPreset">Preset</label>
-                <select class="form-select form-select-sm fx-preset-select" id="fxPreset">
-                  <option value="">— Kein Preset —</option>
-                  <optgroup label="Phase 1">
-                    <option value="cave">🏔️ Höhle</option>
-                    <option value="behind_wall">🧱 Hinter Wand</option>
-                    <option value="tunnel">🚇 Tunnel</option>
-                    <option value="bathroom">🚿 Badezimmer</option>
-                    <option value="metal_room">🔩 Metallraum</option>
-                    <option value="phone">📞 Telefon</option>
-                    <option value="underwater">🌊 Unterwasser</option>
-                  </optgroup>
-                  <optgroup label="Phase 2">
-                    <option value="radio">📻 Radio</option>
-                    <option value="lofi">🎞️ Lo-Fi</option>
-                    <option value="megaphone">📣 Megafon</option>
-                    <option value="monster">👹 Monster</option>
-                    <option value="dark_cave">🕳️ Dunkle Höhle</option>
-                    <option value="huge_hall">🏛️ Riesiger Saal</option>
-                    <option value="vintage_tape">📼 Vintage Tape</option>
-                    <option value="tight_room">📦 Kleiner Raum</option>
-                    <option value="dreamy_echo">✨ Traumhaftes Echo</option>
-                    <option value="broken_speaker">💥 Kaputte Box</option>
-                  </optgroup>
-                </select>
-                <button class="btn btn--sm btn--ghost" id="btnFxReset" title="Alle Effekte zurücksetzen">
-                  <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-                </button>
-              </div>
+              <button class="btn btn--sm" id="btnOpenFxModal" type="button">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                Bearbeiten
+              </button>
             </div>
+            <div class="sm-fx-summary u-mt-2" id="smFxActiveSummary" aria-live="polite"></div>
+          </div>
+
+          <!-- Phantom panel filler (keeps id="fxPanel" alive for JS) -->
+          <div id="fxPanel" style="display:none"></div>
+
+
+        </div><!-- /sm-body -->
+
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ═════════════════════════ AUDIO-EFFEKTE DIALOG ═══════════════════════════
+       Eigene Dialogbox statt langer Accordion-Liste im Sound-Editor (siehe
+       "sm-fx-entry" dort) — schafft Platz im Hauptformular und hält Filter/
+       EQ/Dynamik/Distortion/Reverb/Delay/Spatial/Erweitert/Export als
+       zusammengehörige, aber klar sekundäre Einheit beisammen. Wird über
+       #soundModal geöffnet und bleibt technisch unabhängig: alle Feld-IDs
+       sind unverändert, writeEffectsToUI()/readEffectsFromUI() lesen und
+       schreiben sie unabhängig davon, in welchem Dialog sie gerade liegen. -->
+  <div class="modal fade" id="soundFxModal" tabindex="-1" aria-labelledby="soundFxModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="soundFxModalTitle">
+            <i class="fa-solid fa-waveform-lines" aria-hidden="true"></i>
+            Audio-Effekte
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="fx-row">
+            <label class="fx-label" for="fxPreset">Preset</label>
+            <select class="form-select form-select-sm fx-preset-select" id="fxPreset">
+              <option value="">— Kein Preset —</option>
+              <optgroup label="Phase 1">
+                <option value="cave">🏔️ Höhle</option>
+                <option value="behind_wall">🧱 Hinter Wand</option>
+                <option value="tunnel">🚇 Tunnel</option>
+                <option value="bathroom">🚿 Badezimmer</option>
+                <option value="metal_room">🔩 Metallraum</option>
+                <option value="phone">📞 Telefon</option>
+                <option value="underwater">🌊 Unterwasser</option>
+              </optgroup>
+              <optgroup label="Phase 2">
+                <option value="radio">📻 Radio</option>
+                <option value="lofi">🎞️ Lo-Fi</option>
+                <option value="megaphone">📣 Megafon</option>
+                <option value="monster">👹 Monster</option>
+                <option value="dark_cave">🕳️ Dunkle Höhle</option>
+                <option value="huge_hall">🏛️ Riesiger Saal</option>
+                <option value="vintage_tape">📼 Vintage Tape</option>
+                <option value="tight_room">📦 Kleiner Raum</option>
+                <option value="dreamy_echo">✨ Traumhaftes Echo</option>
+                <option value="broken_speaker">💥 Kaputte Box</option>
+              </optgroup>
+            </select>
+            <button class="btn btn--sm btn--ghost" id="btnFxReset" title="Alle Effekte zurücksetzen">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+            </button>
           </div>
 
           <!-- 2. Filters -->
@@ -922,16 +840,16 @@
               </div>
             </div>
           </div>
-
-          <!-- Phantom panel filler (keeps id="fxPanel" alive for JS) -->
-          <div id="fxPanel" style="display:none"></div>
-
-        </div><!-- /sm-body -->
-
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span class="u-text-muted u-text-badge">Änderungen wirken sofort auf die Vorschau.</span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
       </div>
     </div>
   </div>
-
 
   <!-- ═══════════════════════════ MACRO MODAL ══════════════════════════════════ -->
   <div class="modal fade" id="macroModal" tabindex="-1" aria-labelledby="mMTitle" aria-hidden="true">
@@ -945,61 +863,72 @@
 
         <div class="modal-body">
           <div class="row g-3 mb-2">
-            <div class="col-sm-4">
+            <div class="col-sm-5">
               <label class="form-label" for="mName">Name</label>
               <input class="form-control" id="mName" placeholder="Makro-Name">
             </div>
-            <div class="col-sm-2">
+            <div class="col-sm-3">
               <label class="form-label" for="mRepeat">Wiederholen</label>
               <input type="number" class="form-control" id="mRepeat" min="1" max="999" value="1">
             </div>
-            <div class="col-sm-3">
-              <label class="form-label" for="mRepDelay">Pause Wdh. (ms)</label>
-              <input type="number" class="form-control" id="mRepDelay" min="0" value="500">
-            </div>
-            <div class="col-sm-3">
+            <div class="col-sm-4">
               <label class="form-label" for="mHotkey">Hotkey</label>
               <input type="text" class="hotkey-field" id="mHotkey" placeholder="Klick + Tasten" readonly>
             </div>
           </div>
 
-          <div class="row g-2 mb-2">
-            <div class="col-12">
-              <label class="form-label">Icon</label>
-              <div id="mIconGrid" class="icon-grid-makro" aria-hidden="true"></div>
-              <input class="form-control u-mt-2" id="mIcon" placeholder="🪄" maxlength="4"
-                style="font-size:1rem;text-align:center" aria-label="Emoji direkt eingeben">
-            </div>
-            <input type="hidden" id="mTileW">
-            <input type="hidden" id="mTileH">
-          </div>
+          <!-- Erweiterte Einstellungen: Icon, Abspiel-Modus, Farben, Wdh.-Pause —
+               seltener angepasst als Name/Hotkey/Wiederholen, daher standardmäßig
+               eingeklappt (gleiches Accordion-Muster wie im Sound-Editor). -->
+          <div class="sm-section u-mb-2">
+            <button class="sm-section-toggle" data-target="mAdvanced">
+              <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Erweiterte Einstellungen</span>
+              <i class="fa-solid fa-chevron-down sm-chevron" aria-hidden="true"></i>
+            </button>
+            <div class="sm-section-body" id="mAdvanced" style="display:none">
 
-          <div class="row g-2 mb-2">
-            <div class="col-sm-6">
-              <label class="form-label" for="mPlayMode">Abspiel-Modus</label>
-              <select class="form-select" id="mPlayMode">
-                <option value="parallel">Parallel — alle gleichzeitig</option>
-                <option value="sequential">Sequenziell — nacheinander warten</option>
-                <option value="random">Zufällig — zufällige Reihenfolge</option>
-              </select>
-            </div>
-            <div class="col-sm-6 u-flex" style="align-items:flex-end">
-              <small class="u-text-muted u-text-badge u-line-height-sm">
+              <div class="row g-2 mb-2 u-mt-1">
+                <div class="col-sm-6">
+                  <label class="form-label" for="mRepDelay">Pause zw. Wiederholungen (ms)</label>
+                  <input type="number" class="form-control" id="mRepDelay" min="0" value="500">
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label" for="mPlayMode">Abspiel-Modus</label>
+                  <select class="form-select" id="mPlayMode">
+                    <option value="parallel">Parallel — alle gleichzeitig</option>
+                    <option value="sequential">Sequenziell — nacheinander warten</option>
+                    <option value="random">Zufällig — zufällige Reihenfolge</option>
+                  </select>
+                </div>
+              </div>
+              <p class="u-text-muted u-text-badge u-line-height-sm u-mb-2">
                 <strong>Sequenziell:</strong> nächster Schritt startet wenn vorheriger Sound fertig ist.
                 <strong>Parallel:</strong> alle starten sofort.
-              </small>
-            </div>
-          </div>
+              </p>
 
-          <div class="mb-2">
-            <label class="form-label">Farbe (Akzent)</label>
-            <div class="color-row" id="mClrOpts" role="radiogroup" aria-label="Farbe wählen"></div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Kachel-Hintergrund</label>
-            <!-- Same color palette — free color picker removed -->
-            <div class="color-row" id="mTileClrOpts" role="radiogroup" aria-label="Makro Kachel-Hintergrundfarbe"></div>
-            <input type="hidden" id="mTileClr">
+              <div class="row g-2 mb-2">
+                <div class="col-12">
+                  <label class="form-label">Icon</label>
+                  <div id="mIconGrid" class="icon-grid-makro" aria-hidden="true"></div>
+                  <input class="form-control u-mt-2" id="mIcon" placeholder="🪄" maxlength="4"
+                    style="font-size:1rem;text-align:center" aria-label="Emoji direkt eingeben">
+                </div>
+                <input type="hidden" id="mTileW">
+                <input type="hidden" id="mTileH">
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label">Farbe (Akzent)</label>
+                <div class="color-row" id="mClrOpts" role="radiogroup" aria-label="Farbe wählen"></div>
+              </div>
+              <div class="mb-1">
+                <label class="form-label">Kachel-Hintergrund</label>
+                <!-- Same color palette — free color picker removed -->
+                <div class="color-row" id="mTileClrOpts" role="radiogroup" aria-label="Makro Kachel-Hintergrundfarbe"></div>
+                <input type="hidden" id="mTileClr">
+              </div>
+
+            </div>
           </div>
 
           <label class="form-label">

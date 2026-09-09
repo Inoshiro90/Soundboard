@@ -233,8 +233,9 @@ function writeEffectsToUI(fx) {
   set('fxNoiseGateThreshold', fx.noiseGate?.threshold ?? -50);
   lbl('fxNoiseGateThresholdLbl', (fx.noiseGate?.threshold ?? -50) + ' dB');
 
+  // updateEffectSectionVisibility() also refreshes the active-fx badges/
+  // summary (see below) — one call covers both concerns.
   updateEffectSectionVisibility();
-  _markActiveAccordionSections(fx);
 }
 
 /**
@@ -244,7 +245,6 @@ function writeEffectsToUI(fx) {
 function _markActiveAccordionSections(fx) {
   if (!fx) return;
   const sections = {
-    'smFxBasic':    fx.enabled,
     'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.pan !== 0,
     'smFxEQ':       fx.eq?.enabled || fx.eq10?.enabled,
     'smFxDyn':      fx.compressor?.enabled || fx.limiter?.enabled,
@@ -262,6 +262,37 @@ function _markActiveAccordionSections(fx) {
   // Show/hide the effects active badge on the master toggle
   const badge = document.getElementById('smFxBadge');
   if (badge) badge.style.display = fx.enabled ? '' : 'none';
+
+  // Kompakter Überblick in der "Audio-Effekte"-Sektion: Namen der aktiven
+  // Effekt-Gruppen als Chips, statt jeden Abschnitt einzeln öffnen zu müssen.
+  const summaryLabels = {
+    smFxFilters:  'Filter',
+    smFxEQ:       'EQ',
+    smFxDyn:      'Dynamik',
+    smFxDist:     'Distortion',
+    smFxReverb:   'Reverb',
+    smFxDelay:    'Delay',
+    smFxSpatial:  'Spatial',
+    smFxAdvanced: 'Erweitert',
+  };
+  const summaryEl = document.getElementById('smFxActiveSummary');
+  if (summaryEl) {
+    const active = Object.entries(summaryLabels).filter(([id]) => sections[id]).map(([, label]) => label);
+    summaryEl.innerHTML = active.map(label => `<span class="sm-fx-summary__chip">${label}</span>`).join('');
+  }
+}
+
+/**
+ * Marks the "Einstellungen" popover trigger (soundMenubar) when a
+ * playback setting differs from its default — same idea as
+ * _markActiveAccordionSections() above, applied to the popover system
+ * in js/ui/disclosure.js so a non-default choice stays visible even
+ * while that popover is collapsed.
+ */
+function _syncPlaybackSettingsIndicator() {
+  const gs = APP.globalSettings;
+  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false;
+  document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !isDefault);
 }
 
 /**
@@ -298,6 +329,10 @@ function updateEffectSectionVisibility() {
     const el = document.getElementById(panelId);
     if (el) { el.style.opacity = on ? '1' : '0.45'; el.style.pointerEvents = on ? '' : 'none'; }
   });
+
+  // Aktive-Effekte-Badges/-Übersicht live nachziehen (nicht erst beim
+  // nächsten Öffnen des Modals) — siehe _markActiveAccordionSections().
+  _markActiveAccordionSections(readEffectsFromUI());
 }
 
 // ─── SOUND MODAL ─────────────────────────────────────────────
@@ -306,6 +341,18 @@ function updateEffectSectionVisibility() {
 // 3D/Pitch — reused as-is). _fxEditContext tracks which one is currently open.
 let _fxEditContext = { kind: 'sound', id: null };
 let _ambVariantMode = 'random';
+
+/**
+ * Marks the macro modal's "Erweiterte Einstellungen" accordion header when
+ * it holds a non-default value (Abspiel-Modus ≠ Parallel) — same idea as
+ * has-active-fx in the sound editor, so a relevant setting made inside a
+ * collapsed section stays visible without opening it.
+ */
+function _syncMacroAdvancedIndicator() {
+  const nonDefault = document.getElementById('mPlayMode')?.value !== 'parallel';
+  const toggle = document.querySelector('#macroModal .sm-section-toggle[data-target="mAdvanced"]');
+  toggle?.classList.toggle('has-active-fx', !!nonDefault);
+}
 
 function _setModalContext(kind) {
   document.querySelectorAll('.sm-sound-only').forEach(el => { el.style.display = kind === 'sound' ? '' : 'none'; });
@@ -459,8 +506,9 @@ document.addEventListener('ambient:editEffects', e => openAmbientEffectsModal(e.
 
 // ─── MACRO MODAL ─────────────────────────────────────────────
 
-export function openMacroModal(id) {
+export function openMacroModal(id, placeholderId = null) {
   APP.editMacroId = id;
+  APP._macroPhReplacingId = placeholderId;
   const m = id ? CItems().find(x => x.id === id && x.type === 'macro') : null;
 
   document.getElementById('mMTitle').textContent = id ? 'MAKRO BEARBEITEN' : 'NEUES MAKRO';
@@ -475,6 +523,7 @@ export function openMacroModal(id) {
   set('mTileH',     m && m.tileH ? m.tileH : '');
   set('mPlayMode',  m ? m.playMode || 'parallel' : 'parallel');
   set('mTileClr',   m && m.tileColor ? m.tileColor : '#ffffff');
+  _syncMacroAdvancedIndicator();
 
   const delBtn = document.getElementById('btnDelMacro');
   if (delBtn) delBtn.style.display = id ? '' : 'none';
@@ -879,10 +928,6 @@ export function registerEvents() {
   });
 
   // Toolbar — grid controls
-  document.getElementById('btnColPlus')?.addEventListener('click',  addCol);
-  document.getElementById('btnColMinus')?.addEventListener('click', removeCol);
-  document.getElementById('btnRowPlus')?.addEventListener('click',  addRow);
-  document.getElementById('btnRowMinus')?.addEventListener('click', removeRow);
   document.getElementById('maxCols')?.addEventListener('change', function() {
     const cs = CSettings(); cs.maxCols = Math.max(1, Math.min(32, parseInt(this.value) || 10)); this.value = cs.maxCols; renderGrid();
   });
@@ -907,21 +952,20 @@ export function registerEvents() {
   });
   document.getElementById('btnStop')?.addEventListener('click', stopAll);
   document.getElementById('btnSave')?.addEventListener('click', save);
-  document.getElementById('btnNewMacro')?.addEventListener('click', () => openMacroModal(null));
+  // Makro-Erstellung lebt jetzt im "+"-Menü leerer Kacheln
+  // (ui.js: _openTileAddChoice → openMacroModal(null, placeholderId))
+  // statt als eigener Menüband-Button.
 
-  // Options bar
-  document.getElementById('btnOptsToggle')?.addEventListener('click', function() {
-    const bar  = document.getElementById('optsBar');
-    const open = bar.classList.toggle('is-open');
-    this.classList.toggle('is-active', open);
-    this.setAttribute('aria-expanded', open ? 'true' : 'false');
-    bar.setAttribute('aria-hidden', open ? 'false' : 'true');
-  });
-  document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; });
-  document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; });
-  document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; });
+  // Wiedergabe-Einstellungen (Popover im soundMenubar)
+  document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; _syncPlaybackSettingsIndicator(); });
+  document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; _syncPlaybackSettingsIndicator(); });
+  document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; _syncPlaybackSettingsIndicator(); });
+  _syncPlaybackSettingsIndicator();
 
-  // Data
+  // Verwalten / Speichern / Undo / Redo — leben gemeinsam im
+  // "Einstellungen"-Popover (js/ui/disclosure.js regelt Öffnen/Schließen,
+  // hier nur noch die fachliche Aktion je Button; Undo/Redo-Klicks werden
+  // weiter unten im Datei-Setup registriert).
   document.getElementById('btnExport')?.addEventListener('click', () => {
     import('./storage.js').then(m => m.exportData());
   });
@@ -942,41 +986,16 @@ export function registerEvents() {
     });
   });
 
-  // Arrange mode
-  document.getElementById('btnArrange')?.addEventListener('click', () => {
-    if (APP.arrangeMode) exitArrangeMode(); else enterArrangeMode();
-  });
-  document.getElementById('btnCloseArrange')?.addEventListener('click', exitArrangeMode);
-  document.getElementById('btnLockToggle')?.addEventListener('click', function() {
-    APP.lockMode = !APP.lockMode;
-    this.classList.toggle('btn--active', APP.lockMode);
-    toast(APP.lockMode ? 'Sperr-Modus aktiv: Kacheln klicken zum Sperren/Entsperren' : 'Sperr-Modus deaktiviert');
-  });
-  document.getElementById('arrRowLeft')?.addEventListener('click',    arrangeRowLeft);
-  document.getElementById('arrRowCenter')?.addEventListener('click',  arrangeRowCenter);
-  document.getElementById('arrRowRight')?.addEventListener('click',   arrangeRowRight);
-  document.getElementById('arrRowJustify')?.addEventListener('click', arrangeRowJustify);
-  document.getElementById('arrColTop')?.addEventListener('click',     arrangeColTop);
-  document.getElementById('arrColBottom')?.addEventListener('click',  arrangeColBottom);
-  document.getElementById('arrCompact')?.addEventListener('click',    arrangeCompact);
-  document.getElementById('btnUndoArrange')?.addEventListener('click', undoArrange);
+  // ─── Anordnen / Tauschen ("Werkzeuge") — entfernt ─────────────
+  // Wird durch ein neues Spalten-System ersetzt (siehe Auftrag).
+  // Die zugehörigen Buttons/Bars (arrangeBar, moveBar, btnArrange,
+  // btnMoveMode, arrRow*/arrCol*, btnSwapRows/Cols …) existieren nicht
+  // mehr im Markup. Die Implementierungsfunktionen (enterArrangeMode,
+  // exitArrangeMode, arrangeRowLeft & co., updateMoveBarSelects) bleiben
+  // vorerst in ui.js/events.js liegen — unerreichbar, aber nicht
+  // gelöscht, bis das neue Spalten-System sie ersetzt (Cleanup-Kandidat).
 
-  // Move mode
-  document.getElementById('btnMoveMode')?.addEventListener('click', function() {
-    APP.moveMode = !APP.moveMode;
-    document.getElementById('moveBar')?.classList.toggle('is-hidden', !APP.moveMode);
-    this.classList.toggle('is-active', APP.moveMode);
-    if (APP.moveMode) updateMoveBarSelects();
-  });
-  document.getElementById('btnCloseMoveMode')?.addEventListener('click', () => {
-    APP.moveMode = false;
-    document.getElementById('moveBar')?.classList.add('is-hidden');
-    document.getElementById('btnMoveMode')?.classList.remove('is-active');
-  });
-  document.getElementById('btnSwapRows')?.addEventListener('click', swapRows);
-  document.getElementById('btnSwapCols')?.addEventListener('click', swapCols);
 
-  // Sound modal — slot management
   document.getElementById('btnAddSlot')?.addEventListener('click', () => {
     APP.editSlots.push({ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null });
     renderSlotList();
@@ -1089,6 +1108,13 @@ export function registerEvents() {
     document.getElementById(id)?.addEventListener('change', () => {
       updateEffectSectionVisibility();
     });
+  });
+
+  // Audio-Effekte: eigene Dialogbox statt Accordion im Hauptformular
+  // (siehe soundFxModal in index.html). Bleibt technisch unabhängig vom
+  // Hauptdialog — alle FX-Feld-IDs sind unverändert.
+  document.getElementById('btnOpenFxModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('soundFxModal')).show();
   });
 
   // Preset dropdown
@@ -1561,6 +1587,7 @@ export function registerEvents() {
       playMode:    document.getElementById('mPlayMode').value
     });
   });
+  document.getElementById('mPlayMode')?.addEventListener('change', () => _syncMacroAdvancedIndicator());
   document.getElementById('btnSaveMacro')?.addEventListener('click', async () => {
     // Convert startTime positions to legacy delay (keeps backward compat)
     let _finalSteps;
@@ -1590,9 +1617,16 @@ export function registerEvents() {
       Object.assign(m, { name, repeat, repeatDelay, hotkey, icon, color, tileColor, tileW, tileH, playMode, steps: _finalSteps });
     } else {
       const nm = mkMacro({ name, repeat, repeatDelay, hotkey, icon, color, tileColor, tileW, tileH, playMode, steps: _finalSteps });
-      const firstPH = items.findIndex(x => x.type === 'placeholder');
-      if (firstPH >= 0) { nm.order = items[firstPH].order; items.splice(firstPH, 1, nm); }
-      else              { nm.order = items.length; items.push(nm); }
+      // Add in the exact tile the user clicked "+" on (see ui.js
+      // _openTileAddChoice), falling back to the first free slot.
+      const phId  = APP._macroPhReplacingId;
+      const phIdx = phId ? items.findIndex(x => x.id === phId) : -1;
+      if (phIdx >= 0) { nm.order = items[phIdx].order; items.splice(phIdx, 1, nm); }
+      else {
+        const firstPH = items.findIndex(x => x.type === 'placeholder');
+        if (firstPH >= 0) { nm.order = items[firstPH].order; items.splice(firstPH, 1, nm); }
+        else              { nm.order = items.length; items.push(nm); }
+      }
     }
     bootstrap.Modal.getInstance(document.getElementById('macroModal')).hide();
     renderGrid(); toast('Makro gespeichert ✓', 'ok');

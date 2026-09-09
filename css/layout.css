@@ -22,7 +22,7 @@
   position: sticky;
   top: 0;
   z-index: var(--z-nav);
-  height: 44px;
+  height: var(--h-navbar);
   flex-shrink: 0;
 }
 
@@ -89,17 +89,19 @@
   gap: var(--space-2);
   flex-wrap: wrap;
   position: sticky;
-  top: 44px;          /* sits directly below navbar */
+  top: var(--h-navbar);          /* sits directly below navbar — fluid, stays correct at every breakpoint */
   z-index: calc(var(--z-nav) - 1);
+  min-height: var(--h-menubar);
   flex-shrink: 0;
 }
 
-/* Volume control group */
+/* Volume control group — grows to take the majority of the row, especially
+   on narrow viewports, since it's the primary control that sits here. */
 .menubar-volume {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-shrink: 1;
+  flex: 1 1 160px;
   min-width: 0;
   overflow: hidden;
 }
@@ -110,10 +112,10 @@
   white-space: nowrap;
 }
 .menubar-volume__slider {
-  width: 80px;
-  max-width: 120px;
-  flex-shrink: 1;
+  flex: 1 1 60px;
+  width: auto;
   min-width: 40px;
+  max-width: 100%;
 }
 .menubar-volume__number {
   width: 52px;
@@ -164,7 +166,7 @@
     border-color   var(--dur-base) var(--ease),
     transform      var(--dur-fast) var(--ease);
   user-select: none;
-  min-height: 36px;
+  min-height: var(--h-btn);
 }
 .menubar-btn i { font-size: 0.82rem; }
 .menubar-btn:hover {
@@ -214,7 +216,7 @@
   align-items: flex-end;
   gap: var(--space-1);
   overflow-x: auto;
-  min-height: 38px;
+  min-height: var(--h-tabbar);
   scrollbar-width: none;
 }
 .profile-bar::-webkit-scrollbar { display: none; }
@@ -228,7 +230,7 @@
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  min-height: 40px;
+  min-height: var(--h-tabbar);
 }
 
 .toolbar__label {
@@ -427,17 +429,38 @@
   .toolbar           { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
   .profile-bar       { padding: var(--space-1) var(--space-3); }
   .board             { padding: var(--space-2); }
-  .menubar-volume__slider { width: 56px; }
+  .menubar-volume__slider { flex: 1 1 auto; width: auto; }
+  .menubar-volume     { flex-basis: 0; } /* grow purely from available space, not a fixed 160px ask */
 
-  /* On portrait, stack menubar buttons but keep labels */
-  .app-menubar       { overflow-x: auto; flex-wrap: nowrap; }
-  .menubar-btn       { padding: var(--space-2); font-size: 0.7rem; min-height: 34px; }
+  /* Lautstärke nimmt den Großteil der Zeile ein: Stop/Einstellungen/
+     Wiedergabe schrumpfen zu reinen Icon-Buttons (Label ausgeblendet,
+     aria-label bleibt für Screenreader erhalten) statt die Zeile mit
+     vollen Textlabels zu verstopfen und den Regler zu verdrängen. */
+  .app-menubar       { flex-wrap: nowrap; }
+  .app-menubar > .menubar-btn,
+  .app-menubar > .popover-wrap > .menubar-btn {
+    padding: var(--space-2);
+    font-size: 0.7rem;
+    min-height: var(--h-btn);
+    flex-shrink: 0;
+    gap: 0;
+  }
+  .app-menubar > .menubar-btn .menubar-btn__label,
+  .app-menubar > .popover-wrap > .menubar-btn .menubar-btn__label {
+    display: none;
+  }
+  .app-menubar > .menubar-btn i,
+  .app-menubar > .popover-wrap > .menubar-btn i {
+    font-size: 0.9rem;
+  }
 }
 
 /* BUGFIX: Volume slider overlap on small screens */
 @media (max-width: 480px) {
-  .menubar-volume__slider { width: 56px; max-width: 56px; display: block !important; }
+  .menubar-volume__slider { flex: 1 1 auto; width: auto; max-width: none; display: block !important; }
   .menubar-volume__number { display: none; }
-  /* Ensure volume group itself is always visible */
-  .menubar-volume { display: flex !important; flex-shrink: 0; }
+  /* Ensure volume group itself is always visible and keeps the lion's share
+     of the row's width on very narrow viewports. */
+  .menubar-volume { display: flex !important; flex: 1 1 auto; min-width: 90px; }
 }
+

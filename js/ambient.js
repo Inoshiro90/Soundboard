@@ -754,6 +754,11 @@ export function setViewMode(mode) {
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('ambProfBar')?.toggleAttribute('hidden', soundOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', soundOn);
+  // Stop sitzt jetzt zusammen mit Lautstärke im globalen app-menubar (damit
+  // beide "in der gleichen Zeile" stehen), stoppt aber nur Sound-Kacheln
+  // (siehe audio.js: stopAll()) — daher weiterhin sound-modus-spezifisch
+  // ein-/ausgeblendet, damit sich die Modi klar voneinander abgrenzen.
+  document.getElementById('btnStop')?.toggleAttribute('hidden', !soundOn);
 
   const bSound = document.getElementById('btnModeSound');
   const bAmb   = document.getElementById('btnModeAmbient');

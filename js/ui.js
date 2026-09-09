@@ -211,7 +211,8 @@ export function makePHTile(ph) {
     <div class="tile tile--placeholder" style="height:${h}px" aria-label="Leerer Slot">
       <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
       <div class="tile-controls">
-        <button class="tile-ctrl-btn js-add-btn" title="Sound hinzufügen" aria-label="Sound hinzufügen"
+        <button class="tile-ctrl-btn js-add-btn" title="Sound oder Makro hinzufügen" aria-label="Hinzufügen"
+          aria-haspopup="menu" aria-expanded="false"
           style="display:${APP.arrangeMode ? 'none' : 'flex'}">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
         </button>
@@ -231,9 +232,80 @@ export function makePHTile(ph) {
   const addBtn = wrap.querySelector('.js-add-btn');
   if (addBtn) addBtn.addEventListener('click', e => {
     e.stopPropagation();
-    import('./events.js').then(m => m.openSoundModal(null, ph.id));
+    _openTileAddChoice(addBtn, ph.id);
   });
   return wrap;
+}
+
+// ─── "+"-KACHEL: SOUND ODER MAKRO WÄHLEN ───────────────────────
+// Ein einziges, wiederverwendetes Popover für alle leeren Kacheln (statt
+// eines pro Kachel) — positioniert sich per JS am zuletzt geklickten
+// "+"-Button. Ersetzt den vormals eigenständigen "Makro"-Menüband-Button:
+// Sound UND Makro werden jetzt direkt am Zielslot entschieden.
+let _tileAddTargetId = null;
+let _tileAddTargetBtn = null;
+
+function _closeTileAddChoice() {
+  const panel = document.getElementById('tileAddChoicePopover');
+  if (panel) panel.hidden = true;
+  _tileAddTargetBtn?.setAttribute('aria-expanded', 'false');
+  _tileAddTargetId  = null;
+  _tileAddTargetBtn = null;
+}
+
+function _openTileAddChoice(anchorBtn, phId) {
+  const panel = document.getElementById('tileAddChoicePopover');
+  if (!panel) return;
+  const alreadyOpenForThis = !panel.hidden && _tileAddTargetId === phId;
+  _closeTileAddChoice();
+  if (alreadyOpenForThis) return; // clicking the same "+" again just closes it
+
+  _tileAddTargetId  = phId;
+  _tileAddTargetBtn = anchorBtn;
+  anchorBtn.setAttribute('aria-expanded', 'true');
+
+  const rect = anchorBtn.getBoundingClientRect();
+  panel.style.position = 'fixed';
+  panel.style.top  = `${Math.round(rect.bottom + 6)}px`;
+  panel.style.left = `${Math.round(rect.left)}px`;
+  panel.style.right = 'auto';
+  panel.hidden = false;
+  requestAnimationFrame(() => {
+    if (panel.hidden) return;
+    const pad  = 8;
+    const pRect = panel.getBoundingClientRect();
+    if (pRect.right > window.innerWidth - pad) {
+      panel.style.left = `${Math.max(pad, window.innerWidth - pad - pRect.width)}px`;
+    }
+  });
+}
+
+/** Wires the shared "Sound / Makro" choice popover once. Call on app init. */
+export function initTileAddChoice() {
+  if (document._tileAddChoiceWired) return;
+  document._tileAddChoiceWired = true;
+
+  import('./ui/disclosure.js').then(m => m.portalToBody(document.getElementById('tileAddChoicePopover')));
+
+  document.getElementById('tileAddChoiceSound')?.addEventListener('click', () => {
+    const phId = _tileAddTargetId;
+    _closeTileAddChoice();
+    import('./events.js').then(m => m.openSoundModal(null, phId));
+  });
+  document.getElementById('tileAddChoiceMacro')?.addEventListener('click', () => {
+    const phId = _tileAddTargetId;
+    _closeTileAddChoice();
+    import('./events.js').then(m => m.openMacroModal(null, phId));
+  });
+  document.addEventListener('click', e => {
+    const panel = document.getElementById('tileAddChoicePopover');
+    if (!panel || panel.hidden) return;
+    if (panel.contains(e.target) || e.target.closest('.js-add-btn')) return;
+    _closeTileAddChoice();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') _closeTileAddChoice();
+  });
 }
 
 // ─── STATUS BAR ───────────────────────────────────────────────
@@ -293,6 +365,11 @@ export function applyProfileSettings() {
   const so = document.getElementById('setOverlap');    if (so) so.checked = APP.globalSettings.overlap;
   const sr = document.getElementById('setStopReplay'); if (sr) sr.checked = APP.globalSettings.stopReplay;
   const sm = document.getElementById('setMultiClick'); if (sm) sm.checked = APP.globalSettings.multiClick;
+  // Keep the "Wiedergabe" popover trigger's active-dot in sync whenever
+  // settings are (re)applied — e.g. after import/reset, not just on toggle.
+  const gs = APP.globalSettings;
+  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false;
+  document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !playbackIsDefault);
 }
 
 // ─── MOVE BAR SELECTS ─────────────────────────────────────────
@@ -328,6 +405,9 @@ export function enterArrangeMode() {
   APP.arrangeMode = true;
   document.getElementById('arrangeBar')?.classList.remove('is-hidden');
   document.getElementById('btnArrange')?.classList.add('is-active');
+  // Anordnen lives inside the "Werkzeuge" popover — mark the trigger too,
+  // so an active arrange mode stays visible even while the popover is closed.
+  document.getElementById('btnToolsToggle')?.classList.add('has-active-setting');
   renderGrid();
 }
 
@@ -336,6 +416,7 @@ export function exitArrangeMode() {
   document.getElementById('arrangeBar')?.classList.add('is-hidden');
   document.getElementById('btnArrange')?.classList.remove('is-active');
   document.getElementById('btnLockToggle')?.classList.remove('btn--active');
+  if (!APP.moveMode) document.getElementById('btnToolsToggle')?.classList.remove('has-active-setting');
   document.querySelectorAll('.tile-wrap.is-arrange-selected').forEach(w => w.classList.remove('is-arrange-selected'));
   renderGrid();
 }
