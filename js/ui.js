@@ -9,15 +9,11 @@
  * - Theme icon updated on toggle
  */
 
-import { APP, CP, CItems, CSettings, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
+import { APP, CP, CItems, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
 import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils.js';
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
 import { toast }                           from './notifications.js';
-
-// ─── RESPONSIVE GRID CONFIG ───────────────────────────────────
-const MIN_TILE_W = 120; // px — never smaller than this
-let _gridResizeObserver = null;
 
 // ─── PROFILE TABS ─────────────────────────────────────────────
 
@@ -42,27 +38,20 @@ export function renderProfileTabs() {
 }
 
 // ─── GRID ─────────────────────────────────────────────────────
+// Reines CSS-Grid seit der Einführung des Spalten-Systems
+// (siehe grid-system.css): Spaltenzahl kommt aus --grid-cols
+// (breakpoint-gesteuert, 4/4/8/12/12/12), Kacheln sind per
+// aspect-ratio quadratisch. Kein maxCols/maxRows, kein
+// ResizeObserver, keine JS-Breitenmessung mehr nötig.
+
+// Nach den echten Sounds/Makros werden immer ein paar leere
+// "+"-Kacheln angehängt, damit zum Hinzufügen nie manuell eine
+// neue Reihe/Spalte geschaffen werden muss — das Grid wächst
+// einfach mit dem Inhalt (kein Zeilenlimit mehr).
+const TRAILING_PLACEHOLDERS = 8;
 
 export function renderGrid() {
   const grid = document.getElementById('grid');
-  const cs   = CSettings();
-  const cols = Math.max(1, Math.min(32, cs.maxCols));
-  const rows = Math.max(1, Math.min(32, cs.maxRows));
-
-  // Responsive: compute tile min-width based on desired cols and available space.
-  // If container is too narrow, auto-fill wraps gracefully — no horizontal scroll.
-  _applyResponsiveGrid(grid, cols);
-  document.documentElement.style.setProperty('--th', cs.tileH + 'px');
-
-  // Attach resize observer once
-  if (!_gridResizeObserver) {
-    _gridResizeObserver = new ResizeObserver(() => {
-      const g = document.getElementById('grid');
-      if (g) _applyResponsiveGrid(g, Math.max(1, Math.min(32, CSettings().maxCols)));
-    });
-    const board = document.querySelector('.board');
-    if (board) _gridResizeObserver.observe(board);
-  }
 
   normaliseOrders();
 
@@ -74,12 +63,14 @@ export function renderGrid() {
     );
   }
 
-  const total = cols * rows;
-  while (list.length < total) list.push(mkPH(list.length));
-  const display = list.slice(0, total);
+  // Bestehende Platzhalter am Ende zählen, damit nicht bei jedem
+  // renderGrid() weitere angehängt werden (nur auffüllen, nicht endlos wachsen).
+  let trailingPH = 0;
+  for (let i = list.length - 1; i >= 0 && list[i].type === 'placeholder'; i--) trailingPH++;
+  for (let i = trailingPH; i < TRAILING_PLACEHOLDERS; i++) list.push(mkPH(list.length));
 
   grid.innerHTML = '';
-  display.forEach(item => {
+  list.forEach(item => {
     grid.appendChild(
       item.type === 'sound' ? makeSoundTile(item) :
       item.type === 'macro' ? makeMacroTile(item) :
@@ -91,32 +82,19 @@ export function renderGrid() {
   updateStatus();
   setupDrag();
   CItems().filter(x => x.type === 'sound').forEach(x => refreshRotBadge(x.id));
-  updateMoveBarSelects();
-}
-
-function _applyResponsiveGrid(grid, cols) {
-  const containerW = grid.parentElement?.clientWidth || window.innerWidth;
-  // Ideal tile width based on desired columns
-  const idealW = Math.floor((containerW - (cols - 1) * 8) / cols);
-  // Never smaller than MIN_TILE_W — browser auto-fills fewer columns if needed
-  const tileMinW = Math.max(MIN_TILE_W, idealW);
-  grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${tileMinW}px, 1fr))`;
 }
 
 // ─── TILE BUILDERS ────────────────────────────────────────────
 
 function tileStyle(item) {
-  const cs = CSettings();
-  const h  = item.tileH || cs.tileH;
-  const bg = item.tileColor ? `background:${item.tileColor};` : '';
-  return `height:${h}px;${bg}`;
+  return item.tileColor ? `background:${item.tileColor};` : '';
 }
 
 export function makeSoundTile(s) {
   const wrap = document.createElement('div');
   wrap.className  = 'tile-wrap' + (s.locked ? ' is-locked' : '');
   wrap.dataset.id = s.id;
-  wrap.draggable  = !APP.arrangeMode;
+  wrap.draggable  = true;
 
   const hasAudio    = (s.slots || []).some(sl => sl && sl.data);
   const hkHtml      = s.hotkey ? `<div class="tile__hotkey">${s.hotkey}</div>` : '';
@@ -146,14 +124,13 @@ export function makeSoundTile(s) {
 
   // NEW click logic: always play / advance slot. No per-tile stop.
   tile.addEventListener('click', e => {
-    if (APP.arrangeMode) { handleArrangeClick(wrap, s); return; }
     if (e.target.closest('.tile-controls')) return;
     playSound(s);
   });
 
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
     e.stopPropagation();
-    if (!APP.arrangeMode) import('./events.js').then(m => m.openSoundModal(s.id));
+    import('./events.js').then(m => m.openSoundModal(s.id));
   });
 
   refreshRotBadge(s.id);
@@ -164,7 +141,7 @@ export function makeMacroTile(m) {
   const wrap = document.createElement('div');
   wrap.className  = 'tile-wrap' + (m.locked ? ' is-locked' : '');
   wrap.dataset.id = m.id;
-  wrap.draggable  = !APP.arrangeMode;
+  wrap.draggable  = true;
 
   const hkHtml      = m.hotkey ? `<div class="tile__hotkey">${m.hotkey}</div>` : '';
   const accentStyle = m.color && m.color !== 'none' ? `border-top: 2px solid ${m.color};` : '';
@@ -189,13 +166,12 @@ export function makeMacroTile(m) {
   `;
 
   wrap.querySelector('.tile').addEventListener('click', e => {
-    if (APP.arrangeMode) { handleArrangeClick(wrap, m); return; }
     if (e.target.closest('.tile-controls')) return;
     runMacro(m);
   });
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
     e.stopPropagation();
-    if (!APP.arrangeMode) import('./events.js').then(ev => ev.openMacroModal(m.id));
+    import('./events.js').then(ev => ev.openMacroModal(m.id));
   });
   return wrap;
 }
@@ -204,16 +180,14 @@ export function makePHTile(ph) {
   const wrap = document.createElement('div');
   wrap.className  = 'tile-wrap' + (ph.locked ? ' is-locked' : '');
   wrap.dataset.id = ph.id;
-  wrap.draggable  = !APP.arrangeMode;
-  const h = CSettings().tileH;
+  wrap.draggable  = true;
 
   wrap.innerHTML = `
-    <div class="tile tile--placeholder" style="height:${h}px" aria-label="Leerer Slot">
+    <div class="tile tile--placeholder" aria-label="Leerer Slot">
       <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
       <div class="tile-controls">
         <button class="tile-ctrl-btn js-add-btn" title="Sound oder Makro hinzufügen" aria-label="Hinzufügen"
-          aria-haspopup="menu" aria-expanded="false"
-          style="display:${APP.arrangeMode ? 'none' : 'flex'}">
+          aria-haspopup="menu" aria-expanded="false">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
         </button>
       </div>
@@ -223,11 +197,10 @@ export function makePHTile(ph) {
 
   const phTile = wrap.querySelector('.tile');
   phTile.addEventListener('click', e => {
-    if (APP.arrangeMode) { handleArrangeClick(wrap, ph); return; }
     if (e.target.closest('.tile-controls')) return;
   });
   phTile.addEventListener('dblclick', () => {
-    if (!APP.arrangeMode) import('./events.js').then(m => m.openSoundModal(null, ph.id));
+    import('./events.js').then(m => m.openSoundModal(null, ph.id));
   });
   const addBtn = wrap.querySelector('.js-add-btn');
   if (addBtn) addBtn.addEventListener('click', e => {
@@ -351,13 +324,6 @@ export function updateCategories() {
 // ─── PROFILE SETTINGS SYNC ───────────────────────────────────
 
 export function applyProfileSettings() {
-  const cs = CSettings();
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-  set('maxCols', cs.maxCols);
-  set('maxRows', cs.maxRows);
-  set('tileW',   cs.tileW);
-  set('tileH',   cs.tileH);
-  document.documentElement.style.setProperty('--th', cs.tileH + 'px');
   const mv = document.getElementById('masterVol');
   if (mv) mv.value = APP.globalSettings.masterVol;
   const mvNum = document.getElementById('masterVolNum');
@@ -372,55 +338,6 @@ export function applyProfileSettings() {
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !playbackIsDefault);
 }
 
-// ─── MOVE BAR SELECTS ─────────────────────────────────────────
-
-export function updateMoveBarSelects() {
-  const cs = CSettings();
-  ['mvRowA', 'mvRowB'].forEach(id => {
-    const sel = document.getElementById(id); if (!sel) return;
-    const cur = sel.value; sel.innerHTML = '';
-    for (let r = 1; r <= cs.maxRows; r++) {
-      const o = document.createElement('option'); o.value = r; o.textContent = 'Reihe ' + r; sel.appendChild(o);
-    }
-    if (cur) sel.value = cur;
-  });
-  ['mvColA', 'mvColB'].forEach(id => {
-    const sel = document.getElementById(id); if (!sel) return;
-    const cur = sel.value; sel.innerHTML = '';
-    for (let c = 1; c <= cs.maxCols; c++) {
-      const o = document.createElement('option'); o.value = c; o.textContent = 'Spalte ' + c; sel.appendChild(o);
-    }
-    if (cur) sel.value = cur;
-  });
-}
-
-// ─── ARRANGE MODE ─────────────────────────────────────────────
-
-export function handleArrangeClick(wrap, item) {
-  if (APP.lockMode) { item.locked = !item.locked; wrap.classList.toggle('is-locked', item.locked); return; }
-  wrap.classList.toggle('is-arrange-selected');
-}
-
-export function enterArrangeMode() {
-  APP.arrangeMode = true;
-  document.getElementById('arrangeBar')?.classList.remove('is-hidden');
-  document.getElementById('btnArrange')?.classList.add('is-active');
-  // Anordnen lives inside the "Werkzeuge" popover — mark the trigger too,
-  // so an active arrange mode stays visible even while the popover is closed.
-  document.getElementById('btnToolsToggle')?.classList.add('has-active-setting');
-  renderGrid();
-}
-
-export function exitArrangeMode() {
-  APP.arrangeMode = false; APP.lockMode = false;
-  document.getElementById('arrangeBar')?.classList.add('is-hidden');
-  document.getElementById('btnArrange')?.classList.remove('is-active');
-  document.getElementById('btnLockToggle')?.classList.remove('btn--active');
-  if (!APP.moveMode) document.getElementById('btnToolsToggle')?.classList.remove('has-active-setting');
-  document.querySelectorAll('.tile-wrap.is-arrange-selected').forEach(w => w.classList.remove('is-arrange-selected'));
-  renderGrid();
-}
-
 // ─── DRAG & DROP ──────────────────────────────────────────────
 
 let _dragSrc = null;
@@ -428,7 +345,6 @@ let _dragSrc = null;
 export function setupDrag() {
   document.querySelectorAll('.tile-wrap').forEach(w => {
     w.addEventListener('dragstart', e => {
-      if (APP.arrangeMode) return;
       _dragSrc = w.dataset.id; w.classList.add('is-dragging'); e.dataTransfer.effectAllowed = 'move';
     });
     w.addEventListener('dragend', () => {

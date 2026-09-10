@@ -190,19 +190,16 @@
     </nav>
 
     <!-- ═══════════════════════════════ TOOLBAR ══════════════════════════════
-       Grid size controls + category filter tabs. Hidden in Ambient view.
+       Category filter tabs. Hidden in Ambient view. (Rastergröße kommt
+       jetzt vollständig aus grid-system.css — siehe Kommentar unten.)
   ══════════════════════════════════════════════════════════════════════════ -->
     <nav class="toolbar" id="soundToolbar" role="toolbar" aria-label="Kategorien">
 
-      <!-- Raster-Spalten/-Reihen-Option entfernt (siehe Auftrag) — wird
-           durch ein neues Spalten-System ersetzt. Die vier Werte bleiben
-           als reine State-Felder erhalten (renderGrid()/applyProfileSettings()
-           lesen sie weiterhin über CSettings()), damit an Datenmodell und
-           Rendering-Logik nichts geändert werden musste. -->
-      <input type="hidden" id="maxCols" value="10">
-      <input type="hidden" id="maxRows" value="10">
-      <input type="hidden" id="tileW" value="120">
-      <input type="hidden" id="tileH" value="120">
+      <!-- Raster-Spalten/-Reihen sind jetzt vollständig durch das neue,
+           breakpoint-gesteuerte Spalten-System ersetzt (siehe
+           grid-system.css: --grid-cols, #grid). Es gibt keine manuell
+           einstellbare Rastergröße mehr — die frühere State-Ablage
+           (maxCols/maxRows/tileW/tileH) wurde daher komplett entfernt. -->
 
       <!-- Category filter — populated by updateCategories(). Stays
            permanently visible: filtering sound tiles by category is a

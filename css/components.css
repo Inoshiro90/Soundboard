@@ -219,7 +219,7 @@
 /* ─── TILE ─── */
 .tile {
 	width: 100%;
-	height: var(--th);
+	height: 100%; /* Höhe kommt jetzt von .tile-wrap { aspect-ratio: 1/1 }, siehe grid-system.css */
 	background: var(--bg-surface);
 	border: var(--border-whisper);
 	border-radius: var(--radius-sm);

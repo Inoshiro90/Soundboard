@@ -165,3 +165,24 @@
   #ambTrackIconModal .modal-dialog { max-width: var(--w-3col); }
   #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
 }
+
+/* ─── 4. SOUNDBOARD-KACHELN: DAS RASTER-SYSTEM SELBST ─────────
+   #grid ist jetzt ein echtes CSS-Grid mit der breakpoint-
+   gesteuerten Spaltenzahl (--grid-cols: 4/4/8/12/12/12) statt der
+   früheren JS-Berechnung (auto-fill/minmax + manuell einstellbare
+   maxCols). Kacheln sind per aspect-ratio quadratisch — die
+   "Spaltenbreite = Zeilenhöhe"-Regel gilt dadurch immer exakt,
+   ganz ohne JS-Messung oder ResizeObserver. Die Zeilenzahl ist
+   nicht mehr gedeckelt (kein maxRows): das Grid fließt einfach in
+   so viele Reihen, wie Inhalt vorhanden ist (siehe renderGrid()
+   in ui.js — Anordnen/Tauschen sind dadurch tatsächlich
+   überflüssig geworden, wie geplant). */
+#grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols), 1fr);
+  gap: var(--grid-gutter);
+}
+
+.tile-wrap {
+  aspect-ratio: 1 / 1;
+}

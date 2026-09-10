@@ -3,7 +3,7 @@
  * Phase 1: Effects UI (Preset-Dropdown, Lowpass, Highpass, Pan, Reverb, Delay)
  */
 
-import { APP, CP, CItems, CSettings } from './state.js';
+import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer } from './audio.js';
@@ -12,11 +12,11 @@ import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, updateTrimDurLabel, normaliseOrders,
-  updateMoveBarSelects, exitArrangeMode, enterArrangeMode, syncThemeIcon
+  syncThemeIcon
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
-  mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio
+  mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT
 } from './storage.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey } from './db.js';
 import {
@@ -621,224 +621,9 @@ function switchProfile(id) {
   stopAll();
   APP.activeProfileId = id;
   APP.activeCategory  = 'all';
-  exitArrangeMode();
-  const moveBar = document.getElementById('moveBar');
-  if (moveBar) moveBar.classList.add('is-hidden');
-  APP.moveMode = false;
-  document.getElementById('btnMoveMode')?.classList.remove('btn--active');
   renderProfileTabs();
   applyProfileSettings();
   renderGrid();
-}
-
-// ─── ARRANGE HELPERS ─────────────────────────────────────────
-
-function snapshotArrange() {
-  APP.arrangeHistory.push(CItems().map(x => ({ id: x.id, order: x.order })));
-  if (APP.arrangeHistory.length > 20) APP.arrangeHistory.shift();
-}
-
-function arrangeRowLeft() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders();
-  const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    const base     = r * cols;
-    const rowItems = items.filter(x => x.order >= base && x.order < base + cols).sort((a, b) => a.order - b.order);
-    const reals    = rowItems.filter(x => !x.locked && x.type !== 'placeholder');
-    let col = 0;
-    rowItems.forEach(x => { if (!x.locked && x.type !== 'placeholder') { x.order = base + col; col++; } });
-    const usedCols = reals.map(x => x.order - base);
-    const freeCols = Array.from({ length: cols }, (_, i) => i).filter(c => !usedCols.includes(c) && !rowItems.some(x => x.locked && x.order - base === c));
-    rowItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeCols[i] !== undefined) ph.order = base + freeCols[i]; });
-  }
-  normaliseOrders(); renderGrid(); toast('Links ausgerichtet', 'ok');
-}
-
-function arrangeRowRight() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders(); const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    const base     = r * cols;
-    const rowItems = items.filter(x => x.order >= base && x.order < base + cols).sort((a, b) => a.order - b.order);
-    const reals    = rowItems.filter(x => !x.locked && x.type !== 'placeholder');
-    let col = cols - 1;
-    for (let i = reals.length - 1; i >= 0; i--) { reals[i].order = base + col; col--; }
-    const usedCols = reals.map(x => x.order - base);
-    const freeCols = Array.from({ length: cols }, (_, i) => i).filter(c => !usedCols.includes(c) && !rowItems.some(x => x.locked && x.order - base === c));
-    rowItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeCols[i] !== undefined) ph.order = base + freeCols[i]; });
-  }
-  normaliseOrders(); renderGrid(); toast('Rechts ausgerichtet', 'ok');
-}
-
-function arrangeRowCenter() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders(); const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    const base     = r * cols;
-    const rowItems = items.filter(x => x.order >= base && x.order < base + cols).sort((a, b) => a.order - b.order);
-    const reals    = rowItems.filter(x => !x.locked && x.type !== 'placeholder');
-    const start    = Math.floor((cols - reals.length) / 2);
-    reals.forEach((x, i) => { x.order = base + start + i; });
-    const usedCols = reals.map(x => x.order - base);
-    const freeCols = Array.from({ length: cols }, (_, i) => i).filter(c => !usedCols.includes(c) && !rowItems.some(x => x.locked && x.order - base === c));
-    rowItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeCols[i] !== undefined) ph.order = base + freeCols[i]; });
-  }
-  normaliseOrders(); renderGrid(); toast('Mittig ausgerichtet', 'ok');
-}
-
-function arrangeRowJustify() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders(); const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    const base     = r * cols;
-    const rowItems = items.filter(x => x.order >= base && x.order < base + cols).sort((a, b) => a.order - b.order);
-    const reals    = rowItems.filter(x => !x.locked && x.type !== 'placeholder');
-    if (reals.length <= 1) { reals.forEach((x, i) => { x.order = base + i; }); continue; }
-    const step     = (cols - 1) / (reals.length - 1);
-    reals.forEach((x, i) => { x.order = base + Math.round(i * step); });
-    const usedCols = reals.map(x => x.order - base);
-    const freeCols = Array.from({ length: cols }, (_, i) => i).filter(c => !usedCols.includes(c) && !rowItems.some(x => x.locked && x.order - base === c));
-    rowItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeCols[i] !== undefined) ph.order = base + freeCols[i]; });
-  }
-  normaliseOrders(); renderGrid(); toast('Verteilt', 'ok');
-}
-
-function arrangeColTop() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders(); const items = CItems();
-  for (let c = 0; c < cols; c++) {
-    const colItems = items.filter(x => x.order % cols === c && x.order < cols * rows).sort((a, b) => a.order - b.order);
-    const reals    = colItems.filter(x => !x.locked && x.type !== 'placeholder');
-    let row = 0;
-    reals.forEach(x => { x.order = row * cols + c; row++; });
-    const usedRows = reals.map(x => Math.floor(x.order / cols));
-    const freeRows = Array.from({ length: rows }, (_, i) => i).filter(r => !usedRows.includes(r) && !colItems.some(x => x.locked && Math.floor(x.order / cols) === r));
-    colItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeRows[i] !== undefined) ph.order = freeRows[i] * cols + c; });
-  }
-  normaliseOrders(); renderGrid(); toast('Spalten nach oben', 'ok');
-}
-
-function arrangeColBottom() {
-  snapshotArrange();
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  normaliseOrders(); const items = CItems();
-  for (let c = 0; c < cols; c++) {
-    const colItems = items.filter(x => x.order % cols === c && x.order < cols * rows).sort((a, b) => a.order - b.order);
-    const reals    = colItems.filter(x => !x.locked && x.type !== 'placeholder');
-    let row = rows - 1;
-    for (let i = reals.length - 1; i >= 0; i--) { reals[i].order = row * cols + c; row--; }
-    const usedRows = reals.map(x => Math.floor(x.order / cols));
-    const freeRows = Array.from({ length: rows }, (_, i) => i).filter(r => !usedRows.includes(r) && !colItems.some(x => x.locked && Math.floor(x.order / cols) === r));
-    colItems.filter(x => !x.locked && x.type === 'placeholder').forEach((ph, i) => { if (freeRows[i] !== undefined) ph.order = freeRows[i] * cols + c; });
-  }
-  normaliseOrders(); renderGrid(); toast('Spalten nach unten', 'ok');
-}
-
-function arrangeCompact() {
-  snapshotArrange(); normaliseOrders();
-  const items    = CItems();
-  const locked   = items.filter(x => x.locked);
-  const lockedOrders = new Set(locked.map(x => x.order));
-  const reals    = items.filter(x => !x.locked && x.type !== 'placeholder').sort((a, b) => a.order - b.order);
-  const phs      = items.filter(x => !x.locked && x.type === 'placeholder');
-  let slot = 0;
-  reals.forEach(x => { while (lockedOrders.has(slot)) slot++; x.order = slot; slot++; });
-  const usedOrders = new Set([...locked.map(x => x.order), ...reals.map(x => x.order)]);
-  let phSlot = 0;
-  phs.forEach(x => { while (usedOrders.has(phSlot)) phSlot++; x.order = phSlot; usedOrders.add(phSlot); phSlot++; });
-  normaliseOrders(); renderGrid(); toast('Alle Lücken geschlossen', 'ok');
-}
-
-function undoArrange() {
-  if (!APP.arrangeHistory.length) { toast('Nichts zum Rückgängig'); return; }
-  const snap = APP.arrangeHistory.pop();
-  snap.forEach(s => { const item = CItems().find(x => x.id === s.id); if (item) item.order = s.order; });
-  renderGrid(); toast('Rückgängig ✓', 'ok');
-}
-
-// ─── GRID MANAGEMENT ─────────────────────────────────────────
-
-function addCol() {
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  cs.maxCols = Math.min(32, cols + 1);
-  normaliseOrders();
-  const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    items.forEach(x => { if (x.order >= r * (cols + 1) + cols) x.order++; });
-    items.push(mkPH(r * (cols + 1) + cols));
-  }
-  normaliseOrders();
-  const el = document.getElementById('maxCols'); if (el) el.value = cs.maxCols;
-  renderGrid();
-}
-function removeCol() {
-  const cs = CSettings(); const cols = cs.maxCols; const rows = cs.maxRows;
-  if (cols <= 1) return;
-  cs.maxCols = cols - 1;
-  normaliseOrders();
-  const items = CItems();
-  for (let r = 0; r < rows; r++) {
-    const lastOrder = r * cols + (cols - 1);
-    const idx = items.findIndex(x => x.order === lastOrder && x.type === 'placeholder');
-    if (idx >= 0) items.splice(idx, 1);
-  }
-  normaliseOrders();
-  const el = document.getElementById('maxCols'); if (el) el.value = cs.maxCols;
-  renderGrid();
-}
-function addRow() {
-  const cs = CSettings(); const cols = cs.maxCols;
-  cs.maxRows = Math.min(32, cs.maxRows + 1);
-  const items = CItems(); const base = cols * (cs.maxRows - 1);
-  for (let c = 0; c < cols; c++) items.push(mkPH(base + c));
-  normaliseOrders();
-  const el = document.getElementById('maxRows'); if (el) el.value = cs.maxRows;
-  renderGrid();
-}
-function removeRow() {
-  const cs = CSettings(); if (cs.maxRows <= 1) return;
-  const cols = cs.maxCols; const lastRowBase = cols * (cs.maxRows - 1);
-  const items = CItems();
-  const toRemove = items.filter(x => x.order >= lastRowBase && x.type === 'placeholder').map(x => x.id);
-  CP().items = items.filter(x => !toRemove.includes(x.id));
-  cs.maxRows--;
-  normaliseOrders();
-  const el = document.getElementById('maxRows'); if (el) el.value = cs.maxRows;
-  renderGrid();
-}
-
-function swapRows() {
-  const ra = parseInt(document.getElementById('mvRowA').value);
-  const rb = parseInt(document.getElementById('mvRowB').value);
-  if (!ra || !rb || ra === rb) { toast('Zwei verschiedene Reihen wählen'); return; }
-  const cols = CSettings().maxCols;
-  snapshotArrange(); normaliseOrders();
-  const baseA = (ra - 1) * cols; const baseB = (rb - 1) * cols;
-  CItems().forEach(x => {
-    if      (x.order >= baseA && x.order < baseA + cols) x.order = baseB + (x.order - baseA);
-    else if (x.order >= baseB && x.order < baseB + cols) x.order = baseA + (x.order - baseB);
-  });
-  normaliseOrders(); renderGrid(); toast(`Reihe ${ra} ↔ ${rb} getauscht`, 'ok');
-}
-
-function swapCols() {
-  const ca = parseInt(document.getElementById('mvColA').value);
-  const cb = parseInt(document.getElementById('mvColB').value);
-  if (!ca || !cb || ca === cb) { toast('Zwei verschiedene Spalten wählen'); return; }
-  const cols = CSettings().maxCols;
-  snapshotArrange(); normaliseOrders();
-  CItems().forEach(x => {
-    const col = (x.order % cols) + 1;
-    if      (col === ca) x.order = x.order - (ca - 1) + (cb - 1);
-    else if (col === cb) x.order = x.order - (cb - 1) + (ca - 1);
-  });
-  normaliseOrders(); renderGrid(); toast(`Spalte ${ca} ↔ ${cb} getauscht`, 'ok');
 }
 
 // ─── HOTKEY RECORDING ─────────────────────────────────────────
@@ -885,9 +670,7 @@ export function registerEvents() {
       if (p) { p.name = name; p.icon = icon; }
     } else {
       const np = mkProfile(name, icon);
-      np.settings = { ...CSettings() };
-      const total = np.settings.maxCols * np.settings.maxRows;
-      for (let i = 0; i < total; i++) np.items.push(mkPH(i));
+      for (let i = 0; i < STARTER_PLACEHOLDER_COUNT; i++) np.items.push(mkPH(i));
       APP.profiles.push(np);
       APP.activeProfileId = np.id;
     }
@@ -927,13 +710,9 @@ export function registerEvents() {
     bootstrap.Modal.getInstance(document.getElementById('ambTrackIconModal')).hide();
   });
 
-  // Toolbar — grid controls
-  document.getElementById('maxCols')?.addEventListener('change', function() {
-    const cs = CSettings(); cs.maxCols = Math.max(1, Math.min(32, parseInt(this.value) || 10)); this.value = cs.maxCols; renderGrid();
-  });
-  document.getElementById('maxRows')?.addEventListener('change', function() {
-    const cs = CSettings(); cs.maxRows = Math.max(1, Math.min(32, parseInt(this.value) || 10)); this.value = cs.maxRows; renderGrid();
-  });
+  // Toolbar — Rastergröße kommt jetzt vollständig aus grid-system.css
+  // (--grid-cols je Breakpoint); es gibt keine manuellen Spalten/Reihen-
+  // Felder mehr, gegen die man hier lauschen müsste.
 
   // Master volume
   document.getElementById('masterVol')?.addEventListener('input', function() {
@@ -986,14 +765,14 @@ export function registerEvents() {
     });
   });
 
-  // ─── Anordnen / Tauschen ("Werkzeuge") — entfernt ─────────────
-  // Wird durch ein neues Spalten-System ersetzt (siehe Auftrag).
-  // Die zugehörigen Buttons/Bars (arrangeBar, moveBar, btnArrange,
-  // btnMoveMode, arrRow*/arrCol*, btnSwapRows/Cols …) existieren nicht
-  // mehr im Markup. Die Implementierungsfunktionen (enterArrangeMode,
-  // exitArrangeMode, arrangeRowLeft & co., updateMoveBarSelects) bleiben
-  // vorerst in ui.js/events.js liegen — unerreichbar, aber nicht
-  // gelöscht, bis das neue Spalten-System sie ersetzt (Cleanup-Kandidat).
+  // ─── Anordnen / Tauschen ("Werkzeuge") — final entfernt ────────
+  // Das neue, breakpoint-gesteuerte Spalten-System (grid-system.css)
+  // macht manuelles Anordnen/Tauschen überflüssig: das Grid fließt
+  // jetzt automatisch, es gibt kein fixes maxCols/maxRows mehr, gegen
+  // das arrangiert werden könnte. Buttons, Bars UND die zugehörigen
+  // Implementierungsfunktionen (enterArrangeMode, arrangeRowLeft & co.,
+  // addCol/removeCol, swapRows/Cols, updateMoveBarSelects) wurden
+  // entfernt statt weiter als totes Cleanup-Kandidat mitgeschleift.
 
 
   document.getElementById('btnAddSlot')?.addEventListener('click', () => {

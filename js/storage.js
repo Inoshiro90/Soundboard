@@ -3,7 +3,7 @@
  * Fixes: decodeAudioSmart uses audioCache, migrateEffects complete for all phases
  */
 
-import { APP, CItems, CSettings, STORAGE_KEY } from './state.js';
+import { APP, CItems, STORAGE_KEY } from './state.js';
 import { uid, bk }    from './utils.js';
 import { toast }      from './notifications.js';
 import { defaultEffects } from './audio.js';
@@ -175,9 +175,14 @@ export async function decodeAllAudio() {
 
 // ─── FACTORY ─────────────────────────────────────────────────
 
+// Wie viele leere Kacheln bekommt ein neu angelegtes Profil als Startbestand?
+// Früher aus maxCols*maxRows (10×10=100) berechnet; das Grid ist seit dem
+// neuen Spalten-System (grid-system.css) breakpoint-gesteuert und hat kein
+// festes Zeilenlimit mehr, daher ein fester, viewport-unabhängiger Wert.
+export const STARTER_PLACEHOLDER_COUNT = 24;
+
 export function mkProfile(name, icon) {
-  return { id: uid(), name, icon: icon || '🎵', items: [],
-           settings: { maxCols: 10, maxRows: 10, tileW: 120, tileH: 120 } };
+  return { id: uid(), name, icon: icon || '🎵', items: [] };
 }
 
 export function mkAmbientProfile(name, icon) {
@@ -221,7 +226,7 @@ export function initDefaults() {
     { name: 'FEUER',  icon: '🔥', color: '#dd5b00' },
     { name: 'WASSER', icon: '💧', color: '#0075de' }
   ];
-  const total = p.settings.maxCols * p.settings.maxRows;
+  const total = STARTER_PLACEHOLDER_COUNT;
   for (let i = 0; i < total; i++) {
     p.items.push(i < defs.length ? mkSound(defs[i], i) : mkPH(i));
   }

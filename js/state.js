@@ -14,8 +14,6 @@ export const APP = {
   editProfileId: null,
   hkTarget: null,
   activeCategory: 'all',
-  arrangeMode: false, lockMode: false, arrangeHistory: [],
-  moveMode: false,
   trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null,
            zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null },
   // Phase 3
@@ -59,7 +57,6 @@ export function CATracks() { return CAP()?.tracks || []; }
 
 export function CP()       { return APP.profiles.find(p => p.id === APP.activeProfileId) || APP.profiles[0]; }
 export function CItems()   { return CP()?.items || []; }
-export function CSettings(){ return CP()?.settings || { maxCols: 10, maxRows: 10, tileW: 120, tileH: 120 }; }
 
 // ─── EMOJI CATEGORIES — Unicode 17.0, skin-tone variants removed ───
 // Icon names are Lucide icon identifiers (rendered via lucide.createIcons())
