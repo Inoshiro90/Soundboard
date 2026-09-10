@@ -95,13 +95,17 @@
   flex-shrink: 0;
 }
 
-/* Volume control group — grows to take the majority of the row, especially
-   on narrow viewports, since it's the primary control that sits here. */
+/* Volume control group — feste Breite von 4 Rasterspalten (--w-4col,
+   siehe grid-system.css) statt flexiblem Wachstum. Ist jetzt der einzige
+   Inhalt der primären Menüleiste (Stop/Einstellungen sitzen darunter im
+   Sound-Menüband, siehe index.html). */
 .menubar-volume {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex: 1 1 160px;
+  width: var(--w-4col);
+  max-width: 100%;
+  flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
 }
@@ -430,12 +434,10 @@
   .profile-bar       { padding: var(--space-1) var(--space-3); }
   .board             { padding: var(--space-2); }
   .menubar-volume__slider { flex: 1 1 auto; width: auto; }
-  .menubar-volume     { flex-basis: 0; } /* grow purely from available space, not a fixed 160px ask */
 
-  /* Lautstärke nimmt den Großteil der Zeile ein: Stop/Einstellungen/
-     Wiedergabe schrumpfen zu reinen Icon-Buttons (Label ausgeblendet,
-     aria-label bleibt für Screenreader erhalten) statt die Zeile mit
-     vollen Textlabels zu verstopfen und den Regler zu verdrängen. */
+  /* Stop/Einstellungen/Wiedergabe schrumpfen zu reinen Icon-Buttons
+     (Label ausgeblendet, aria-label bleibt für Screenreader erhalten)
+     statt die Zeile mit vollen Textlabels zu verstopfen. */
   .app-menubar       { flex-wrap: nowrap; }
   .app-menubar > .menubar-btn,
   .app-menubar > .popover-wrap > .menubar-btn {
@@ -459,8 +461,5 @@
 @media (max-width: 480px) {
   .menubar-volume__slider { flex: 1 1 auto; width: auto; max-width: none; display: block !important; }
   .menubar-volume__number { display: none; }
-  /* Ensure volume group itself is always visible and keeps the lion's share
-     of the row's width on very narrow viewports. */
-  .menubar-volume { display: flex !important; flex: 1 1 auto; min-width: 90px; }
 }
 

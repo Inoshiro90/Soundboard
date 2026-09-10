@@ -750,7 +750,6 @@ export function setViewMode(mode) {
 
   document.getElementById('profBar')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundMenubar')?.toggleAttribute('hidden', !soundOn);
-  document.getElementById('soundToolbar')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('ambProfBar')?.toggleAttribute('hidden', soundOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', soundOn);

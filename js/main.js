@@ -6,7 +6,7 @@
  */
 import { load }                        from './storage.js';
 import { registerEvents }              from './events.js';
-import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, initTileAddChoice } from './ui.js';
+import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, initTileAddChoice, initSlotEditModal } from './ui.js';
 import { ensurePitchWorklet, actx, hasAudioContext } from './audio.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
@@ -30,6 +30,7 @@ async function init() {
   initDisclosure();
   // "+"-Kachel: gemeinsames Sound/Makro-Auswahl-Popover
   initTileAddChoice();
+  initSlotEditModal();
 
   // Ctrl+Z / Ctrl+Y
   document.addEventListener('keydown', e => {

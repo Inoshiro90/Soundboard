@@ -4,7 +4,7 @@
  */
 
 import { APP, CP, CItems } from './state.js';
-import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr } from './utils.js';
+import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer } from './audio.js';
 import { invalidateBuffer } from './audioCache.js';
@@ -354,6 +354,26 @@ function _syncMacroAdvancedIndicator() {
   toggle?.classList.toggle('has-active-fx', !!nonDefault);
 }
 
+/**
+ * Icon + Akzentfarbe in der "Darstellung & Organisation"-Einstiegskarte
+ * nachziehen, damit die aktuelle Wahl sichtbar bleibt, auch wenn die
+ * Dialogbox mit dem eigentlichen Icon-/Farb-Picker geschlossen ist —
+ * gleiches Prinzip wie die Aktive-Effekte-Übersicht bei Audio-Effekte.
+ */
+function _syncAppearancePreview() {
+  const iconEl = document.getElementById('smAppearancePreviewIcon');
+  if (iconEl) {
+    const val = document.getElementById('eIcon')?.value.trim();
+    iconEl.textContent = isCustomIcon(val) ? '🖼️' : (val || '🔊');
+  }
+  const colorEl = document.getElementById('smAppearancePreviewColor');
+  if (colorEl) {
+    const selected = document.querySelector('#clrOpts .color-swatch.is-selected');
+    const color = selected?.dataset.color;
+    colorEl.style.background = (color && color !== 'none') ? color : 'transparent';
+  }
+}
+
 function _setModalContext(kind) {
   document.querySelectorAll('.sm-sound-only').forEach(el => { el.style.display = kind === 'sound' ? '' : 'none'; });
   document.querySelectorAll('.sm-ambient-only').forEach(el => { el.style.display = kind === 'ambient' ? '' : 'none'; });
@@ -412,7 +432,6 @@ export function openSoundModal(id, placeholderId = null) {
 
   set('eName',    s ? s.name     : '');
   set('eVol',     s ? s.vol      : 1);
-  set('ePitch',   s ? s.pitch    : 1);
   set('eVolNum',  Math.round((s ? s.vol : 1) * 100));
   set('eLoop',    '');
   set('eHotkey',  s ? s.hotkey   : '');
@@ -424,9 +443,6 @@ export function openSoundModal(id, placeholderId = null) {
   chk('eLoop', s ? !!s.loop   : false);
   chk('eFade', s ? !!s.fade   : false);
   chk('eRnd',  s ? !!s.random : false);
-
-  const pitchLbl = document.getElementById('pitchLbl');
-  if (pitchLbl) pitchLbl.textContent = ((s ? s.pitch : 1) || 1).toFixed(2) + '×';
 
   const delBtn = document.getElementById('btnDelSound');
   if (delBtn) delBtn.style.display = id ? '' : 'none';
@@ -441,6 +457,7 @@ export function openSoundModal(id, placeholderId = null) {
   // ── Effects UI ────────────────────────────────────────────
   writeEffectsToUI(s?.effects || defaultEffects());
   // ─────────────────────────────────────────────────────────
+  _syncAppearancePreview();
 
   document.getElementById('soundModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#soundModal .icon-picker__cats');
@@ -858,10 +875,6 @@ export function registerEvents() {
     this.classList.add('is-active');
     document.getElementById('ambVariantRandom')?.classList.remove('is-active');
   });
-  document.getElementById('ePitch')?.addEventListener('input', function() {
-    const lbl = document.getElementById('pitchLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + '×';
-  });
 
   // Sound modal: volume slider ↔ number input sync
   document.getElementById('eVol')?.addEventListener('input', function() {
@@ -895,6 +908,20 @@ export function registerEvents() {
   document.getElementById('btnOpenFxModal')?.addEventListener('click', () => {
     new bootstrap.Modal(document.getElementById('soundFxModal')).show();
   });
+
+  // Darstellung & Organisation: gleiches Muster wie Audio-Effekte — eigene
+  // Dialogbox statt drittem Formular-Block im Hauptdialog.
+  document.getElementById('btnOpenAppearanceModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('soundAppearanceModal')).show();
+  });
+  // Vorschau in der Einstiegskarte nachziehen, sobald die Dialogbox
+  // schließt — die Karte ist dann wieder sichtbar und muss den aktuellen
+  // Stand zeigen (Prinzip: aktive Auswahl bleibt sichtbar, Abschnitt 8).
+  document.getElementById('soundAppearanceModal')?.addEventListener('hidden.bs.modal', _syncAppearancePreview);
+  // …und schon während der Dialog offen ist live mitziehen, für den Fall,
+  // dass beide Dialoge gleichzeitig sichtbar sind (z. B. sehr breiter Screen).
+  document.getElementById('eIcon')?.addEventListener('input', _syncAppearancePreview);
+  document.getElementById('clrOpts')?.addEventListener('click', _syncAppearancePreview);
 
   // Preset dropdown
   document.getElementById('fxPreset')?.addEventListener('change', function() {
@@ -1188,7 +1215,10 @@ export function registerEvents() {
     const g = id => document.getElementById(id);
     const name     = g('eName').value.trim()      || 'SOUND';
     const vol      = parseFloat(g('eVol').value);
-    const pitch    = parseFloat(g('ePitch').value);
+    // Pitch hat keine UI mehr (siehe Audio-Effekte → Pitch Shift) — beim
+    // Bearbeiten bleibt ein evtl. vorhandener alter Wert einfach erhalten,
+    // neue Sounds starten bei 1 (unverändert).
+    const pitch    = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
     const loop     = g('eLoop').checked;
     const fade     = g('eFade').checked;
     const random   = g('eRnd').checked;
@@ -1266,7 +1296,7 @@ export function registerEvents() {
     // Build a temporary sound object from the current modal state
     // so preview uses the FULL effect chain (same engine as playback)
     const vol   = parseFloat(document.getElementById('eVol')?.value)   || 1;
-    const pitch = parseFloat(document.getElementById('ePitch')?.value) || 1;
+    const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
     const effects = readEffectsFromUI();
 
     const tempSound = {

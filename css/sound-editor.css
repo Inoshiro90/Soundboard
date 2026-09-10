@@ -1,0 +1,57 @@
+/* ============================================================
+   SOUND-EDITOR.CSS — Grid-System-Layout für "Sound bearbeiten"
+   ============================================================
+   Ersetzt das alte Bootstrap-Formular (row/col-lg-5/4/3) durch
+   das echte Spalten-Raster (grid-system.css: --grid-cols,
+   --grid-gutter). Kombiniert mit einer radikal reduzierten
+   Progressive-Disclosure-Hierarchie:
+
+     Ebene 1 (immer sichtbar, kein Akkordeon):
+       Name (sticky bar) · Sound-Slots/Datei · Lautstärke
+
+     Ebene 2 ("Verhalten", Akkordeon, ZU beim ersten Öffnen):
+       Pitch · Loop · Fade · Zufall / Ambient-Intervall & Fades
+
+     Ebene 3 (eigene Dialogbox "Darstellung & Organisation"):
+       Icon · Akzentfarbe · Kachel-Hintergrund · Kategorie · Hotkey
+
+     (Audio-Effekte leben bereits seit vorheriger Iteration in
+     ihrer eigenen Dialogbox — unverändert.)
+   ============================================================ */
+
+.sm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols), 1fr);
+  gap: var(--grid-gutter);
+  align-items: start;
+}
+
+/* Mobile-first: jedes Feld ist standardmäßig volle Breite —
+   Formulare auf schmalen Screens sollen nie nebeneinander
+   gequetscht werden. */
+.sm-grid > * {
+  grid-column: 1 / -1;
+}
+
+/* MD (≥768px, 8 Spalten) */
+@media (min-width: 768px) {
+  .sm-field--half    { grid-column: span 4; }
+  .sm-field--third    { grid-column: span 3; }
+  .sm-field--quarter  { grid-column: span 2; }
+}
+
+/* LG+ (≥912px, 12 Spalten) */
+@media (min-width: 912px) {
+  .sm-field--half    { grid-column: span 6; }
+  .sm-field--third    { grid-column: span 4; }
+  .sm-field--quarter  { grid-column: span 3; }
+}
+
+/* ─── EBENE 1: KEIN ACCORDION-CHROME MEHR ───────────────────
+   Vorher lag Grundeinstellungen selbst in einem sm-section-
+   Akkordeon ("Grundeinstellungen", stets offen) — das war
+   überflüssige Chrome für Inhalte, die ohnehin nie eingeklappt
+   werden sollten. Jetzt einfach direkter Inhalt im Formular. */
+.sm-level1 {
+  padding-top: var(--space-2);
+}

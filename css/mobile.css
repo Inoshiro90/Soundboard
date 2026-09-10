@@ -58,6 +58,21 @@
   padding: 0 !important;
 }
 
+/* BUGFIX: .sm-body is intentionally zero-padding so accordion rows
+   (.sm-section-toggle/.sm-section-body) can go edge-to-edge with their
+   own background. But content that sits DIRECTLY in the body — not
+   inside an .sm-section — has no padding source at all then, so it
+   touches the modal's left/right edge (worst on mobile, where the
+   dialog itself also loses its side margin below). Give exactly those
+   direct children their own horizontal breathing room; nested content
+   inside .sm-section-body is unaffected (not a direct child of
+   .sm-body), so it never gets padded twice. */
+.sm-body > .sm-grid,
+.sm-body > .sm-level1 {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
 /* ── Accordion Sections ────────────────────────────────────── */
 .sm-section {
   border-bottom: var(--border-whisper);

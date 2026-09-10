@@ -121,22 +121,26 @@
   }
 }
 
-/* ─── SOUND-EDITOR: EINSTIEG "AUDIO-EFFEKTE" (öffnet soundFxModal) ─── */
-.sm-fx-entry {
+/* ─── SOUND-EDITOR: KOMPAKTE EINSTIEGS-KARTEN ───────────────────
+   Generisches Muster für "diese Funktion ist keine Grundfunktion,
+   lebt in einer eigenen Dialogbox" — aktuell genutzt für
+   "Audio-Effekte" (→ soundFxModal) und "Darstellung & Organisation"
+   (→ soundAppearanceModal). */
+.sm-entry-card {
   border: var(--border-whisper);
   border-radius: var(--radius-sm);
   background: var(--bg-warm);
   padding: var(--space-3);
-  margin: var(--space-3) 0;
+  margin: var(--space-3) var(--space-4);
 }
 
-.sm-fx-entry__head {
+.sm-entry-card__head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.sm-fx-entry__title {
+.sm-entry-card__title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -146,8 +150,33 @@
   flex: 1;
 }
 
-.sm-fx-entry #btnOpenFxModal {
+.sm-entry-card__head .btn {
   flex-shrink: 0;
+}
+
+/* Icon/Farb-Vorschau in der "Darstellung"-Einstiegskarte, damit die
+   aktuelle Wahl sichtbar bleibt, ohne die Dialogbox zu öffnen. */
+.sm-entry-card__preview-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  flex-shrink: 0;
+}
+
+.sm-entry-card__preview-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-circle);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+  background: transparent;
 }
 
 /* ─── SOUND-EDITOR: KOMPAKTER AKTIVE-EFFEKTE-ÜBERBLICK ─── */

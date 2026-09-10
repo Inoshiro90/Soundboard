@@ -77,6 +77,7 @@ export function renderGrid() {
       makePHTile(item)
     );
   });
+  renderLucideIcons(grid);
 
   updateCategories();
   updateStatus();
@@ -114,7 +115,7 @@ export function makeSoundTile(s) {
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
       <button class="tile-ctrl-btn js-edit-btn" title="Bearbeiten" aria-label="Sound bearbeiten">
-        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+        <i data-lucide="pencil" aria-hidden="true"></i>
       </button>
     </div>
     <div class="drag-dots" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
@@ -159,7 +160,7 @@ export function makeMacroTile(m) {
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
       <button class="tile-ctrl-btn js-edit-btn" title="Bearbeiten" aria-label="Makro bearbeiten">
-        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+        <i data-lucide="pencil" aria-hidden="true"></i>
       </button>
     </div>
     <div class="drag-dots" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
@@ -774,20 +775,9 @@ export function buildColorOpts(containerId, current) {
 // ─── SLOT LIST ────────────────────────────────────────────────
 
 export function renderSlotList() {
-  const list   = document.getElementById('slotList');
-  const wvDisp = document.getElementById('wvDisp');
+  const list = document.getElementById('slotList');
   if (!list) return;
   list.innerHTML = '';
-
-  const loaded = APP.editSlots.filter(sl => sl && sl.data).length;
-  if (wvDisp) {
-    wvDisp.innerHTML = loaded > 0
-      ? '<div class="waveform-bars">' +
-        Array.from({ length: 22 }, (_, i) =>
-          `<div class="waveform-bar" style="height:${5 + Math.random() * 28}px;animation-delay:${i * 0.07}s"></div>`
-        ).join('') + '</div>'
-      : '<span>Keine Dateien geladen</span>';
-  }
 
   let slotDragSrc = null;
 
@@ -797,34 +787,26 @@ export function renderSlotList() {
     row.draggable = true;
     row.dataset.si = i;
 
-    const hasBuf = sl && sl.data && APP.audioBuffers[`_ed_${i}`];
-    const dur    = hasBuf ? APP.audioBuffers[`_ed_${i}`].duration : null;
     const previewHtml = sl && sl.data
-      ? `<button class="slot-btn slot-btn--preview js-prev-btn" title="Vorschau" aria-label="Slot vorschau">&#9654;</button>` : '';
+      ? `<button class="slot-btn slot-btn--preview js-prev-btn" title="Vorschau abspielen" aria-label="Slot vorschau">
+           <i class="fa-solid fa-play" aria-hidden="true"></i>
+         </button>` : '';
 
+    // Sounddauer/Start/Ende/Zuschneiden leben jetzt gebündelt im
+    // slotEditModal (Edit-Button) — die Zeile zeigt nur noch Name +
+    // die vier Kernaktionen, dafür alle groß genug für motorisch
+    // eingeschränkte Nutzer:innen (≥44px Touch-Ziel).
     row.innerHTML = `
       <div class="slot-drag-handle" title="Ziehen" aria-hidden="true"><span></span><span></span><span></span></div>
       <span class="slot-num">${i + 1}.</span>
       <span class="slot-name${sl && sl.data ? '' : ' slot-name--empty'}">${sl && sl.data ? (sl.name || 'Datei ' + (i + 1)) : '– leer –'}</span>
-      ${dur ? `<span class="slot-dur">${dur.toFixed(1)}s</span>` : ''}
-      ${sl && sl.data ? `
-        <span class="u-text-muted u-text-badge" aria-hidden="true">▶</span>
-        <input type="number" class="form-control slot-trim js-trim-s" placeholder="0" step=".1" min="0" value="${sl.trimStart || 0}" aria-label="Start Sekunden">
-        <span class="u-text-muted u-text-badge" aria-hidden="true">→</span>
-        <input type="number" class="form-control slot-trim js-trim-e" placeholder="Ende" step=".1" min="0" value="${sl.trimEnd ?? ''}" aria-label="Ende Sekunden">
-      ` : ''}
       ${previewHtml}
-      <button class="slot-btn slot-btn--load js-load-btn" title="Laden" aria-label="Audio laden">
+      <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
         <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
       </button>
-      ${sl && sl.data ? `<button class="slot-btn slot-btn--trim js-trim-btn" title="Zuschneiden" aria-label="Audio zuschneiden"><i class="fa-solid fa-scissors" aria-hidden="true"></i></button>` : ''}
+      ${sl && sl.data ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
       ${APP.editSlots.length > 1 ? `<button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>` : ''}
     `;
-
-    const ts = row.querySelector('.js-trim-s');
-    const te = row.querySelector('.js-trim-e');
-    if (ts) ts.addEventListener('change', e => { APP.editSlots[i].trimStart = parseFloat(e.target.value) || 0; });
-    if (te) te.addEventListener('change', e => { APP.editSlots[i].trimEnd   = e.target.value === '' ? null : parseFloat(e.target.value); });
 
     row.querySelector('.js-load-btn').addEventListener('click', () => {
       APP.loadingSlotIdx = i;
@@ -833,8 +815,8 @@ export function renderSlotList() {
     });
     const rmBtn = row.querySelector('.js-rm-btn');
     if (rmBtn) rmBtn.addEventListener('click', () => { APP.editSlots.splice(i, 1); renderSlotList(); });
-    const trimBtn = row.querySelector('.js-trim-btn');
-    if (trimBtn) trimBtn.addEventListener('click', () => openTrimModal(i));
+    const editBtn = row.querySelector('.js-slot-edit-btn');
+    if (editBtn) editBtn.addEventListener('click', () => openSlotEditModal(i));
     const prevBtn = row.querySelector('.js-prev-btn');
     if (prevBtn) prevBtn.addEventListener('click', () => previewSlot(i));
 
@@ -857,16 +839,67 @@ export function renderSlotList() {
 
     list.appendChild(row);
   });
+
+  renderLucideIcons(list);
 }
 
-// previewSlot: applies pitch from modal input field
+// ─── SLOT-EDIT-DIALOG (Sounddauer / Start / Ende / Zuschneiden) ─
+// Ein einziger, wiederverwendeter Dialog für alle Slots (statt einem
+// Modal pro Slot) — gleiches Muster wie die "+"-Kachel Sound/Makro-Wahl.
+let _slotEditIdx = null;
+
+export function openSlotEditModal(i) {
+  const sl = APP.editSlots[i];
+  if (!sl || !sl.data) return;
+  _slotEditIdx = i;
+
+  const hasBuf = APP.audioBuffers[`_ed_${i}`];
+  const dur    = hasBuf ? APP.audioBuffers[`_ed_${i}`].duration : null;
+
+  const durEl = document.getElementById('slotEditDuration');
+  if (durEl) durEl.textContent = dur ? dur.toFixed(1) + 's' : '–';
+  const nameEl = document.getElementById('slotEditName');
+  if (nameEl) nameEl.textContent = sl.name || `Datei ${i + 1}`;
+  const tsEl = document.getElementById('slotEditStart');
+  if (tsEl) tsEl.value = sl.trimStart || 0;
+  const teEl = document.getElementById('slotEditEnd');
+  if (teEl) teEl.value = sl.trimEnd ?? '';
+
+  new bootstrap.Modal(document.getElementById('slotEditModal')).show();
+}
+
+/** Wires the shared slot-edit dialog once. Call on app init. */
+export function initSlotEditModal() {
+  if (document._slotEditWired) return;
+  document._slotEditWired = true;
+
+  document.getElementById('slotEditStart')?.addEventListener('change', e => {
+    if (_slotEditIdx === null) return;
+    const sl = APP.editSlots[_slotEditIdx];
+    if (sl) sl.trimStart = parseFloat(e.target.value) || 0;
+  });
+  document.getElementById('slotEditEnd')?.addEventListener('change', e => {
+    if (_slotEditIdx === null) return;
+    const sl = APP.editSlots[_slotEditIdx];
+    if (sl) sl.trimEnd = e.target.value === '' ? null : parseFloat(e.target.value);
+  });
+  document.getElementById('slotEditTrimBtn')?.addEventListener('click', () => {
+    if (_slotEditIdx === null) return;
+    const idx = _slotEditIdx;
+    bootstrap.Modal.getInstance(document.getElementById('slotEditModal'))?.hide();
+    openTrimModal(idx);
+  });
+}
+
+// previewSlot: applies the sound's existing pitch (Pitch hat keine eigene
+// UI mehr, siehe Audio-Effekte → Pitch Shift)
 function previewSlot(i) {
   const sl = APP.editSlots[i];
   if (!sl || !sl.data) { toast('Slot leer'); return; }
   const buf = APP.audioBuffers[`_ed_${i}`];
   if (!buf) { toast('Audio lädt…'); return; }
-  const vol   = parseFloat(document.getElementById('eVol')?.value)   || 1;
-  const pitch = parseFloat(document.getElementById('ePitch')?.value) || 1;
+  const vol   = parseFloat(document.getElementById('eVol')?.value) || 1;
+  const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
   playBufferPreview(buf, sl, vol, pitch);
   toast(`Slot ${i + 1} ▶`, 'ok');
 }

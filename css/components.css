@@ -121,11 +121,17 @@
 	box-shadow: var(--shadow-focus);
 }
 
-/* ─── PROFILE TABS ─── */
+/* ─── PROFILE TABS ───────────────────────────────────────────
+   Feste Breite von 2 Rasterspalten (--w-2col, siehe grid-system.css)
+   statt inhaltsgetriebener Breite — Profilnamen werden bei Bedarf
+   abgeschnitten (Ellipsis) statt die Zeile beliebig zu strecken. */
 .profile-tab {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: var(--space-2);
+	width: var(--w-2col);
+	flex-shrink: 0;
 	padding: var(--space-1) var(--space-3);
 	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 	border: var(--border-whisper);
@@ -138,6 +144,8 @@
 	cursor: pointer;
 	transition: all var(--dur-base) var(--ease);
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .profile-tab:hover {
 	color: var(--text-primary);
@@ -663,23 +671,28 @@
 	border: var(--border-medium);
 }
 
-/* ─── SLOT LIST ─── */
+/* ─── SLOT LIST ───────────────────────────────────────────────
+   Grid-System-Layout statt Flex-Wrap: Ziehgriff/Nummer fix, Name
+   nimmt den Rest, die vier Kernaktionen (Play/Ordner/Bearbeiten/
+   Entfernen) sind ≥44px große Touch-Ziele (WCAG 2.5.5) statt der
+   vorherigen ~20px-Icon-Klicks — Sounddauer/Start/Ende/Zuschneiden
+   leben jetzt im slotEditModal, siehe dort. */
 .slot-list {
 	display: flex;
 	flex-direction: column;
-	gap: var(--space-2);
-	max-height: 200px;
+	gap: var(--grid-gutter);
+	max-height: 260px;
 	overflow-y: auto;
 }
 .slot-row {
 	background: var(--bg-warm);
 	border: var(--border-whisper);
 	border-radius: var(--radius-subtle);
-	display: flex;
+	display: grid;
+	grid-template-columns: auto auto minmax(0, 1fr) repeat(4, auto);
 	align-items: center;
-	gap: var(--space-2);
+	gap: var(--grid-gutter);
 	padding: var(--space-2) var(--space-3);
-	flex-wrap: wrap;
 	cursor: default;
 	transition: border-color var(--dur-fast) var(--ease);
 }
@@ -694,10 +707,10 @@
 .slot-drag-handle {
 	cursor: grab;
 	color: var(--text-muted);
-	flex-shrink: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
+	padding: var(--space-2);
 }
 .slot-drag-handle span {
 	display: block;
@@ -711,12 +724,10 @@
 	font-size: 0.6rem;
 	color: var(--text-muted);
 	min-width: 16px;
-	flex-shrink: 0;
 }
 .slot-name {
 	font-size: var(--text-caption);
-	flex: 1;
-	min-width: 60px;
+	min-width: 0;
 	color: var(--text-primary);
 	white-space: nowrap;
 	overflow: hidden;
@@ -726,85 +737,47 @@
 	color: var(--text-muted);
 	font-style: italic;
 }
-.slot-dur {
-	font-family: var(--font-mono);
-	font-size: 0.6rem;
-	color: var(--text-muted);
-	white-space: nowrap;
-	flex-shrink: 0;
-}
-.slot-trim {
-	width: 52px !important;
-	padding: 2px var(--space-2) !important;
-	font-size: 0.7rem !important;
-}
+
+/* ─── SLOT-AKTIONS-BUTTONS: groß & barrierefrei (≥44px) ─── */
 .slot-btn {
-	background: none;
-	border: none;
+	width: 44px;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-sm);
 	cursor: pointer;
-	padding: 0 3px;
-	font-size: 0.8rem;
-	flex-shrink: 0;
-	transition: color var(--dur-fast) var(--ease);
+	font-size: 1rem;
+	transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .slot-btn--load {
 	color: var(--color-accent);
 }
 .slot-btn--load:hover {
 	color: var(--color-accent-active);
+	border-color: var(--color-accent);
 }
 .slot-btn--remove {
 	color: var(--text-muted);
 }
 .slot-btn--remove:hover {
 	color: var(--color-orange);
+	border-color: var(--color-orange);
 }
 .slot-btn--preview {
 	color: var(--color-teal);
 }
-.slot-btn--trim {
+.slot-btn--preview:hover {
+	border-color: var(--color-teal);
+}
+.slot-btn--edit {
 	color: var(--text-muted);
 }
-.slot-btn--trim:hover {
+.slot-btn--edit:hover {
 	color: var(--color-accent);
-}
-
-/* ─── WAVEFORM ─── */
-.waveform {
-	height: 36px;
-	background: var(--bg-warm);
-	border: var(--border-whisper);
-	border-radius: var(--radius-subtle);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-family: var(--font-mono);
-	font-size: var(--text-badge);
-	color: var(--text-muted);
-	overflow: hidden;
-}
-.waveform-bars {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	height: 100%;
-	padding: 4px 10px;
-}
-.waveform-bar {
-	width: 3px;
-	background: var(--color-accent);
-	border-radius: 2px;
-	opacity: 0.5;
-	animation: wv-ani 1.2s ease-in-out infinite;
-}
-@keyframes wv-ani {
-	0%,
-	100% {
-		transform: scaleY(0.27);
-	}
-	50% {
-		transform: scaleY(1);
-	}
+	border-color: var(--color-accent);
 }
 
 /* ─── HOTKEY FIELD ─── */
