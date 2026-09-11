@@ -30,6 +30,7 @@ import { actx, hasAudioContext, buildEffectChain } from './audio.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw }                              from './storage.js';
+import { PENCIL_ICON_SVG }                       from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -660,9 +661,9 @@ export function renderAmbientProfileTabs() {
     tab.dataset.pid = p.id;
     const playingCount = (p.tracks || []).filter(t => isAmbientPlaying(t.id)).length;
     tab.innerHTML =
-      `<span>${iconHtmlOr(p.icon, '🌫️', 'profile-tab__icon-img')} ${_esc(p.name)}${playingCount ? ` <span class="profile-tab__live" title="${playingCount} Sound(s) laufen" aria-hidden="true"></span>` : ''}</span>` +
+      `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🌫️', 'profile-tab__icon-img')} ${_esc(p.name)}${playingCount ? ` <span class="profile-tab__live" title="${playingCount} Sound(s) laufen" aria-hidden="true"></span>` : ''}</span>` +
       `<span class="profile-tab__edit" title="Szene bearbeiten" aria-label="Szene bearbeiten">` +
-      `<i class="fa-solid fa-pen" aria-hidden="true"></i></span>`;
+      `${PENCIL_ICON_SVG}</span>`;
     if (addBtn) bar.insertBefore(tab, addBtn); else bar.appendChild(tab);
   });
 }
@@ -715,6 +716,8 @@ export function renderAmbientPanel() {
 
   const mv = document.getElementById('ambientMasterVol');
   if (mv) mv.value = APP.ambient.masterVol ?? 1;
+  const mvNum = document.getElementById('ambientMasterVolNum');
+  if (mvNum) mvNum.value = Math.round((APP.ambient.masterVol ?? 1) * 100);
 
   const lbl = document.getElementById('ambientSceneLbl');
   if (lbl) { const p = CAP(); lbl.textContent = p ? `${iconGlyph(p.icon)} ${p.name}` : ''; }
@@ -753,10 +756,10 @@ export function setViewMode(mode) {
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('ambProfBar')?.toggleAttribute('hidden', soundOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', soundOn);
-  // Stop sitzt jetzt zusammen mit Lautstärke im globalen app-menubar (damit
-  // beide "in der gleichen Zeile" stehen), stoppt aber nur Sound-Kacheln
-  // (siehe audio.js: stopAll()) — daher weiterhin sound-modus-spezifisch
-  // ein-/ausgeblendet, damit sich die Modi klar voneinander abgrenzen.
+  // Stop sitzt jetzt zusammen mit der Sound-Lautstärke in #fxToolbar
+  // innerhalb von #soundBoard (stoppt nur Sound-Kacheln, s. audio.js) —
+  // wird durch das hidden-Attribut auf #soundBoard bereits mitversteckt;
+  // dieser Toggle bleibt zusätzlich als explizite Absicherung bestehen.
   document.getElementById('btnStop')?.toggleAttribute('hidden', !soundOn);
 
   const bSound = document.getElementById('btnModeSound');
@@ -802,6 +805,16 @@ export function registerAmbientEvents() {
 
   document.getElementById('ambientMasterVol')?.addEventListener('input', function () {
     setAmbientMasterVolume(parseFloat(this.value));
+    const numEl = document.getElementById('ambientMasterVolNum');
+    if (numEl) numEl.value = Math.round(parseFloat(this.value) * 100);
+  });
+  document.getElementById('ambientMasterVolNum')?.addEventListener('input', function () {
+    const pct = Math.max(0, Math.min(100, parseInt(this.value) || 0));
+    this.value = pct;
+    const val  = pct / 100;
+    setAmbientMasterVolume(val);
+    const slEl = document.getElementById('ambientMasterVol');
+    if (slEl) slEl.value = val;
   });
 
   document.getElementById('btnAmbientStopAll')?.addEventListener('click', () => stopAllAmbient());

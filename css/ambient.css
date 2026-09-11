@@ -36,8 +36,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 30px;
+  /* Spez. Kap. 13/66: eigenständiges Icon-only-Target -> var(--h-btn) */
+  width: var(--h-btn);
+  height: var(--h-btn);
   border-radius: var(--radius-pill);
   border: none;
   background: transparent;
@@ -115,7 +116,14 @@
   color: var(--text-muted);
   font-size: 0.8rem;
 }
-.ambient-board__master-slider { width: 110px; }
+/* Spez. Kap. 32: Master-Slider rasterbasiert statt fixer 110px-Breite.
+   ~3 Rasterspalten, schrumpft aber flexibel wenn der Toolbar-Platz
+   nicht ausreicht (z.B. XS/SM). */
+.ambient-board__master-slider {
+  width: var(--w-3col);
+  max-width: 100%;
+  flex: 1 1 auto;
+}
 
 .ambient-empty {
   color: var(--text-muted);
@@ -127,8 +135,13 @@
 /* ─── LIST ─── */
 .ambient-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--space-2);
+  /* Spez. Kap. 9/47: rasterbasierte Mindestbreite statt einer
+     eigenständigen 320px-Konstante — an var(--grid-row-h) gekoppelt.
+     min(...,100%) verhindert Overflow, falls ein Container schmaler
+     als die berechnete Mindestbreite ist (nur oberhalb 767px aktiv,
+     s. Media Query unten, die XS/SM ohnehin auf 1fr zwingt). */
+  grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--grid-row-h) * 6), 100%), 1fr));
+  gap: var(--grid-gutter);
 }
 
 /* ─── ROW (not a tile: horizontal, info-dense, wraps on mobile) ─── */
@@ -165,8 +178,9 @@
 .ambient-row.is-waiting .ambient-row__state { color: var(--color-accent); }
 
 .ambient-row__play {
-  width: 30px;
-  height: 30px;
+  /* Spez. Kap. 32: Ambient Play/Stop -> var(--h-btn) */
+  width: var(--h-btn);
+  height: var(--h-btn);
   border-radius: var(--radius-circle);
   border: var(--border-whisper);
   background: var(--bg-surface);
@@ -187,13 +201,18 @@
 }
 
 .ambient-row__icon {
+  /* Spez. Kap. 32: Ambient Icon/Edit Target -> var(--h-btn) */
+  width: var(--h-btn);
+  height: var(--h-btn);
   font-size: 1.05rem;
   background: none;
   border: none;
   cursor: pointer;
   flex-shrink: 0;
   line-height: 1;
-  padding: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-micro);
 }
 .ambient-row__icon:hover { background: var(--bg-surface); }
@@ -214,14 +233,22 @@
 .ambient-row__name:hover  { border-bottom-color: var(--border-color); }
 .ambient-row__name:focus  { border-bottom-color: var(--color-accent); }
 
+/* Spez. Kap. 32: Ambient Volume Group — auf XS/SM flexibel/volle Breite,
+   ab MD rasterbasiert (~1/3 der Zeile). */
 .ambient-row__vol {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  flex: 1 1 130px;
-  min-width: 110px;
+  flex: 1 1 100%;
+  min-width: 0;
   color: var(--text-muted);
   font-size: 0.7rem;
+}
+@media (min-width: 768px) {
+  .ambient-row__vol {
+    flex: 0 1 33.333%;
+    min-width: calc(var(--grid-row-h) * 3);
+  }
 }
 .ambient-row__vol-slider { flex: 1; min-width: 60px; }
 .ambient-row__vol-pct {
@@ -233,8 +260,9 @@
 }
 
 .ambient-row__opt {
-  width: 28px;
-  height: 28px;
+  /* Spez. Kap. 32: Ambient Option Buttons -> var(--h-btn) */
+  width: var(--h-btn);
+  height: var(--h-btn);
   border-radius: var(--radius-micro);
   border: var(--border-whisper);
   background: var(--bg-surface);
@@ -302,14 +330,17 @@
   flex-shrink: 0;
 }
 .ambient-row__num {
+  /* Spez. Kap. 34: Breite Kategorie-C (kurzes Zahlenfeld), Höhe folgt
+     dem gemeinsamen Control-System. */
   width: 52px;
+  height: var(--h-btn);
   background: var(--bg-surface);
   border: var(--border-whisper);
   border-radius: var(--radius-micro);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  padding: 2px var(--space-1);
+  padding: 0 var(--space-1);
   text-align: center;
 }
 .ambient-row__num:disabled { opacity: .5; cursor: not-allowed; }
@@ -361,13 +392,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  height: var(--h-btn);
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-size: var(--text-badge);
   font-family: var(--font-sans);
   border-radius: var(--radius-pill);
-  padding: 3px var(--space-2);
+  padding: 0 var(--space-2);
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease);
 }
@@ -395,7 +427,10 @@
   padding: 3px var(--space-2);
   font-size: var(--text-badge);
   color: var(--text-secondary);
-  max-width: 220px;
+  /* Spez. Kap. 33: die nichtinteraktive Namens-Ellipsis (unten) trägt
+     die max-width, nicht der Chip selbst — sonst würde der Remove-
+     Button (eigenständiges Target) mit abgeschnitten. */
+  max-width: none;
 }
 .ambient-row__file-chip.is-missing { border-color: var(--color-orange); color: var(--color-orange); }
 .ambient-row__file-chip-name {
@@ -405,11 +440,13 @@
   max-width: 130px;
 }
 .ambient-row__file-chip-btn {
+  /* Spez. Kap. 33: eigenständiges Remove-Target -> var(--h-btn) Hit Area.
+     Der sichtbare ✕-Kreis bleibt klein (siehe ::before). */
+  width: var(--h-btn);
+  height: var(--h-btn);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -420,8 +457,13 @@
 }
 .ambient-row__file-chip-btn:hover { color: var(--text-primary); background: var(--bg-warm); }
 
-/* ─── RESPONSIVE ─── */
-@media (max-width: 600px) {
+/* ─── RESPONSIVE ───
+   Spez. Kap. 56: auf sanktionierten Breakpoint migriert (767px)
+   statt eigenem 600px-Wert. Die vormaligen .mode-toggle__btn-
+   Größenoverrides entfallen — var(--h-btn) ist bereits an jedem
+   Breakpoint fluide korrekt, ein zusätzlicher 380px-Sonderfall
+   (Kap. 56) ist nicht mehr nötig. */
+@media (max-width: 767px) {
   .ambient-board__toolbar        { gap: var(--space-2); }
   .ambient-board__master-slider  { flex: 1; width: auto; }
   .ambient-list                  { grid-template-columns: 1fr; }
@@ -430,10 +472,4 @@
   .ambient-row__name             { flex-basis: calc(100% - 130px); }
   .ambient-row__state            { flex-basis: 100%; order: 4; font-size: 0.65rem; }
   .ambient-row__extra            { gap: var(--space-2); }
-  .mode-toggle__btn              { width: 30px; height: 28px; }
-}
-
-@media (max-width: 380px) {
-  .mode-toggle__btn     { width: 26px; height: 24px; }
-  .mode-toggle__btn svg { width: 15px; height: 15px; }
 }

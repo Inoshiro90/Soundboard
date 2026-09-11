@@ -12,7 +12,9 @@
 	font-size: var(--text-badge);
 	font-weight: var(--fw-semibold);
 	letter-spacing: 0.125px;
-	padding: var(--space-1) var(--space-3);
+	/* Spez. Kap. 12: Standard-Button — Breite inhaltsbezogen, Höhe = var(--h-btn) */
+	height: var(--h-btn);
+	padding: 0 var(--space-3);
 	border-radius: var(--radius-micro);
 	border: var(--border-whisper);
 	background: var(--bg-surface);
@@ -82,29 +84,58 @@
 }
 
 .btn--icon {
-	width: 26px;
-	height: 26px;
+	/* Spez. Kap. 13: Icon-only-Targets — B = H = var(--h-btn) (Hit Area,
+	   nicht das Icon selbst) */
+	width: var(--h-btn);
+	height: var(--h-btn);
 	padding: 0;
 	border-radius: var(--radius-micro);
 }
 
 .btn--sm {
-	padding: 2px var(--space-2);
+	padding: 0 var(--space-2);
 	font-size: 0.65rem;
 }
 
-/* ─── RANGE SLIDER ─── */
+/* ─── RANGE SLIDER ───
+   Spez. Kap. 19: sichtbarer Track bleibt schmal (4px), das <input>
+   selbst bekommt aber mindestens var(--h-btn) bedienbare Höhe. Der
+   schmale Track wird per ::-webkit-slider-runnable-track /
+   ::-moz-range-track zentriert innerhalb dieser Fläche gerendert. */
 .slider {
 	-webkit-appearance: none;
+	appearance: none;
+	height: var(--h-btn);
+	background: transparent;
+	outline: none;
+	cursor: pointer;
+	display: block;
+}
+.slider::-webkit-slider-runnable-track {
 	height: 4px;
 	background: var(--bg-warm);
 	border-radius: var(--radius-pill);
-	outline: none;
-	cursor: pointer;
+	border: var(--border-whisper);
+}
+.slider::-moz-range-track {
+	height: 4px;
+	background: var(--bg-warm);
+	border-radius: var(--radius-pill);
 	border: var(--border-whisper);
 }
 .slider::-webkit-slider-thumb {
 	-webkit-appearance: none;
+	width: 14px;
+	height: 14px;
+	margin-top: -5px; /* (4px Track - 14px Thumb) / 2, zentriert den Thumb auf dem Track */
+	border-radius: var(--radius-circle);
+	background: var(--color-accent);
+	cursor: pointer;
+	border: 2px solid var(--bg-surface);
+	box-shadow: var(--shadow-card);
+	transition: transform var(--dur-fast) var(--ease);
+}
+.slider::-moz-range-thumb {
 	width: 14px;
 	height: 14px;
 	border-radius: var(--radius-circle);
@@ -117,25 +148,39 @@
 .slider::-webkit-slider-thumb:hover {
 	transform: scale(1.15);
 }
+.slider::-moz-range-thumb:hover {
+	transform: scale(1.15);
+}
 .slider:focus-visible::-webkit-slider-thumb {
+	box-shadow: var(--shadow-focus);
+}
+.slider:focus-visible::-moz-range-thumb {
 	box-shadow: var(--shadow-focus);
 }
 
 /* ─── PROFILE TABS ───────────────────────────────────────────
    Feste Breite von 2 Rasterspalten (--w-2col, siehe grid-system.css)
    statt inhaltsgetriebener Breite — Profilnamen werden bei Bedarf
-   abgeschnitten (Ellipsis) statt die Zeile beliebig zu strecken. */
+   abgeschnitten (Ellipsis) statt die Zeile beliebig zu strecken.
+   Spez. Kap. 14: Breite = var(--w-2col), Höhe = var(--h-tabbar);
+   der aktive Zustand darf die Größe nicht verändern — deshalb ist
+   der Bottom-Border immer 2px reserviert (nur die Farbe wechselt).
+   Icon+Name linksbündig, Edit-Button rechtsbündig (Nutzer-Feedback):
+   .profile-tab selbst verteilt die zwei Kind-Elemente per
+   space-between, die Ellipsis sitzt jetzt auf .profile-tab__name
+   statt auf dem äußeren Button (der zwei Flex-Kinder hat). */
 .profile-tab {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	gap: var(--space-2);
+	justify-content: space-between;
+	gap: var(--space-1);
 	width: var(--w-2col);
+	height: var(--h-tabbar);
 	flex-shrink: 0;
-	padding: var(--space-1) var(--space-3);
+	padding: 0 var(--space-2) 0 var(--space-3);
 	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 	border: var(--border-whisper);
-	border-bottom: none;
+	border-bottom: 2px solid transparent;
 	background: var(--bg-warm);
 	color: var(--text-muted);
 	font-family: var(--font-sans);
@@ -143,9 +188,7 @@
 	font-weight: var(--fw-medium);
 	cursor: pointer;
 	transition: all var(--dur-base) var(--ease);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	box-sizing: border-box;
 }
 .profile-tab:hover {
 	color: var(--text-primary);
@@ -156,17 +199,36 @@
 	color: var(--color-accent);
 	font-weight: var(--fw-semibold);
 	border-color: var(--border-color);
-	border-bottom: 2px solid var(--bg-surface);
+	border-bottom-color: var(--bg-surface);
 }
 
+.profile-tab__name {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Spez. Kap. 14: eigenständiges var(--h-btn) × var(--h-btn) Target,
+   unabhängig vom umgebenden Tab-Layout. */
 .profile-tab__edit {
-	font-size: 0.65rem;
+	width: var(--h-btn);
+	height: var(--h-btn);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	color: var(--text-muted);
 	cursor: pointer;
-	padding: 1px 3px;
 	border-radius: var(--radius-micro);
 	transition: color var(--dur-fast) var(--ease);
+	flex-shrink: 0;
 }
+.profile-tab__edit svg { width: 14px; height: 14px; display: block; }
 .profile-tab__edit:hover {
 	color: var(--color-accent);
 }
@@ -175,7 +237,8 @@
 	display: inline-flex;
 	align-items: center;
 	gap: var(--space-1);
-	padding: 3px var(--space-2);
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
 	border-radius: var(--radius-subtle);
 	border: 1px dashed var(--border-color);
 	background: transparent;
@@ -189,9 +252,12 @@
 	color: var(--color-accent);
 }
 
-/* ─── CATEGORY TABS ─── */
+/* ─── CATEGORY TABS ───
+   Spez. Kap. 66: keine im Dokument eindeutig benannte Komponente ->
+   semantisch nächstliegende Klasse (Standard-Button) übernommen. */
 .category-tab {
-	padding: 3px var(--space-2);
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
 	border-radius: var(--radius-micro);
 	border: var(--border-whisper);
 	background: transparent;
@@ -215,6 +281,13 @@
 	position: relative;
 	min-width: 0;
 	container-type: inline-size;
+	/* Deaktiviert Doppeltipp-Zoom-Verzögerung und Pinch-Zoom auf der
+	   Kachel, erlaubt aber normales Scrollen — wichtig als Baseline
+	   VOR einem Long-Press, da touch-action ab dem ersten touchstart
+	   gilt und ein späteres Umschalten (siehe .is-edit-mode unten)
+	   in manchen Browsern für die bereits laufende Touch-Sequenz zu
+	   spät kommen kann. */
+	touch-action: manipulation;
 }
 .tile-wrap.is-dragging {
 	opacity: 0.3;
@@ -455,19 +528,109 @@
 	display: flex;
 	gap: 2px;
 	opacity: 0;
+	/* WICHTIG: opacity:0 allein macht ein Element nicht "untappable" —
+	   auf Touch (kein :hover) wäre der unsichtbare Edit-Button sonst
+	   weiterhin exakt an der ursprünglich gemeldeten Stelle treffbar.
+	   pointer-events:none stellt sicher, dass er außerhalb von Hover/
+	   Bearbeitungsmodus wirklich inaktiv ist. */
+	pointer-events: none;
 	transition: opacity var(--dur-base) var(--ease);
 	z-index: 10;
 }
 .tile-wrap:hover .tile-controls {
 	opacity: 1;
+	pointer-events: auto;
+}
+/* Placeholder-"+"-Button: anders als der Edit-Button (der vor
+   versehentlichem Antippen geschützt werden soll) ist das Hinzufügen
+   auf einer LEEREN Kachel die einzige, gefahrlose Aktion dort — keine
+   konkurrierende "Play"-Aktion, die geschützt werden müsste. Bleibt
+   daher immer sichtbar/tappbar, auch ohne Hover (wichtig für Touch,
+   das :hover nie auslöst). */
+.tile--placeholder ~ .tile-controls {
+	opacity: 1;
+	pointer-events: auto;
 }
 
+/* ─── BEARBEITUNGSMODUS (iOS-Homescreen-Prinzip, Touch-only) ───────
+   Aktiviert per Long-Press (ui.js: setupTileEditGestures). Löst den
+   Gestenkonflikt zwischen Verschieben und Bearbeiten: Edit-Controls
+   bleiben dauerhaft sichtbar (nicht nur bei :hover, das Touch ohnehin
+   nicht hat), alle Kacheln "wackeln" als Signal, dass Tap jetzt
+   bearbeitet statt abspielt und Ziehen verschiebt. */
+.tile-grid.is-edit-mode .tile-controls {
+	opacity: 1;
+	pointer-events: auto;
+}
+.tile-grid.is-edit-mode .tile-wrap {
+	cursor: grab;
+	user-select: none;
+	-webkit-user-select: none;
+	/* Erlaubt vertikales Scrollen der Seite weiterhin, aber gibt dem
+	   Pointer-Drag Vorrang vor Browser-Pan/Zoom-Gesten auf der Kachel
+	   selbst, sobald man im Bearbeitungsmodus ist. */
+	touch-action: none;
+}
+.tile-grid.is-edit-mode .tile-wrap.is-dragging {
+	opacity: 0.5;
+	cursor: grabbing;
+}
+.tile-grid.is-edit-mode .tile-wrap.is-drag-over .tile {
+	outline: 2px solid var(--color-accent);
+	outline-offset: -2px;
+}
+
+@keyframes tile-jiggle {
+	0%   { transform: rotate(-1deg); }
+	50%  { transform: rotate(1deg); }
+	100% { transform: rotate(-1deg); }
+}
+.tile-grid.is-edit-mode .tile-wrap:not(.is-dragging) {
+	animation: tile-jiggle 0.22s ease-in-out infinite;
+}
+/* Leicht versetzt, damit es nicht wie ein einziger starrer Block wackelt. */
+.tile-grid.is-edit-mode .tile-wrap:nth-child(even):not(.is-dragging) {
+	animation-delay: -0.11s;
+}
+@media (prefers-reduced-motion: reduce) {
+	.tile-grid.is-edit-mode .tile-wrap {
+		animation: none;
+	}
+}
+
+.edit-mode-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	background: var(--badge-bg);
+	border: 1px solid var(--color-accent);
+	border-radius: var(--radius-subtle);
+	padding: var(--space-2) var(--space-3);
+	min-height: var(--h-btn);
+	flex-wrap: wrap;
+}
+.edit-mode-bar__label {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	color: var(--color-accent);
+	font-size: var(--text-caption);
+	font-weight: var(--fw-semibold);
+}
+
+/* Spez. Kap. 18/61: sekundäre Tile-Controls verwenden var(--h-btn),
+   dürfen aber die 1×1-Kachel nicht unbenutzbar machen. Da die
+   Controls per position:absolute über der Kachel (in den Gutter
+   hinein) schweben und erst bei Hover sichtbar werden, ist ein
+   leichtes Hinausragen in den Gutter unkritisch — die primäre
+   Kachelfläche bleibt uneingeschränkt bedienbar. */
 .tile-ctrl-btn {
 	background: var(--bg-surface);
 	border: var(--border-whisper);
 	color: var(--text-muted);
-	width: 26px;
-	height: 26px;
+	width: var(--h-btn);
+	height: var(--h-btn);
 	border-radius: var(--radius-micro);
 	font-size: 0.72rem;
 	cursor: pointer;
@@ -482,6 +645,10 @@
 .tile-ctrl-btn:hover {
 	color: var(--color-accent);
 	border-color: var(--color-accent);
+}
+
+@media only screen and (hover: none) {
+	.tile-ctrl-btn {display: none}
 }
 
 /* ─── DRAG DOTS ─── */
@@ -515,13 +682,18 @@
 	border-radius: var(--radius-md);
 	box-shadow: var(--shadow-deep);
 }
+/* Spez. Kap. 28: Modal Header/Footer -> var(--h-menubar) statt
+   individueller fester Höhen. min-height statt height, damit bei
+   200%-Textvergrößerung (Kap. 46) nichts abgeschnitten wird. */
 .modal-header {
 	border-bottom: var(--border-whisper);
 	padding: var(--space-3) var(--space-5);
+	min-height: var(--h-menubar);
 }
 .modal-footer {
 	border-top: var(--border-whisper);
 	padding: var(--space-3) var(--space-5);
+	min-height: var(--h-menubar);
 }
 .modal-title {
 	font-family: var(--font-sans);
@@ -529,13 +701,32 @@
 	font-weight: var(--fw-bold);
 	letter-spacing: -0.25px;
 }
+/* Spez. Kap. 29 + Nutzer-Feedback: Bootstraps Default-Icon (SVG als
+   background-image, dunkel/kaum sichtbar im Darkmode) wurde durch das
+   Lucide "x"-Icon (inline SVG mit stroke="currentColor") ersetzt.
+   Dadurch übernimmt es automatisch die normale Textfarbe je Theme —
+   kein eigener Dark-Mode-Filter-Hack mehr nötig. Die var(--h-btn)-
+   Hit-Area bleibt bestehen, das sichtbare Icon selbst bleibt klein
+   (18px, siehe HTML). */
 .btn-close {
-	filter: none;
-	opacity: 0.35;
+	background: none;
+	opacity: 0.55;
+	color: var(--text-primary);
+	width: var(--h-btn);
+	height: var(--h-btn);
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity var(--dur-fast) var(--ease);
 }
-[data-theme='dark'] .btn-close {
-	filter: invert(1);
-	opacity: 0.35;
+.btn-close:hover {
+	opacity: 1;
+}
+.btn-close svg {
+	width: 18px;
+	height: 18px;
+	display: block;
 }
 
 /* ─── FORMS ─── */
@@ -556,6 +747,14 @@
 	font-family: var(--font-sans);
 	border-radius: var(--radius-subtle);
 	font-size: var(--text-caption);
+	/* Spez. Kap. 37: Bootstraps eigene .form-control/.form-select
+	   Default-Höhe (~38px via padding/line-height) überschreiben,
+	   damit alle Formularfelder ohne eigene Höhenklasse dem
+	   gemeinsamen Control-System (var(--h-btn)) folgen. Komponenten
+	   mit eigener, spezifischerer Klasse (z.B. .vol-number-input,
+	   .ambient-row__num, .mstep-select) überschreiben dies gezielt. */
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
 	transition:
 		border-color var(--dur-base) var(--ease),
 		box-shadow var(--dur-base) var(--ease),
@@ -583,6 +782,25 @@
 	box-shadow: var(--shadow-focus);
 }
 
+/* Spez. Kap. 21/22: sichtbarer Switch-/Checkbox-Track darf sein
+   bestehendes Format behalten — die Hit Area (Checkbox + Label)
+   muss aber mindestens var(--h-btn) hoch sein. Wir nutzen dafür
+   den Label-/Wrapper-Bereich statt den Track selbst aufzublasen. */
+.form-check {
+	display: flex;
+	align-items: center;
+	min-height: var(--h-btn);
+	gap: var(--space-2);
+}
+.form-check .form-check-label {
+	padding-block: calc((var(--h-btn) - 1em) / 2);
+	cursor: pointer;
+}
+.form-check .form-check-input {
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
 /* ─── SECTION LABEL ─── */
 .section-label {
 	font-size: var(--text-badge);
@@ -594,18 +812,20 @@
 }
 
 /* ─── ICON GRID ─── */
+/* Spez. Kap. 23: mindestens 1/2 Rasterspalte pro Icon-Zelle (Hit Area).
+   Icon selbst darf innerhalb der Zelle kleiner bleiben (.icon-opt .icon-img). */
 .icon-grid-makro {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
+  gap: var(--grid-gutter);
   max-height: 150px;
   overflow-y: auto;
 }
 
 .icon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
+  gap: var(--grid-gutter);
   max-height: 150px;
   overflow-y: auto;
 }
@@ -665,6 +885,13 @@
 .color-swatch.is-selected {
 	transform: scale(1.2);
 	border-color: var(--text-primary);
+}
+/* Spez. Kap. 24/45: sichtbarer Fokusring, nicht abgeschnitten (Row
+   erlaubt via flex-wrap + gap genug Raum um jedes Swatch). */
+.color-swatch:focus-visible {
+	outline: none;
+	box-shadow: var(--shadow-focus);
+	transform: scale(1.2);
 }
 .color-swatch--none {
 	background: var(--bg-warm);
@@ -831,23 +1058,31 @@
 	flex-shrink: 0;
 }
 .mstep-type {
+	/* Spez. Kap. 34: Breite Kategorie-C (kurzes Select), Höhe folgt
+	   dem gemeinsamen Control-System. */
 	width: 72px !important;
-	padding: 3px var(--space-2) !important;
+	height: var(--h-btn) !important;
+	padding: 0 var(--space-2) !important;
 	font-size: var(--text-badge) !important;
 	flex-shrink: 0;
 }
 .mstep-select {
 	flex: 1;
 	min-width: 80px;
-	padding: 3px var(--space-2) !important;
+	height: var(--h-btn) !important;
+	padding: 0 var(--space-2) !important;
 	font-size: var(--text-badge) !important;
 }
 .mstep-delay {
 	width: 62px;
-	padding: 3px var(--space-2);
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
 	font-size: var(--text-badge);
 }
 .mstep-remove {
+	/* Spez. Kap. 13: eigenständiges Icon-only-Target -> var(--h-btn) Hit Area */
+	width: var(--h-btn);
+	height: var(--h-btn);
 	background: none;
 	border: none;
 	color: var(--text-muted);
@@ -855,6 +1090,9 @@
 	font-size: 0.76rem;
 	margin-left: auto;
 	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	transition: color var(--dur-fast) var(--ease);
 }
 .mstep-remove:hover {
@@ -906,13 +1144,13 @@
 	}
 }
 
-/* ─── THEME TOGGLE ─── */
+/* ─── THEME TOGGLE ─── (Legacy-Klasse; Spez. Kap. 11: Theme-Button -> var(--h-btn)) */
 .theme-toggle {
 	background: var(--bg-warm);
 	border: var(--border-whisper);
 	color: var(--text-muted);
-	width: 28px;
-	height: 28px;
+	width: var(--h-btn);
+	height: var(--h-btn);
 	border-radius: var(--radius-micro);
 	cursor: pointer;
 	display: flex;
@@ -1001,13 +1239,20 @@
 	display: none;
 }
 
-/* FIX #4: pills must be tappable on mobile even when the text label is hidden */
+/* FIX #4: pills must be tappable on mobile even when the text label is hidden.
+   Spez. Kap. 66: nächstliegende Klasse (Icon-/Standard-Button-Hybrid) -> var(--h-btn).
+   BUGFIX (Nutzer-Feedback): justify-content fehlte komplett -> Default
+   flex-start. Solange nur das Icon sichtbar ist (Label per Breakpoint
+   ausgeblendet), zwingt min-width:var(--h-btn) die Pille breiter als ihr
+   Inhalt, wodurch das Icon sichtbar nach links rutschte statt in der
+   Mitte der Pille zu sitzen. */
 .icon-picker__cat-pill {
-	min-width: 28px;
-	min-height: 28px;
+	min-width: var(--h-btn);
+	min-height: var(--h-btn);
 	margin: var(--space-1);
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: var(--space-1);
 	padding: var(--space-1) var(--space-2);
 	border-radius: var(--radius-pill);
@@ -1045,7 +1290,9 @@
 .icon-picker__cat-label {
 	display: none;
 }
-@media (min-width: 500px) {
+/* Spez. Kap. 56: auf sanktionierten Breakpoint (SM, 576px) migriert
+   statt eigenem 500px-Zwischenwert. */
+@media (min-width: 576px) {
 	.icon-picker__cat-label {
 		display: inline;
 	}
@@ -1070,12 +1317,15 @@
 	display: none !important;
 }
 
-/* ─── MOBILE RESPONSIVE IMPROVEMENTS ────────────────────────── */
-@media (max-width: 480px) {
+/* ─── MOBILE RESPONSIVE IMPROVEMENTS ──────────────────────────
+   Spez. Kap. 56: auf den sanktionierten XS-Breakpoint (≤575px)
+   migriert statt eigenem 480px-Zwischenwert. */
+@media (max-width: 575px) {
+	/* Hinweis: .app-header ist totes Markup (das reale Element trägt
+	   die Klasse .app-navbar, bereits var(--h-navbar) in layout.css). */
 	.app-header {
 		padding: var(--space-1) var(--space-2);
 		gap: var(--space-1);
-		min-height: 44px;
 	}
 	.app-logo__badge {
 		display: none;
@@ -1136,11 +1386,13 @@
 
 /* ─── Sound modal vol number ─────────────────────────────── */
 .vol-number-input {
+	/* Spez. Kap. 34: Breite Kategorie-C, Höhe folgt var(--h-btn). */
 	width: 52px;
+	height: var(--h-btn);
 	text-align: center;
 	font-family: var(--font-mono);
 	font-size: var(--text-caption);
-	padding: 3px var(--space-2);
+	padding: 0 var(--space-2);
 	background: var(--bg-warm);
 	border: var(--border-whisper);
 	border-radius: var(--radius-micro);
@@ -1167,12 +1419,13 @@
    ════════════════════════════════════════════════════════════ */
 
 /* ─── 1. Macro step buttons — match modal footer btn size ──── */
-/* Shared size token: same as .btn (15px font, 36px min-height) */
+/* Spez. Kap. 12/49: dieselbe semantische Button-Klasse -> dieselbe
+   Dimensionierung wie jeder andere Standard-Button (var(--h-btn)).
+   Nur Typografie/Radius unterscheiden sich hier bewusst. */
 .macro-step-action-btns .btn,
 .macro-step-action-btns .btn--sm {
 	font-size: var(--text-nav); /* 15px — same as footer btns */
-	padding: var(--space-2) var(--space-4);
-	min-height: 36px;
+	padding: 0 var(--space-4);
 	border-radius: var(--radius-subtle);
 	font-weight: var(--fw-semibold);
 }
@@ -1313,13 +1566,19 @@ i[data-lucide] {
   color: var(--color-accent);
 }
 
-/* Toggle switch */
+/* Toggle switch — Spez. Kap. 21: visueller Track bleibt schmal (32×18),
+   das umschließende <label> bekommt Padding, damit die reale Hit Area
+   var(--h-btn) hoch/breit wird, ohne den Track optisch aufzublasen. */
 .fx-toggle {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   cursor: pointer;
   user-select: none;
+  min-width: var(--h-btn);
+  min-height: var(--h-btn);
+  padding: var(--space-1);
 }
 
 .fx-toggle input[type="checkbox"] {
@@ -1397,8 +1656,8 @@ i[data-lucide] {
 .fx-preset-select {
   flex: 1;
   font-size: var(--text-badge) !important;
-  padding: 3px var(--space-2) !important;
-  height: auto !important;
+  padding: 0 var(--space-2) !important;
+  height: var(--h-btn) !important;
 }
 
 /* Effect group */
@@ -1413,6 +1672,9 @@ i[data-lucide] {
   margin-bottom: var(--space-1);
 }
 
+/* Spez. Kap. 22: sichtbares Checkbox-Kontrollkästchen darf klein
+   bleiben — Checkbox + Label zusammen (das ganze <label>) müssen
+   aber mindestens var(--h-btn) hoch als Hit Area wirken. */
 .fx-check-label {
   display: flex;
   align-items: center;
@@ -1422,6 +1684,7 @@ i[data-lucide] {
   font-weight: var(--fw-medium);
   color: var(--text-primary);
   user-select: none;
+  min-height: var(--h-btn);
 }
 
 .fx-check-label input[type="checkbox"] {
@@ -1439,6 +1702,15 @@ i[data-lucide] {
   border-radius: var(--radius-micro);
   padding: 1px 5px;
   white-space: nowrap;
+  /* Nutzer-Feedback: ohne feste Breite variierte die Badge-Breite von
+     Zeile zu Zeile ("+0.00" vs. "-12 dB" vs. "+0 dB"), wodurch der
+     Slider (flex:1) in jeder Zeile an einer leicht anderen Position
+     endete — dadurch wirkten die Slider-Reihen im Panel "nicht
+     zueinander ausgerichtet". Eine feste Mindestbreite hält den
+     rechten Rand alller Zeilen konsistent. */
+  min-width: 44px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 /* Controls area */
@@ -1454,8 +1726,10 @@ i[data-lucide] {
 }
 
 .fx-slider {
+  /* Spez. Kap. 19: KEIN height-Override mehr — die Hit Area kommt von
+     .slider (var(--h-btn)); die schmale Trackdarstellung kommt aus
+     .slider::-webkit-slider-runnable-track / ::-moz-range-track. */
   flex: 1;
-  height: 3px !important;
 }
 
 .fx-slider-min,
@@ -1511,10 +1785,10 @@ i[data-lucide] {
   transition: width 0.05s linear;
 }
 
-/* Distortion oversample select: compact */
+/* Distortion oversample select: compact — Spez. Kap. 41: keine doppelte
+   Größendefinition, Basis kommt vollständig aus .fx-preset-select. */
 #fxDistOversample {
   font-size: 0.72rem !important;
-  padding: 2px var(--space-2) !important;
 }
 
 /* WAV export strip */
@@ -1527,10 +1801,10 @@ i[data-lucide] {
   background: var(--bg-surface);
 }
 
-/* Trim modal: zoom row */
-#trimZoom {
-  height: 4px !important;
-}
+/* Trim modal: zoom row — Spez. Kap. 19/39: kein separater height-
+   Override mehr; #trimZoom trägt bereits .slider (var(--h-btn)
+   Hit Area, schmaler Track via Pseudo-Elemente). Ein ID-Selektor
+   hätte sonst mit höherer Spezifität die Hit-Area-Fixes storniert. */
 
 /* Trim canvas cursor feedback */
 #trimCanvas {
@@ -1549,6 +1823,10 @@ i[data-lucide] {
   align-items: flex-end;
   height: 88px;
   padding: 4px 0 2px;
+  /* Die vergrößerte Slider-Hit-Area (Kap. 20) kann auf sehr schmalen
+     Viewports die Summe aller 10 Bänder breiter als der Container
+     machen — dann lieber horizontal scrollen statt Overflow/Clipping. */
+  overflow-x: auto;
 }
 
 .fx-eq10-col {
@@ -1557,28 +1835,100 @@ i[data-lucide] {
   align-items: center;
   flex: 1;
   gap: 2px;
+  position: relative;
 }
 
-.fx-eq10-slider {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 18px;
+/* BUGFIX: ::-webkit-slider-runnable-track/::-moz-range-track auf einem
+   um 90° gedrehten <input> zu stylen ist über Browser/Geräte hinweg
+   unzuverlässig (der Track blieb auf manchen Geräten unsichtbar,
+   obwohl der Thumb korrekt gerendert wurde). Robustere Lösung: die
+   sichtbare Linie wird unabhängig vom nativen Track als eigenes
+   Element gezeichnet (dieses ::before auf dem Spalten-Wrapper),
+   exakt über die reservierte 60px-Höhe des Sliders zentriert. Der
+   native Track bleibt komplett transparent (siehe unten) — nur der
+   Thumb kommt noch vom <input> selbst. */
+.fx-eq10-col::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
   height: 60px;
-  flex-shrink: 0;
-  accent-color: var(--color-accent);
-  cursor: ns-resize;
+  transform: translateX(-50%);
+  /* var(--border-color) ist im Darkmode nur rgba(255,255,255,0.09) —
+     auf einer 4px-Linie praktisch unsichtbar. var(--text-muted) bietet
+     ausreichend Kontrast in beiden Themes. */
+  background: var(--text-muted);
+  opacity: 0.35;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* Firefox vertical slider fallback */
-@supports not (appearance: slider-vertical) {
-  .fx-eq10-slider {
-    transform: rotate(-90deg);
-    width: 60px;
-    height: 18px;
-    margin: 21px -21px;
-  }
+/* Spez. Kap. 20: 10-Band-EQ sind Sonderfälle — die optische
+   Darstellung bleibt ein schmaler ~18px-Slider, aber die reale
+   Interaktionsbreite (Hit Area) muss mindestens 1/2 Rasterspalte
+   betragen.
+
+   BUGFIX: Die vorherige Lösung nutzte das veraltete, nicht-
+   standardisierte -webkit-appearance:slider-vertical zusammen mit
+   einer vergrößerten Elementbreite. Auf Chrome/Android hat das dazu
+   geführt, dass der native, doppellinige Slider-Rahmen durchschlug
+   und der eigene (blaue) Thumb sichtbar daneben/asymmetrisch saß —
+   sichtbar als "nach rechts verschobener" Regler. Einheitliche,
+   robustere Lösung für ALLE Browser: ein normaler horizontaler
+   Slider (dieselbe erprobte Track-/Thumb-Technik wie .slider) wird
+   per transform:rotate(-90deg) gedreht. Die Margin-Kompensation
+   gleicht die Differenz zwischen der (unrotierten) Layout-Box und
+   der sichtbaren, gedrehten Erscheinung aus. */
+.fx-eq10-slider {
+  --eq10-thick: max(18px, calc(var(--grid-row-h) * 0.5));
+  -webkit-appearance: none;
+  appearance: none;
+  transform: rotate(-90deg);
+  width: 60px;
+  height: var(--eq10-thick);
+  margin: calc((60px - var(--eq10-thick)) / 2) calc((60px - var(--eq10-thick)) / -2);
+  flex-shrink: 0;
+  background: transparent;
+  outline: none;
+  cursor: ns-resize;
+  position: relative;
+  z-index: 1;
+}
+.fx-eq10-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.fx-eq10-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.fx-eq10-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px; /* (4px Track - 14px Thumb) / 2 — zentriert den Thumb auf dem Track */
+  border-radius: var(--radius-circle);
+  background: var(--color-accent);
+  cursor: ns-resize;
+  border: 2px solid var(--bg-surface);
+  box-shadow: var(--shadow-card);
+}
+.fx-eq10-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-circle);
+  background: var(--color-accent);
+  cursor: ns-resize;
+  border: 2px solid var(--bg-surface);
+  box-shadow: var(--shadow-card);
+}
+.fx-eq10-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--shadow-focus);
+}
+.fx-eq10-slider:focus-visible::-moz-range-thumb {
+  box-shadow: var(--shadow-focus);
 }
 
 .fx-eq10-lbl {
@@ -1625,10 +1975,10 @@ i[data-lucide] {
   font-size: 0.72rem !important;
 }
 
-/* Analyzer mode select */
+/* Analyzer mode select — Spez. Kap. 41: keine doppelte Größendefinition,
+   Basis kommt vollständig aus .fx-preset-select. */
 #fxAnalyzerMode {
   font-size: 0.72rem !important;
-  padding: 2px var(--space-2) !important;
 }
 
 /* Dark mode tweaks */
@@ -1725,17 +2075,33 @@ i[data-lucide] {
 
 .lab-layout {
   display: flex;
+  /* Spez. Kap. 47/48: auf XS/SM gestapelt (volle Breite) statt fixer
+     180px-Sidebar, die bei 320px Viewport-Breite die Hauptfläche auf
+     ~140px zusammendrückt — ab MD nebeneinander. */
+  flex-direction: column;
   gap: var(--space-4);
   height: 100%;
 }
+@media (min-width: 768px) {
+  .lab-layout { flex-direction: row; }
+}
 
 .lab-sidebar {
-  width: 180px;
+  /* Spez. Kap. 5/47: rasterbasierte Breite statt fixer 180px; volle
+     Breite im gestapelten XS/SM-Zustand. */
+  width: 100%;
+  max-height: 220px;
   flex-shrink: 0;
   border: var(--border-whisper);
   border-radius: var(--radius-subtle);
   overflow-y: auto;
   background: var(--bg-surface);
+}
+@media (min-width: 768px) {
+  .lab-sidebar {
+    width: var(--w-3col);
+    max-height: none;
+  }
 }
 
 .lab-sidebar__title {

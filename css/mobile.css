@@ -26,21 +26,31 @@
   position: sticky;
   top: 0;
   z-index: 10;
+  /* Spez. Kap. 31: min-height statt starrer Höhe — wächst bei
+     notwendigem Textumbruch statt Inhalte abzuschneiden. */
+  min-height: var(--h-menubar);
 }
 
 .sm-basics-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: nowrap;
+  /* Spez. Kap. 31/46: Umbruch erlaubt (200%-Textvergrößerung / sehr
+     lange Namen dürfen nicht abgeschnitten werden oder überlaufen) —
+     die Reihe bleibt dabei durch Flex-Wrap bedienbar, nicht "kaputt". */
+  flex-wrap: wrap;
 }
 
 .sm-basics-name { flex: 1; min-width: 0; }
 
 .sm-name-input {
+  /* Spez. Kap. 30: Name-Input -> volle Formularbreite, Höhe var(--h-btn).
+     min-height statt height, damit bei 200%-Textvergrößerung nichts
+     abgeschnitten wird (Kap. 46). */
   font-size: 1rem;
   font-weight: var(--fw-semibold);
-  height: 38px;
+  min-height: var(--h-btn);
+  height: auto;
 }
 
 .sm-basics-actions {
@@ -88,12 +98,16 @@
   border: none;
   cursor: pointer;
   text-align: left;
-  font-size: var(--text-sm);
+  /* Fix: --text-sm war nie definiert (Legacy-Bug, nicht Teil des
+     Rastersystems) — auf den nächstliegenden definierten Text-Token
+     gemappt. */
+  font-size: var(--text-caption);
   font-weight: var(--fw-medium);
   color: var(--text-primary);
   transition: background var(--dur-base);
   gap: var(--space-2);
-  min-height: 48px; /* touch-friendly */
+  /* Spez. Kap. 30: Accordion Header -> var(--h-menubar) */
+  min-height: var(--h-menubar);
 }
 
 .sm-section-toggle:hover { background: var(--border-color); }
@@ -137,11 +151,8 @@
   .sm-basics-actions .btn { padding: 6px 8px; font-size: 0.8rem; }
   .sm-section-toggle { padding: var(--space-3); font-size: 0.85rem; }
   .sm-section-body { padding: var(--space-2) var(--space-3) var(--space-3); }
-  .fx-slider { height: 6px !important; }
   .fx-slider-min { font-size: 0.65rem; min-width: 38px; }
   .fx-group { margin-bottom: var(--space-3); }
-  /* Bigger touch targets for sliders */
-  input[type="range"] { height: 32px; }
   /* Stack columns on mobile */
   .row.g-3 > [class*="col-lg"] { flex: 0 0 100%; max-width: 100%; }
 }
@@ -218,12 +229,11 @@
    ══════════════════════════════════════════════════════════════ */
 
 @media (hover: none) {
-  /* Touch devices: bigger tap areas */
-  .btn { min-height: 40px; }
+  /* Spez. Kap. 9: keine zweite, unabhängige Touch-Größenlogik mehr —
+     var(--h-btn)/var(--h-menubar) erfüllen die 24×24-Mindestgröße
+     bereits an jedem Breakpoint. .slot-item ist totes Markup (die
+     reale Klasse heißt .slot-row/.slot-btn, bereits 44×44 Kategorie C). */
   .fx-check-label { padding: 4px 0; }
-  .sm-section-toggle { min-height: 52px; }
-  .slot-item { min-height: 44px; }
-  .fx-slider { height: 6px !important; }
 }
 
 /* ══════════════════════════════════════════════════════════════

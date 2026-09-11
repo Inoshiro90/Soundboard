@@ -9,128 +9,26 @@
  */
 
 /* ══════════════════════════════════════════════════════════════
-   1. RANGE SLIDER — CROSS-BROWSER FIX
-   ══════════════════════════════════════════════════════════════
-
-   Problem: Safari rendert range-inputs mit appearance:none als "Pille"
-   (das komplette Element nimmt die height-Angabe als Gesamthöhe, nicht nur
-   den Track). Lösung: Höhe des Elements auf thumb-Höhe setzen, Track via
-   Pseudo-Elemente positionieren.
-*/
-
-/* Reset + gemeinsame Basis */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 20px;           /* Gesamt-Höhe = thumb + klickbarer Bereich */
-  background: transparent;
-  cursor: pointer;
-  outline: none;
-  margin: 0;
-  padding: 0;
-  /* Verhindert Stretching im Flex-Container auf Mobile */
-  align-self: center;
-  flex-shrink: 0;
-}
-
-/* ── WebKit / Blink (Chrome, Safari, Edge) ── */
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  background: var(--border-color);
-  border-radius: 2px;
-  border: none;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  border: 2px solid var(--bg-surface);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-  cursor: pointer;
-  margin-top: -7px;       /* (18px - 4px) / 2 = 7px — zentriert thumb auf track */
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.18);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-}
-
-input[type="range"]:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
-}
-
-/* ── Firefox ── */
-
-input[type="range"]::-moz-range-track {
-  height: 4px;
-  background: var(--border-color);
-  border-radius: 2px;
-  border: none;
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  border: 2px solid var(--bg-surface);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-  cursor: pointer;
-  transition: transform 0.12s ease;
-}
-
-input[type="range"]::-moz-range-thumb:hover {
-  transform: scale(1.18);
-}
-
-input[type="range"]::-moz-range-progress {
-  height: 4px;
-  background: var(--color-accent);
-  border-radius: 2px;
-}
-
-/* ── Mobile-spezifische Korrekturen ── */
-@media (hover: none) and (pointer: coarse) {
-  input[type="range"] {
-    height: 28px;          /* Größeres Touch-Target auf Mobile */
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-    margin-top: -10px;     /* (24px - 4px) / 2 = 10px */
-  }
-  input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-  }
-}
-
-/* Vertikale Slider (EQ10) — nur appearance steuern, keine height-Überschreibung */
-.fx-eq10-slider {
-  height: 60px !important;
-  width: 18px !important;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-}
-
-/* Fix: slider im Flex-Row nicht strecken */
-.fx-slider {
-  height: 20px;
-  align-self: center;
-}
+   1. RANGE SLIDER — vormals ein konkurrierendes, universelles
+   input[type="range"]-Regelwerk (Kategorie 0,1,1 Spezifität, als
+   letztes CSS geladen) das die var(--h-btn)-Hit-Area sowie die
+   Kap.-20-EQ10-Breite aus components.css/grid-system.css wieder
+   überschrieben hat (Spez. Kap. 9/39/41: keine zweite,
+   unabhängige Größenlogik / spätere Overrides korrigieren). Alle
+   <input type="range"> im Projekt tragen bereits die Klasse
+   .slider (bzw. .fx-eq10-slider für die vertikalen EQ-Regler) —
+   ein zusätzliches, elementbasiertes Regelwerk ist daher weder
+   nötig noch zulässig. Nur die Dark-Mode-Farbkorrektur bleibt
+   (rein visuell, keine Dimensionierung), siehe Abschnitt 7 unten.
+   ══════════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════════
    2. BUTTON-SYSTEM (sm / md / lg)
-   ══════════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════════
+   Spez. Kap. 12/49: alle Standard-Buttons teilen sich var(--h-btn)
+   aus components.css — die früheren min-height-Fixwerte (28/32/44px)
+   waren eine zweite, konkurrierende Größenlogik für dieselbe
+   semantische Komponente und sind entfallen. */
 
 .btn {
   /* Basis bleibt aus components.css */
@@ -140,38 +38,29 @@ input[type="range"]::-moz-range-progress {
   gap: 5px;
 }
 
-/* Small — für kompakte UI-Bereiche */
+/* Small — für kompakte UI-Bereiche (nur Typografie/Radius, keine
+   eigene Höhe mehr — teilt sich var(--h-btn) mit .btn) */
 .btn--sm {
-  padding: 4px 10px;
+  padding: 0 10px;
   font-size: 0.72rem;
   border-radius: var(--radius-micro);
-  min-height: 28px;
 }
 
-/* Medium (default) */
-.btn {
-  min-height: 32px;
-}
-
-/* Large — für primäre Aktionen */
+/* Large — für primäre Aktionen (Höhe bleibt bewusst über var(--h-btn),
+   da dies eine hervorgehobene Primäraktion ist; wächst mit demselben
+   Rasterbezug statt eines fixen 44px-Werts) */
 .btn--lg {
-  padding: 10px 20px;
+  padding: 0 20px;
   font-size: 1rem;
-  min-height: 44px;
+  height: calc(var(--h-btn) * 1.3);
   border-radius: var(--radius-sm);
   font-weight: var(--fw-semibold);
 }
 
-/* Touch-freundliche Mindestgröße auf Mobile */
-@media (hover: none) and (pointer: coarse) {
-  .btn { min-height: 40px; }
-  .btn--sm { min-height: 36px; padding: 6px 12px; }
-}
-
-/* Icon-only Button */
+/* Icon-only Button — teilt sich var(--h-btn) mit .btn--icon
+   (components.css); kein eigener 32px-Fixwert mehr. */
 .btn--icon-only {
-  width: 32px;
-  min-height: 32px;
+  width: var(--h-btn);
   padding: 0;
   justify-content: center;
 }
@@ -240,11 +129,13 @@ input[type="range"]::-moz-range-progress {
    5. LAYOUT-BEREINIGUNG
    ══════════════════════════════════════════════════════════════ */
 
-/* Basics-Bar: kein Überlauf auf sehr kleinen Screens */
-.sm-basics-row {
-  flex-wrap: nowrap;
-  overflow: hidden;
-}
+/* Basics-Bar: Spez. Kap. 31/46 verlangt ausdrücklich, dass die Reihe
+   bei Bedarf umbricht statt Inhalte/Buttons abzuschneiden — das
+   vormalige "flex-wrap:nowrap; overflow:hidden;" hätte bei langen
+   Namen oder 200%-Textvergrößerung genau die verbotenen
+   abgeschnittenen Buttons erzeugt. mobile.css definiert das
+   Wrap-Verhalten bereits korrekt; hier bleibt nur die Grundregel,
+   dass der Name nicht unnötig Platz von den Actions abzieht. */
 .sm-basics-name { min-width: 0; flex: 1; }
 .sm-name-input { min-width: 0; }
 
@@ -254,8 +145,9 @@ input[type="range"]::-moz-range-progress {
   padding-bottom: 4px; /* Scrollbar-Platz */
 }
 
-/* Audio-Lab Ops-Grid: 2 Spalten auf kleinen Screens */
-@media (max-width: 600px) {
+/* Audio-Lab Ops-Grid: 2 Spalten auf kleinen Screens — Spez. Kap. 56:
+   sanktionierter Breakpoint (767px) statt eigenem 600px-Wert. */
+@media (max-width: 767px) {
   .lab-ops-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -300,13 +192,14 @@ input[type="range"]::-moz-range-progress {
    7. DARK-MODE SLIDER KONTRAST
    ══════════════════════════════════════════════════════════════ */
 
-[data-theme='dark'] input[type="range"]::-webkit-slider-runnable-track {
+[data-theme='dark'] .slider::-webkit-slider-runnable-track {
   background: rgba(255,255,255,0.15);
 }
-[data-theme='dark'] input[type="range"]::-moz-range-track {
+[data-theme='dark'] .slider::-moz-range-track {
   background: rgba(255,255,255,0.15);
 }
-[data-theme='dark'] input[type="range"]::-webkit-slider-thumb {
+[data-theme='dark'] .slider::-webkit-slider-thumb,
+[data-theme='dark'] .slider::-moz-range-thumb {
   border-color: var(--bg-surface);
 }
 

@@ -50,10 +50,10 @@
   border: var(--border-whisper);
 }
 
-/* Theme toggle in navbar */
+/* Theme toggle in navbar — Spez. Kap. 11: Theme-Button -> var(--h-btn) */
 .navbar-theme-btn {
-  width: 32px;
-  height: 32px;
+  width: var(--h-btn);
+  height: var(--h-btn);
   border-radius: var(--radius-sm);
   border: var(--border-whisper);
   background: var(--bg-warm);
@@ -122,11 +122,14 @@
   max-width: 100%;
 }
 .menubar-volume__number {
+  /* Spez. Kap. 34: Breite als Kategorie-C-Ausnahme (kurzes Zahlenfeld),
+     Höhe folgt dem gemeinsamen Control-System (var(--h-btn)). */
   width: 52px;
+  height: var(--h-btn);
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  padding: 3px var(--space-2);
+  padding: 0 var(--space-2);
   background: var(--bg-warm);
   border: var(--border-whisper);
   border-radius: var(--radius-micro);
@@ -209,6 +212,22 @@
   background: var(--color-accent);
   color: #fff;
   border-color: var(--color-accent);
+}
+
+/* Einstellungen/Wiedergabe: 2 Rasterspalten breit an JEDEM Breakpoint,
+   Text bleibt immer sichtbar (Nutzer-Feedback) — daher explizit von der
+   Icon-only-Kollabierungsregel unten ausgenommen. */
+.menubar-btn--wide {
+  width: var(--w-2col);
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.menubar-btn--wide .menubar-btn__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 
 /* ─── PROFILE BAR ─── */
@@ -378,6 +397,21 @@
   min-width: 0;
 }
 
+/* Analog zu .ambient-board (ambient.css): stapelt den neuen #fxToolbar
+   (Stop + Sound-Lautstärke) über dem Kachel-Grid. */
+#soundBoard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fx-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .tile-grid {
   display: grid;
   gap: var(--space-2);
@@ -386,6 +420,8 @@
 }
 
 /* ─── STATUS BAR ─── */
+/* Spez. Kap. 35: min-height folgt var(--h-tabbar) statt fixer 32px;
+   wächst bei Bedarf (z.B. 200%-Textvergrößerung) weiter. */
 .status-bar {
   background: var(--bg-surface);
   border-top: var(--border-whisper);
@@ -399,7 +435,7 @@
   position: sticky;
   bottom: 0;
   z-index: var(--z-nav);
-  min-height: 32px;
+  min-height: var(--h-tabbar);
   flex-shrink: 0;
 }
 .status-dot {
@@ -426,40 +462,50 @@
   gap: var(--space-2);
 }
 
-/* ─── RESPONSIVE ─── */
-@media (max-width: 600px) {
+/* ─── RESPONSIVE ───
+   Spez. Kap. 56: auf sanktionierten Breakpoint migriert (767px =
+   Ende von XS+SM / Beginn MD) statt eigenem 600px-Zwischenwert. */
+@media (max-width: 767px) {
   .app-navbar        { padding: 0 var(--space-3); }
   .app-menubar       { padding: var(--space-2) var(--space-3); gap: var(--space-1); }
   .toolbar           { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
   .profile-bar       { padding: var(--space-1) var(--space-3); }
   .board             { padding: var(--space-2); }
-  .menubar-volume__slider { flex: 1 1 auto; width: auto; }
 
-  /* Stop/Einstellungen/Wiedergabe schrumpfen zu reinen Icon-Buttons
-     (Label ausgeblendet, aria-label bleibt für Screenreader erhalten)
-     statt die Zeile mit vollen Textlabels zu verstopfen. */
-  .app-menubar       { flex-wrap: nowrap; }
-  .app-menubar > .menubar-btn,
-  .app-menubar > .popover-wrap > .menubar-btn {
+  /* .app-menubar enthält ab jetzt nur noch die 2-Spalten-breiten
+     Einstellungen/Wiedergabe-Buttons (.menubar-btn--wide, Stop lebt in
+     #fxToolbar) — die :not()-Ausnahme unten bleibt trotzdem als
+     genereller Schutz bestehen, falls künftig weitere schmale
+     .menubar-btn in eine .app-menubar wandern. */
+  /* wrap statt nowrap: greift nur ein, falls die beiden 2-Spalten-
+     Buttons + Trenner auf sehr schmalen Viewports (XS) doch einmal
+     knapp nicht nebeneinander passen — verhindert Overflow/Scrollbar
+     statt striktem nowrap zu erzwingen (Kap. 47). */
+  .app-menubar       { flex-wrap: wrap; }
+  .app-menubar > .menubar-btn:not(.menubar-btn--wide),
+  .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) {
     padding: var(--space-2);
     font-size: 0.7rem;
     min-height: var(--h-btn);
     flex-shrink: 0;
     gap: 0;
   }
-  .app-menubar > .menubar-btn .menubar-btn__label,
-  .app-menubar > .popover-wrap > .menubar-btn .menubar-btn__label {
+  .app-menubar > .menubar-btn:not(.menubar-btn--wide) .menubar-btn__label,
+  .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) .menubar-btn__label {
     display: none;
   }
-  .app-menubar > .menubar-btn i,
-  .app-menubar > .popover-wrap > .menubar-btn i {
+  .app-menubar > .menubar-btn:not(.menubar-btn--wide) i,
+  .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) i {
     font-size: 0.9rem;
+  }
+  .menubar-btn--wide {
+    font-size: 0.7rem;
   }
 }
 
-/* BUGFIX: Volume slider overlap on small screens */
-@media (max-width: 480px) {
-  .menubar-volume__slider { flex: 1 1 auto; width: auto; max-width: none; display: block !important; }
-  .menubar-volume__number { display: none; }
-}
+/* Lautstärke-Prozentanzeige bleibt jetzt auch auf XS sichtbar (Nutzer-
+   Feedback) — der Slider schrumpft dafür automatisch über sein
+   flex:1 1 60px / min-width:40px, .menubar-volume ist ohnehin auf
+   var(--w-4col) begrenzt und overflow:hidden, sodass Label+Slider+
+   Zahl+% garantiert innerhalb von 4 Spalten bleiben. */
 

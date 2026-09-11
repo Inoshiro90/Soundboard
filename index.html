@@ -58,50 +58,27 @@
 
     </nav>
 
-    <!-- ══════════════════════════════ MENUBAR ═══════════════════════════════
-       Primäre Werkzeugzone: nur noch die Lautstärke (fest 4 Spalten breit).
-       Stop und Einstellungen sitzen jetzt in der Zeile darunter (siehe
-       #soundMenubar), vor "Wiedergabe" — zusammen mit den übrigen
-       Sound-Werkzeugen statt in einer eigenen Zeile.
+    <!-- ══════════════════════════════════════════════════════════════════════
+       Die vormals hier sitzende globale Lautstärke wurde in den neuen
+       #fxToolbar-Bereich verschoben (direkt unter #soundMenubar, analog zu
+       .ambient-board__toolbar) — sie betrifft ohnehin nur Sound-Kacheln
+       (siehe audio.js), gehörte also strukturell dorthin, nicht in eine
+       immer sichtbare Leiste oberhalb beider Ansichten.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <div class="app-menubar" role="toolbar" aria-label="Hauptwerkzeuge">
-
-      <!-- Volume group: slider + number input, fully synced -->
-      <div class="menubar-volume" aria-label="Master-Lautstärke">
-        <span class="menubar-volume__label">
-          <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
-          Lautstärke
-        </span>
-        <input type="range" id="masterVol" class="slider menubar-volume__slider" min="0" max="1" step=".01" value="1"
-          aria-label="Lautstärke Slider">
-        <input type="number" id="masterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
-          aria-label="Lautstärke Prozent">
-        <span class="menubar-volume__label u-text-badge">%</span>
-      </div>
-
-    </div>
 
     <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
        Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
        betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
-       Anordnen/Tauschen wurden entfernt (werden durch ein neues
-       Spalten-System ersetzt); Makro-Erstellung lebt jetzt im "+"-Menü der
-       leeren Kacheln. Stop + Einstellungen sitzen hier vor "Wiedergabe".
+       Enthält jetzt nur noch Einstellungen + Wiedergabe (je 2 Spalten breit,
+       Text immer sichtbar) — Stop + Lautstärke sitzen jetzt in #fxToolbar.
   ══════════════════════════════════════════════════════════════════════════ -->
     <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
-
-      <!-- Stop: nur im Sound-Modus relevant (stoppt Sound-Kacheln, nicht
-           Ambient) — Sichtbarkeit wird von setViewMode() mitgesteuert. -->
-      <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle Sounds stoppen" aria-label="Alle Sounds stoppen">
-        <i class="fa-solid fa-stop" aria-hidden="true"></i>
-        <span class="menubar-btn__label">Stop</span>
-      </button>
 
       <!-- Einstellungen: Verwalten (Export/Import/Reset) + Speichern +
            Undo/Redo — occasional/administrative actions (Ebene 3),
            gebündelt statt einzeln in der Leiste. -->
       <div class="popover-wrap">
-        <button class="menubar-btn popover-toggle" id="btnAppSettingsToggle" data-disclosure-toggle
+        <button class="menubar-btn menubar-btn--wide popover-toggle" id="btnAppSettingsToggle" data-disclosure-toggle
           aria-expanded="false" aria-controls="appSettingsPopover"
           title="Verwalten, Speichern, Rückgängig/Wiederholen" aria-label="Einstellungen ein-/ausblenden">
           <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -153,7 +130,7 @@
            once set, so tucked behind a popover (Ebene 3) instead of
            sitting permanently in the menubar. -->
       <div class="popover-wrap">
-        <button class="menubar-btn popover-toggle" id="btnPlaybackSettingsToggle" data-disclosure-toggle
+        <button class="menubar-btn menubar-btn--wide popover-toggle" id="btnPlaybackSettingsToggle" data-disclosure-toggle
           aria-expanded="false" aria-controls="playbackSettingsPopover" title="Wiedergabe-Verhalten der Sound-Kacheln"
           aria-label="Wiedergabe-Einstellungen ein-/ausblenden">
           <i class="fa-solid fa-sliders" aria-hidden="true"></i>
@@ -191,6 +168,42 @@
 
     <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
     <main class="board" id="soundBoard" aria-label="Soundboard">
+
+      <!-- Analog zu .ambient-board__toolbar: Stop + eigene Lautstärke für die
+           Soundeffekt-Ansicht, direkt unter #soundMenubar (Einstellungen/
+           Wiedergabe). masterVol betraf ohnehin nur Sound-Kacheln (audio.js),
+           gehört strukturell also hierher statt in eine immer sichtbare Leiste. -->
+      <div class="fx-toolbar" id="fxToolbar">
+        <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle Sounds stoppen" aria-label="Alle Sounds stoppen">
+          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <span class="menubar-btn__label">Stop</span>
+        </button>
+
+        <div class="menubar-volume" aria-label="Sound-Lautstärke">
+          <span class="menubar-volume__label">
+            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            Lautstärke
+          </span>
+          <input type="range" id="masterVol" class="slider menubar-volume__slider" min="0" max="1" step=".01" value="1"
+            aria-label="Lautstärke Slider">
+          <input type="number" id="masterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
+            aria-label="Lautstärke Prozent">
+          <span class="menubar-volume__label u-text-badge">%</span>
+        </div>
+      </div>
+
+      <!-- Bearbeitungsmodus-Leiste (iOS-Homescreen-Prinzip): erscheint nur
+           auf Touch nach Long-Press auf eine Kachel, siehe setTileEditMode()
+           in ui.js. Auf Desktop bleibt das bisherige Hover/Klick-Verhalten
+           unverändert, diese Leiste wird dort nie eingeblendet. -->
+      <div class="edit-mode-bar" id="editModeBar" hidden>
+        <span class="edit-mode-bar__label">
+          <i class="fa-solid fa-arrows-up-down-left-right" aria-hidden="true"></i>
+          Bearbeitungsmodus — Kachel antippen zum Bearbeiten, ziehen zum Verschieben
+        </span>
+        <button class="btn btn--sm btn--accent" id="btnExitEditMode">Fertig</button>
+      </div>
+
       <div class="tile-grid" id="grid" role="grid" aria-label="Sound-Kacheln"></div>
     </main>
 
@@ -231,6 +244,9 @@
           <i data-lucide="volume-2" aria-hidden="true"></i>
           <input type="range" id="ambientMasterVol" class="slider ambient-board__master-slider" min="0" max="1"
             step=".01" value="1" aria-label="Ambient-Gesamtlautstärke">
+          <input type="number" id="ambientMasterVolNum" class="ambient-row__num" min="0" max="100" value="100"
+            aria-label="Ambient-Gesamtlautstärke Prozent">
+          <span class="u-text-badge">%</span>
         </div>
 
         <span class="u-ml-auto"></span>
@@ -278,7 +294,7 @@
 
         <div class="modal-header sm-header">
           <h5 class="modal-title" id="sMTitle">Sound</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <!-- ── STICKY BASICS BAR ─────────────────────────────── -->
@@ -483,7 +499,7 @@
             <i class="fa-solid fa-palette" aria-hidden="true"></i>
             Darstellung &amp; Organisation
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="modal-body sm-body">
           <div class="sm-grid">
@@ -547,7 +563,7 @@
             <i class="fa-solid fa-waveform-lines" aria-hidden="true"></i>
             Audio-Effekte
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="modal-body sm-body">
           <div class="fx-row">
@@ -872,7 +888,7 @@
 
         <div class="modal-header">
           <h5 class="modal-title" id="mMTitle">Makro</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <div class="modal-body">
@@ -961,7 +977,7 @@
                   <i class="fa-solid fa-music" aria-hidden="true"></i> + Sound/Makro
                 </button>
 
-                <div class="menubar-sep" aria-hidden="true" style="height:20px;width:1px;background:var(--border-color);margin:0 2px"></div>
+                <div class="menubar-sep" aria-hidden="true"></div>
 
                 <button class="btn btn--sm" id="btnMacroTlPreview" title="Timeline vorhören" aria-label="Vorhören">
                   <i class="fa-solid fa-play" aria-hidden="true"></i>
@@ -970,7 +986,7 @@
                   <i class="fa-solid fa-square" aria-hidden="true"></i>
                 </button>
 
-                <div class="menubar-sep" aria-hidden="true" style="height:20px;width:1px;background:var(--border-color);margin:0 2px"></div>
+                <div class="menubar-sep" aria-hidden="true"></div>
 
                 <label class="u-text-muted" style="font-size:var(--text-badge);white-space:nowrap">Snap</label>
                 <select id="macroTlSnap" class="form-select form-select-sm" style="width:76px;font-size:0.72rem">
@@ -1032,7 +1048,7 @@
             <i class="fa-solid fa-sliders" aria-hidden="true"></i>
             Slot bearbeiten — <span id="slotEditName" class="u-text-muted"></span>
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="modal-body sm-body">
           <div class="sm-grid">
@@ -1076,7 +1092,7 @@
           <h5 class="modal-title" id="trimModalLabel">
             <i class="fa-solid fa-scissors" aria-hidden="true"></i> Audio zuschneiden
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <div class="modal-body">
@@ -1171,7 +1187,7 @@
 
         <div class="modal-header">
           <h5 class="modal-title" id="profModalTitle">Profil</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <div class="modal-body">
@@ -1206,7 +1222,7 @@
 
         <div class="modal-header">
           <h5 class="modal-title" id="ambProfModalTitle">Szene</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <div class="modal-body">
@@ -1241,7 +1257,7 @@
 
         <div class="modal-header">
           <h5 class="modal-title" id="ambTrackIconModalTitle">Icon auswählen</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
 
         <div class="modal-body">
@@ -1269,7 +1285,7 @@
           <h5 class="modal-title" id="macroItemPickerTitle">
             <i class="fa-solid fa-music" aria-hidden="true"></i> Sound oder Makro wählen
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="modal-body" style="padding:12px">
           <input type="search" id="macroItemSearch" class="form-control form-control-sm mb-2"

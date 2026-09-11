@@ -15,6 +15,13 @@ import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } fro
 import { mkPH }                            from './storage.js';
 import { toast }                           from './notifications.js';
 
+// Lucide "pencil" icon (Nutzer-Vorgabe) — als Konstante, damit Profile-
+// und Ambient-Tabs (ui.js/ambient.js) exakt dasselbe Icon verwenden.
+export const PENCIL_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+  'aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
+
 // ─── PROFILE TABS ─────────────────────────────────────────────
 
 export function renderProfileTabs() {
@@ -27,9 +34,9 @@ export function renderProfileTabs() {
     tab.className = 'profile-tab' + (p.id === APP.activeProfileId ? ' is-active' : '');
     tab.dataset.pid = p.id;
     tab.innerHTML =
-      `<span>${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${p.name}</span>` +
+      `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${p.name}</span>` +
       `<span class="profile-tab__edit" title="Profil bearbeiten" aria-label="Profil bearbeiten">` +
-      `<i class="fa-solid fa-pen" aria-hidden="true"></i></span>`;
+      `${PENCIL_ICON_SVG}</span>`;
     bar.insertBefore(tab, addBtn);
   });
 
@@ -124,8 +131,12 @@ export function makeSoundTile(s) {
   const tile = wrap.querySelector('.tile');
 
   // NEW click logic: always play / advance slot. No per-tile stop.
+  // Im Bearbeitungsmodus (Touch-Long-Press, siehe setupTileEditGestures)
+  // öffnet ein Tap stattdessen den Editor — Abspielen ist dort bewusst
+  // deaktiviert (Konfliktvermeidung: Tap = Bearbeiten, Ziehen = Verschieben).
   tile.addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
+    if (isTileEditMode()) { import('./events.js').then(m => m.openSoundModal(s.id)); return; }
     playSound(s);
   });
 
@@ -168,6 +179,7 @@ export function makeMacroTile(m) {
 
   wrap.querySelector('.tile').addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
+    if (isTileEditMode()) { import('./events.js').then(ev => ev.openMacroModal(m.id)); return; }
     runMacro(m);
   });
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
@@ -346,6 +358,10 @@ let _dragSrc = null;
 export function setupDrag() {
   document.querySelectorAll('.tile-wrap').forEach(w => {
     w.addEventListener('dragstart', e => {
+      // Während eines Touch-Drags (Bearbeitungsmodus) keine parallele
+      // native HTML5-DnD-Operation zulassen (manche Browser lösen bei
+      // Long-Press auch natives Drag aus).
+      if (_touchDragSrcId) { e.preventDefault(); return; }
       _dragSrc = w.dataset.id; w.classList.add('is-dragging'); e.dataTransfer.effectAllowed = 'move';
     });
     w.addEventListener('dragend', () => {
@@ -357,18 +373,131 @@ export function setupDrag() {
     w.addEventListener('drop', e => {
       e.preventDefault();
       if (!_dragSrc || _dragSrc === w.dataset.id) return;
-      const items = CItems();
-      const ai = items.findIndex(x => x.id === _dragSrc);
-      const bi = items.findIndex(x => x.id === w.dataset.id);
-      if (ai < 0 || bi < 0) return;
-      [items[ai].order, items[bi].order] = [items[bi].order, items[ai].order];
-      renderGrid();
+      _swapTileOrder(_dragSrc, w.dataset.id);
     });
+    setupTileEditGestures(w);
   });
+}
+
+function _swapTileOrder(idA, idB) {
+  const items = CItems();
+  const ai = items.findIndex(x => x.id === idA);
+  const bi = items.findIndex(x => x.id === idB);
+  if (ai < 0 || bi < 0) return;
+  [items[ai].order, items[bi].order] = [items[bi].order, items[ai].order];
+  renderGrid();
 }
 
 export function normaliseOrders() {
   CItems().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach((x, i) => { x.order = i; });
+}
+
+// ─── TILE-BEARBEITUNGSMODUS (iOS-Homescreen-Prinzip) ────────────
+// Löst den Gestenkonflikt auf Touch-Geräten zwischen "Kachel
+// verschieben" (Ziehen) und "Kachel bearbeiten" (der kleine, auf
+// kleinen Kacheln schwer präzise zu treffende Edit-Button): ein Tap
+// spielt normal ab, ein Long-Press aktiviert für das GESAMTE Grid
+// einen Bearbeitungsmodus (alle Kacheln "wackeln", Edit-Buttons
+// bleiben dauerhaft sichtbar). Innerhalb dieses Modus ist ein Tap
+// auf eine Kachel = Bearbeiten, Ziehen = Verschieben — zwei klar
+// getrennte, eindeutige Gesten statt einer doppelt belegten.
+// Auf Desktop (Maus) bleibt alles unverändert: Hover zeigt den
+// Edit-Button, Klick spielt ab, natives HTML5-Drag&Drop verschiebt —
+// dort gibt es den Gestenkonflikt gar nicht (kein Long-Press nötig).
+
+let _tileEditMode = false;
+
+export function isTileEditMode() { return _tileEditMode; }
+
+export function setTileEditMode(on) {
+  _tileEditMode = !!on;
+  document.getElementById('grid')?.classList.toggle('is-edit-mode', _tileEditMode);
+  const bar = document.getElementById('editModeBar');
+  if (bar) bar.hidden = !_tileEditMode;
+  if (!_tileEditMode) _endTouchDrag();
+}
+
+const LONG_PRESS_MS   = 450;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
+let _lp = null; // { timer, wrap, moveHandler, upHandler }
+
+function _clearLongPress() {
+  if (!_lp) return;
+  clearTimeout(_lp.timer);
+  _lp.wrap.removeEventListener('pointermove',  _lp.moveHandler);
+  _lp.wrap.removeEventListener('pointerup',    _lp.upHandler);
+  _lp.wrap.removeEventListener('pointercancel',_lp.upHandler);
+  _lp = null;
+}
+
+function _armLongPress(e, wrap, onFire) {
+  _clearLongPress();
+  const startX = e.clientX, startY = e.clientY;
+  const moveHandler = ev => {
+    if (Math.abs(ev.clientX - startX) > LONG_PRESS_MOVE_TOLERANCE_PX ||
+        Math.abs(ev.clientY - startY) > LONG_PRESS_MOVE_TOLERANCE_PX) _clearLongPress();
+  };
+  const upHandler = () => _clearLongPress();
+  const timer = setTimeout(() => { _clearLongPress(); onFire(); }, LONG_PRESS_MS);
+  _lp = { timer, wrap, moveHandler, upHandler };
+  wrap.addEventListener('pointermove',   moveHandler);
+  wrap.addEventListener('pointerup',     upHandler, { once: true });
+  wrap.addEventListener('pointercancel', upHandler, { once: true });
+}
+
+// Nur EIN aktiver Touch-Drag gleichzeitig — modulweiter Zustand statt
+// pro Kachel, da das Ziel beim Ziehen über andere Kacheln ermittelt wird.
+let _touchDragSrcId = null;
+
+function _beginTouchDrag(wrap) {
+  _touchDragSrcId = wrap.dataset.id;
+  wrap.classList.add('is-dragging');
+  document.addEventListener('pointermove',   _onTouchDragMove);
+  document.addEventListener('pointerup',     _onTouchDragEnd,   { once: true });
+  document.addEventListener('pointercancel', _onTouchDragCancel,{ once: true });
+}
+
+function _onTouchDragMove(e) {
+  if (!_touchDragSrcId) return;
+  document.querySelectorAll('.tile-wrap.is-drag-over').forEach(x => x.classList.remove('is-drag-over'));
+  const el     = document.elementFromPoint(e.clientX, e.clientY);
+  const target = el && el.closest ? el.closest('.tile-wrap') : null;
+  if (target && target.dataset.id !== _touchDragSrcId) target.classList.add('is-drag-over');
+}
+
+function _onTouchDragEnd(e) {
+  const el     = document.elementFromPoint(e.clientX, e.clientY);
+  const target = el && el.closest ? el.closest('.tile-wrap') : null;
+  const srcId  = _touchDragSrcId;
+  _endTouchDrag();
+  if (target && srcId && target.dataset.id !== srcId) _swapTileOrder(srcId, target.dataset.id);
+}
+
+function _onTouchDragCancel() { _endTouchDrag(); }
+
+function _endTouchDrag() {
+  document.removeEventListener('pointermove',   _onTouchDragMove);
+  document.removeEventListener('pointerup',     _onTouchDragEnd);
+  document.removeEventListener('pointercancel', _onTouchDragCancel);
+  document.querySelectorAll('.tile-wrap.is-drag-over, .tile-wrap.is-dragging')
+    .forEach(x => x.classList.remove('is-drag-over', 'is-dragging'));
+  _touchDragSrcId = null;
+}
+
+/** Long-Press-Erkennung pro Kachel — nur für Touch-Pointer (Desktop/Maus
+ *  bleibt vom bestehenden Hover+Klick+HTML5-DnD-Verhalten unberührt). */
+export function setupTileEditGestures(wrap) {
+  wrap.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch') return;
+    _armLongPress(e, wrap, () => {
+      if (!isTileEditMode()) {
+        setTileEditMode(true);
+        if (navigator.vibrate) navigator.vibrate(12);
+      }
+      _beginTouchDrag(wrap);
+    });
+  });
 }
 
 
@@ -763,10 +892,26 @@ export function buildColorOpts(containerId, current) {
     if (c !== 'none') d.style.background = c;
     d.dataset.color = c;
     d.title = c === 'none' ? 'Kein Akzent' : c;
+    // Spez. Kap. 24: Color Swatches müssen per Tastatur bedienbar und
+    // fokussierbar sein (WCAG 2.1.1 / 2.4.7), nicht nur per Klick.
+    d.setAttribute('role', 'button');
+    d.setAttribute('tabindex', '0');
+    d.setAttribute('aria-pressed', String(c === current));
     d.setAttribute('aria-label', c === 'none' ? 'Kein Akzent' : `Farbe ${c}`);
-    d.addEventListener('click', () => {
-      co.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('is-selected'));
+    const select = () => {
+      co.querySelectorAll('.color-swatch').forEach(x => {
+        x.classList.remove('is-selected');
+        x.setAttribute('aria-pressed', 'false');
+      });
       d.classList.add('is-selected');
+      d.setAttribute('aria-pressed', 'true');
+    };
+    d.addEventListener('click', select);
+    d.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+        ev.preventDefault();
+        select();
+      }
     });
     co.appendChild(d);
   });
@@ -1266,7 +1411,7 @@ export function renderMacroSteps() {
             `<option value="${x.id}"${step.targetId === x.id ? ' selected' : ''}>${iconGlyph(x.icon)} ${x.name}</option>`
           ).join('')}
         </select>
-        <input type="number" class="form-control mstep-delay js-fade-dur" style="width:68px" value="${step.fadeDuration || 1000}" min="100" max="10000" aria-label="Fade-Dauer ms">
+        <input type="number" class="form-control mstep-delay js-fade-dur" value="${step.fadeDuration || 1000}" min="100" max="10000" aria-label="Fade-Dauer ms">
         <span class="mstep-ms-label">ms</span>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>

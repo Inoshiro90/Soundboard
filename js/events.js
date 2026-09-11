@@ -12,7 +12,7 @@ import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, updateTrimDurLabel, normaliseOrders,
-  syncThemeIcon
+  syncThemeIcon, isTileEditMode, setTileEditMode
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
@@ -748,6 +748,14 @@ export function registerEvents() {
   });
   document.getElementById('btnStop')?.addEventListener('click', stopAll);
   document.getElementById('btnSave')?.addEventListener('click', save);
+
+  // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
+  document.getElementById('btnExitEditMode')?.addEventListener('click', () => setTileEditMode(false));
+  document.addEventListener('pointerdown', e => {
+    if (!isTileEditMode()) return;
+    if (e.target.closest('#grid') || e.target.closest('#editModeBar')) return;
+    setTileEditMode(false);
+  });
   // Makro-Erstellung lebt jetzt im "+"-Menü leerer Kacheln
   // (ui.js: _openTileAddChoice → openMacroModal(null, placeholderId))
   // statt als eigener Menüband-Button.
@@ -1280,6 +1288,7 @@ export function registerEvents() {
 
   document.getElementById('btnDelSound')?.addEventListener('click', () => {
     if (!APP.editId) return;
+    if (!confirm('Diesen Sound wirklich löschen?')) return;
     stopItem(APP.editId);
     const items = CItems(); const idx = items.findIndex(x => x.id === APP.editId);
     if (idx >= 0) { const order = items[idx].order; items.splice(idx, 1, { type: 'placeholder', id: uid(), order, locked: false }); }
@@ -1442,6 +1451,7 @@ export function registerEvents() {
   });
   document.getElementById('btnDelMacro')?.addEventListener('click', () => {
     if (!APP.editMacroId) return;
+    if (!confirm('Dieses Makro wirklich löschen?')) return;
     const items = CItems(); const idx = items.findIndex(x => x.id === APP.editMacroId);
     if (idx >= 0) { const order = items[idx].order; items.splice(idx, 1, { type: 'placeholder', id: uid(), order, locked: false }); }
     bootstrap.Modal.getInstance(document.getElementById('macroModal')).hide();

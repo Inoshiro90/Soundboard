@@ -68,7 +68,9 @@
     --h-navbar:    calc(var(--grid-row-h) * 0.75);
     --h-menubar:   calc(var(--grid-row-h) * 0.875);
     --h-tabbar:    calc(var(--grid-row-h) * 0.625);
-    --h-btn:       calc(var(--grid-row-h) * 0.5);
+    /* Spez. Kap. 10: bei 912px ist 1/2 Rastereinheit (≈21.67px) < 24px
+       WCAG-Mindestgröße. 9/16 (≈24.38px) erfüllt SC 2.5.8. */
+    --h-btn:       calc(var(--grid-row-h) * 9 / 16);
   }
 }
 
@@ -95,8 +97,10 @@
 
     --h-navbar:    calc(var(--grid-row-h) * 0.5);
     --h-menubar:   calc(var(--grid-row-h) * 0.5);
-    --h-tabbar:    calc(var(--grid-row-h) * 0.375);
-    --h-btn:       calc(var(--grid-row-h) * 0.375);
+    /* Spez. Kap. 10: bei 1400px ist 3/8 (≈23.65px) < 24px WCAG-Mindestgröße.
+       13/32 (≈25.62px) erfüllt SC 2.5.8. */
+    --h-tabbar:    calc(var(--grid-row-h) * 13 / 32);
+    --h-btn:       calc(var(--grid-row-h) * 13 / 32);
   }
 }
 
@@ -137,7 +141,8 @@
   #trimModal    .modal-dialog { max-width: var(--w-6col); }
   #profModal    .modal-dialog,
   #ambProfModal .modal-dialog,
-  #ambTrackIconModal .modal-dialog { max-width: var(--w-4col); }
+  #ambTrackIconModal .modal-dialog,
+  #slotEditModal .modal-dialog { max-width: var(--w-4col); }  /* Spez. Kap. 26: analog Profil-Gruppe */
   #macroItemPickerModal .modal-dialog { max-width: var(--w-5col); }
 }
 
@@ -162,7 +167,8 @@
   #trimModal    .modal-dialog { max-width: var(--w-5col); }
   #profModal    .modal-dialog,
   #ambProfModal .modal-dialog,
-  #ambTrackIconModal .modal-dialog { max-width: var(--w-3col); }
+  #ambTrackIconModal .modal-dialog,
+  #slotEditModal .modal-dialog { max-width: var(--w-8col); }  /* Spez. Kap. 26 */
   #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
 }
 
