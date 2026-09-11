@@ -217,3 +217,53 @@ body {
 ::-webkit-scrollbar-track     { background: var(--bg-warm); }
 ::-webkit-scrollbar-thumb     { background: var(--border-color); border-radius: var(--radius-pill); }
 ::-webkit-scrollbar-thumb:hover { background: var(--warm-gray-300); }
+
+.guide-nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  background: color-mix(in srgb, var(--bg-page) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: var(--border-whisper);
+  transition:
+    background var(--dur-slow) var(--ease),
+    border-color var(--dur-slow) var(--ease);
+}
+
+.guide-nav > .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  /* max-width: 900px; */
+  padding: 0 var(--space-6);
+}
+
+.guide-nav-brand {
+  font-size: var(--text-nav);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-nav-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.guide-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
