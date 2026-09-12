@@ -29,7 +29,7 @@ import { toast }                                 from './notifications.js';
 import { actx, hasAudioContext, buildEffectChain } from './audio.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
-import { _saveRaw }                              from './storage.js';
+import { _saveRaw, exportAmbientTrack }          from './storage.js';
 import { PENCIL_ICON_SVG }                       from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -694,6 +694,9 @@ function _rowTemplate(t) {
     <button class="ambient-row__opt" data-act="fx" title="Bearbeiten — Grundeinstellungen &amp; Audio-Effekte" aria-label="Ambient-Sound bearbeiten">
       <i class="fa-solid fa-pen" aria-hidden="true"></i>
     </button>
+    <button class="ambient-row__opt" data-act="export" title="Als Datei exportieren" aria-label="Ambient-Sound exportieren">
+      <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+    </button>
     <button class="ambient-row__opt ambient-row__opt--danger" data-act="remove" title="Entfernen"
       aria-label="Ambient-Sound entfernen">
       <i class="fa-solid fa-trash" aria-hidden="true"></i>
@@ -841,6 +844,7 @@ export function registerAmbientEvents() {
       if      (act === 'play')   toggleAmbientPlay(id);
       else if (act === 'icon')   document.dispatchEvent(new CustomEvent('ambient:pickTrackIcon', { detail: { id } }));
       else if (act === 'fx')     document.dispatchEvent(new CustomEvent('ambient:editEffects', { detail: { id } }));
+      else if (act === 'export') exportAmbientTrack(id);
       else if (act === 'remove') { if (confirm('Diesen Ambient-Sound entfernen?')) removeAmbientTrack(id); }
     });
 

@@ -36,7 +36,7 @@ import { uid, iconHtmlOr, fmtTime }  from './utils.js';
 import { toast }                     from './notifications.js';
 import { actx }                      from './audio.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
-import { _saveRaw }                  from './storage.js';
+import { _saveRaw, exportMusicTrack, exportMusicProfile } from './storage.js';
 import { PENCIL_ICON_SVG, updateStatus }   from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -811,6 +811,9 @@ export function registerMusicEvents() {
   document.getElementById('musicFile')?.addEventListener('change', function () {
     if (this.files?.length) addMusicFiles(this.files);
     this.value = '';
+  });
+  document.getElementById('btnMusicExportProfile')?.addEventListener('click', () => {
+    if (APP.music.activeProfileId) exportMusicProfile(APP.music.activeProfileId);
   });
 
   document.getElementById('btnMusicPrev')?.addEventListener('click', () => previousMusicTrack());

@@ -1116,6 +1116,14 @@ function _initTrimZoom() {
   };
 }
 
+/** Extracts clientX/clientY from either a MouseEvent or a TouchEvent, so the
+ *  same hit-testing logic can drive both mouse and touch interaction. */
+function _eventPoint(e) {
+  if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+
 /** Initialise canvas mouse/touch drag — called once per modal open */
 function _initTrimCanvasDrag() {
   const canvas = document.getElementById('trimCanvas');
@@ -1123,9 +1131,19 @@ function _initTrimCanvasDrag() {
 
   let panStart = null; // { x, scrollOffset } for middle-button/space pan
 
-  canvas.onmousedown = function(e) {
+  /** Shared hit-test + drag-start logic for both mouse and touch.
+   *  @param isTouch  Fingers are far less precise than a mouse cursor, so
+   *  touch gets a much larger "grab radius" around each handle (Kap. 59:
+   *  Mindestgröße für Touch-Targets) — mouse keeps its tighter, pixel-
+   *  accurate snap. BUGFIX (Nutzer-Feedback): when neither handle was
+   *  within the (very tight) snap distance, this used to unconditionally
+   *  fall back to 'start', so any imprecise touch that missed the end
+   *  handle silently grabbed the start handle instead. Now falls back to
+   *  whichever handle is actually closer. */
+  function _pointerDown(e, isTouch) {
     if (!APP.trim.buf) return;
-    const { normX } = _canvasNormX(e, this);
+    const pt = _eventPoint(e);
+    const { normX } = _canvasNormXAt(pt.x, canvas);
     const t = _normToTime(normX);
     const dur = APP.trim.buf.duration;
     const ts  = parseFloat(document.getElementById('trimStart').value) || 0;
@@ -1134,31 +1152,43 @@ function _initTrimCanvasDrag() {
     const pxTe = _timeToNorm(te);
     const distS = Math.abs(normX - pxTs);
     const distE = Math.abs(normX - pxTe);
-    const snap  = 0.015 / APP.trim.zoom;
+    const snap  = (isTouch ? Math.max(24, canvas.offsetWidth * 0.04) / canvas.offsetWidth : 0.015) / APP.trim.zoom;
 
-    if (e.button === 1) { panStart = { x: e.clientX, scrollOffset: APP.trim.scrollOffset }; e.preventDefault(); return; }
-    if (distS < snap)      APP.trim.dragging = 'start';
-    else if (distE < snap) APP.trim.dragging = 'end';
-    else if (e.button === 2) APP.trim.dragging = 'end';
-    else APP.trim.dragging = 'start';
+    if (!isTouch && e.button === 1) { panStart = { x: pt.x, scrollOffset: APP.trim.scrollOffset }; e.preventDefault(); return; }
+    if (distS < snap)                    APP.trim.dragging = 'start';
+    else if (distE < snap)               APP.trim.dragging = 'end';
+    else if (!isTouch && e.button === 2) APP.trim.dragging = 'end';
+    else                                  APP.trim.dragging = (distS <= distE) ? 'start' : 'end';
     _applyTrimPoint(t);
-  };
+  }
 
-  canvas.onmousemove = function(e) {
+  function _pointerMove(e, isTouch) {
     if (!APP.trim.buf) return;
+    const pt = _eventPoint(e);
     if (panStart) {
-      const dx = (e.clientX - panStart.x) / this.offsetWidth;
+      const dx = (pt.x - panStart.x) / canvas.offsetWidth;
       APP.trim.scrollOffset = Math.max(0, Math.min(1 - 1 / APP.trim.zoom, panStart.scrollOffset - dx / APP.trim.zoom));
       drawTrimWaveform(); return;
     }
     if (!APP.trim.dragging) return;
-    const { normX } = _canvasNormX(e, this);
+    if (isTouch) e.preventDefault(); // verhindert Seiten-Scroll während des Ziehens
+    const { normX } = _canvasNormXAt(pt.x, canvas);
     _applyTrimPoint(_normToTime(normX));
-  };
+  }
 
+  canvas.onmousedown = e => _pointerDown(e, false);
+  canvas.onmousemove = e => _pointerMove(e, false);
   canvas.onmouseup    = () => { APP.trim.dragging = null; panStart = null; };
   canvas.onmouseleave = () => { if (!panStart) APP.trim.dragging = null; };
   canvas.oncontextmenu = e => e.preventDefault();
+
+  // Touch: eigene Handler statt sich auf emulierte mousedown/mousemove-
+  // Events zu verlassen — die feuern auf den meisten mobilen Browsern
+  // während eines echten Touch-Drags gar nicht zuverlässig durchgehend.
+  canvas.addEventListener('touchstart', e => { _pointerDown(e, true); }, { passive: true });
+  canvas.addEventListener('touchmove',  e => { _pointerMove(e, true); }, { passive: false });
+  canvas.addEventListener('touchend',    () => { APP.trim.dragging = null; }, { passive: true });
+  canvas.addEventListener('touchcancel', () => { APP.trim.dragging = null; }, { passive: true });
 
   // Scroll to zoom with mouse wheel
   canvas.onwheel = function(e) {
@@ -1177,10 +1207,15 @@ function _initTrimCanvasDrag() {
   };
 }
 
-/** Converts mouse event to 0..1 canvas-relative X, accounting for zoom/scroll */
+/** Converts mouse event to 0..1 canvas-relative X, accounting for zoom/scroll (mouse-only entry point, kept for onwheel) */
 function _canvasNormX(e, canvas) {
+  return _canvasNormXAt(e.clientX, canvas);
+}
+
+/** Converts a raw clientX to 0..1 canvas-relative X, accounting for zoom/scroll */
+function _canvasNormXAt(clientX, canvas) {
   const r    = canvas.getBoundingClientRect();
-  const rawX = (e.clientX - r.left) / r.width; // 0..1 in viewport
+  const rawX = (clientX - r.left) / r.width; // 0..1 in viewport
   const normX = APP.trim.scrollOffset + rawX / APP.trim.zoom;
   return { rawX, normX: Math.max(0, Math.min(1, normX)) };
 }

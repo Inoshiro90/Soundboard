@@ -16,6 +16,8 @@ import {
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
+  exportProfile, exportAmbientProfile, exportMusicProfile,
+  exportSoundItem, exportAmbientTrack, exportMusicTrack,
   mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT
 } from './storage.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey } from './db.js';
@@ -447,6 +449,8 @@ export function openSoundModal(id, placeholderId = null) {
 
   const delBtn = document.getElementById('btnDelSound');
   if (delBtn) delBtn.style.display = id ? '' : 'none';
+  const expBtn = document.getElementById('btnExportSound');
+  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   APP.editSlots = s ? (s.slots || []).map(sl => ({ ...sl })) : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }];
   renderSlotList();
@@ -618,6 +622,8 @@ function openProfileModal(id) {
 
   const delBtn = document.getElementById('btnDelProfile');
   if (delBtn) delBtn.style.display = (id && APP.profiles.length > 1) ? '' : 'none';
+  const expBtn = document.getElementById('btnExportProfile');
+  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('profIconGrid', p ? p.icon : '🎵');
   document.getElementById('profModal').addEventListener('shown.bs.modal', () => {
@@ -642,6 +648,8 @@ function openAmbientProfileModal(id) {
 
   const delBtn = document.getElementById('btnDelAmbientProfile');
   if (delBtn) delBtn.style.display = (id && APP.ambient.profiles.length > 1) ? '' : 'none';
+  const expBtn = document.getElementById('btnExportAmbientProfile');
+  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('ambProfIconGrid', p ? p.icon : '🌫️');
   document.getElementById('ambProfModal').addEventListener('shown.bs.modal', () => {
@@ -743,6 +751,9 @@ export function registerEvents() {
     bootstrap.Modal.getInstance(document.getElementById('profModal')).hide();
     renderProfileTabs(); renderGrid(); toast('Profil gelöscht');
   });
+  document.getElementById('btnExportProfile')?.addEventListener('click', () => {
+    if (APP.editProfileId) exportProfile(APP.editProfileId);
+  });
 
   // Ambient scene modal
   document.getElementById('btnAddAmbientProfile')?.addEventListener('click', () => openAmbientProfileModal(null));
@@ -759,6 +770,9 @@ export function registerEvents() {
     deleteAmbientProfile(_editAmbientProfileId);
     bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
     toast('Szene gelöscht');
+  });
+  document.getElementById('btnExportAmbientProfile')?.addEventListener('click', () => {
+    if (_editAmbientProfileId) exportAmbientProfile(_editAmbientProfileId);
   });
 
   // Ambient track icon modal
@@ -814,6 +828,9 @@ export function registerEvents() {
     removeMusicTrack(_musicEditId);
     bootstrap.Modal.getInstance(document.getElementById('musicTrackModal'))?.hide();
   });
+  document.getElementById('btnMusicEditExport')?.addEventListener('click', () => {
+    if (_musicEditId) exportMusicTrack(_musicEditId);
+  });
 
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
   document.getElementById('btnExitEditMode')?.addEventListener('click', () => setTileEditMode(false));
@@ -846,6 +863,7 @@ export function registerEvents() {
       onSuccess: () => {
         applyProfileSettings(); renderProfileTabs(); renderGrid();
         renderAmbientProfileTabs(); renderAmbientPanel();
+        import('./music.js').then(m => { m.renderMusicProfileTabs(); m.renderMusicPanel(); m.renderMusicPlayer(); });
         toast('Import ✓', 'ok');
       }
     });
@@ -1363,6 +1381,9 @@ export function registerEvents() {
     if (idx >= 0) { const order = items[idx].order; items.splice(idx, 1, { type: 'placeholder', id: uid(), order, locked: false }); }
     bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
     renderGrid(); toast('Gelöscht');
+  });
+  document.getElementById('btnExportSound')?.addEventListener('click', () => {
+    if (APP.editId) exportSoundItem(APP.editId);
   });
 
   document.getElementById('btnPreviewSound')?.addEventListener('click', async () => {
