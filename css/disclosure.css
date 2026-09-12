@@ -16,6 +16,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  width: var(--w-4col);
 }
 
 .popover-toggle__chevron {

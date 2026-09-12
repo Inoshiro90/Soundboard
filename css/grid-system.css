@@ -169,7 +169,7 @@
   #profModal    .modal-dialog,
   #ambProfModal .modal-dialog,
   #ambTrackIconModal .modal-dialog,
-  #musicTrackModal .modal-dialog,
+  #musicTrackModal .modal-dialog { max-width: var(--w-8col); }  /* Spez. Kap. 26 */
   #slotEditModal .modal-dialog { max-width: var(--w-8col); }  /* Spez. Kap. 26 */
   #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
 }

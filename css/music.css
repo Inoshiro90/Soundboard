@@ -98,6 +98,21 @@
   opacity: 0.4;
 }
 
+.music-row__handle {
+  /* Spez.: eigener Ziehgriff statt der ganzen Zeile — verhindert, dass
+     Ziehen am Lautstärkeregler versehentlich die Zeile verschiebt. */
+  width: var(--h-btn);
+  height: var(--h-btn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+.music-row__handle:active { cursor: grabbing; }
+
 .music-row__play {
   /* Spez. Kap. 13/59: eigenständiges Icon-only-Target -> var(--h-btn) */
   width: var(--h-btn);
@@ -186,9 +201,29 @@
   text-align: right;
 }
 
+.music-row__vol-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
 .music-row__vol {
   width: calc(var(--grid-row-h) * 2);
   max-width: 100%;
+  flex-shrink: 0;
+}
+.music-row__vol-num {
+  /* Nutzer-Vorgabe: rasterbasierte Breite statt fixem Pixelwert. */
+  /* width: calc(var(--w-1col) / 2); */
+  height: var(--h-btn);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  padding: 0 var(--space-1);
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  border-radius: var(--radius-micro);
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
@@ -234,8 +269,12 @@
    Sticky innerhalb der Musikansicht (Kap. 31) — verdeckt aber nicht die
    ganze App, orientiert sich an .app-menubar/.fx-toolbar-Konventionen. */
 .music-player {
+  /* Nutzer-Feedback: Player jetzt ÜBER der Playlist statt darunter —
+     sticky direkt unter der Navbar (die selbst position:sticky;top:0
+     verwendet), damit er beim Scrollen der Trackliste sichtbar bleibt,
+     ohne die Navbar zu verdecken. */
   position: sticky;
-  bottom: 0;
+  top: var(--h-navbar);
   z-index: var(--z-nav);
   display: flex;
   flex-direction: column;
@@ -354,7 +393,7 @@
 }
 .music-player__vol-group .slider { flex: 1; min-width: 60px; }
 .music-player__vol-num {
-  width: calc(var(--w-1col)/2);
+  /* width: calc(var(--w-1col)/2); */
   height: var(--h-btn);
   text-align: center;
   font-family: var(--font-mono);
@@ -395,7 +434,7 @@
    Sanktionierte Breakpoints (Kap. 56) statt eigener Zwischenwerte. */
 @media (max-width: 767px) {
   .music-row { padding: var(--space-2); }
-  .music-row__vol { flex-basis: 100%; order: 5; }
+  .music-row__vol-group { flex-basis: 100%; order: 5; }
   .music-row__reorder { order: 6; flex-direction: row; }
   .music-player__transport { justify-content: space-between; }
   .music-player__vol-group { flex-basis: 100%; }

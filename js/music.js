@@ -351,7 +351,17 @@ function _ensurePlayers() {
     gain.gain.value = 0;
     source.connect(gain);
     gain.connect(master);
-    return { audio, source, gain, trackId: null };
+    const rec = { audio, source, gain, trackId: null };
+    // BUGFIX (Nutzer-Feedback): renderMusicPanel()/renderMusicPlayer() wurden
+    // bisher nur an den JS-Aufrufstellen (playMusicTrack/_switchToTrack usw.)
+    // aktualisiert. Da .play() bei noch ungeladenen Metadaten erst asynchron
+    // NACH diesem Aufruf tatsächlich zu spielen beginnt, blieb das Icon auf
+    // "Play" stehen. Die echten play/pause-Events des <audio>-Elements sind
+    // die zuverlässige Quelle der Wahrheit — bei jedem Wechsel wird neu
+    // gerendert, unabhängig davon, WARUM sich der Zustand geändert hat.
+    audio.addEventListener('play',  () => { renderMusicPanel(); renderMusicPlayer(); });
+    audio.addEventListener('pause', () => { renderMusicPanel(); renderMusicPlayer(); });
+    return rec;
   };
   _players = { A: mk(), B: mk(), master };
   return _players;
@@ -659,7 +669,10 @@ function _trackRowTemplate(t) {
   const rec       = isActive ? _players?.[_activeSlot] : null;
   const pct       = rec && rec.audio.duration ? Math.min(100, (rec.audio.currentTime / rec.audio.duration) * 100) : 0;
   return `
-  <div class="music-row${isActive ? ' is-active' : ''}${isPlaying ? ' is-playing' : ''}" data-id="${t.id}" draggable="true">
+  <div class="music-row${isActive ? ' is-active' : ''}${isPlaying ? ' is-playing' : ''}" data-id="${t.id}">
+    <span class="music-row__handle" draggable="true" title="Ziehen zum Neuanordnen" aria-label="${_esc(t.name)} neu anordnen">
+      <i class="fa-solid fa-grip-vertical" aria-hidden="true"></i>
+    </span>
     <button class="music-row__play" data-act="play" ${t.data ? '' : 'disabled'}
       title="${isPlaying ? 'Pause' : 'Abspielen'}" aria-label="${isPlaying ? 'Pause' : 'Abspielen'} — ${_esc(t.name)}">
       <i class="fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}" aria-hidden="true"></i>
@@ -671,8 +684,12 @@ function _trackRowTemplate(t) {
       <div class="music-row__progress" aria-hidden="true"><div class="music-row__progress-fill" style="width:${pct}%"></div></div>
     </div>
     <span class="music-row__duration">${t.duration ? fmtTime(t.duration) : '—:—'}</span>
-    <input type="range" class="slider music-row__vol" data-act="vol" min="0" max="1" step=".01" value="${t.vol}"
-      aria-label="Lautstärke ${_esc(t.name)}">
+    <div class="music-row__vol-group">
+      <input type="range" class="slider music-row__vol" data-act="vol" min="0" max="1" step=".01" value="${t.vol}"
+        aria-label="Lautstärke ${_esc(t.name)}">
+      <input type="number" class="music-row__vol-num" data-act="volnum" min="0" max="100" step="1"
+        value="${Math.round((t.vol ?? 1) * 100)}" aria-label="Lautstärke ${_esc(t.name)} in Prozent">
+    </div>
     <div class="music-row__reorder">
       <button class="music-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
       <button class="music-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
@@ -866,13 +883,31 @@ export function registerMusicEvents() {
     });
     list.addEventListener('input', e => {
       const row = e.target.closest('.music-row'); if (!row) return;
-      if (e.target.dataset.act === 'vol') setMusicTrackVolume(row.dataset.id, parseFloat(e.target.value));
+      const act = e.target.dataset.act;
+      if (act === 'vol') {
+        setMusicTrackVolume(row.dataset.id, parseFloat(e.target.value));
+        const numEl = row.querySelector('[data-act="volnum"]');
+        if (numEl) numEl.value = Math.round(parseFloat(e.target.value) * 100);
+      } else if (act === 'volnum') {
+        const pct = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+        e.target.value = pct;
+        const val = pct / 100;
+        setMusicTrackVolume(row.dataset.id, val);
+        const slEl = row.querySelector('[data-act="vol"]');
+        if (slEl) slEl.value = val;
+      }
     });
-    // Desktop Drag&Drop-Reorder — dasselbe Muster wie die Sound-Kacheln (ui.js).
+    // Desktop Drag&Drop-Reorder — nur über den Griff (.music-row__handle)
+    // ziehbar (Nutzer-Feedback: sonst löste Ziehen am Lautstärkeregler
+    // versehentlich ein Verschieben der ganzen Zeile aus). Da draggable
+    // nur noch auf dem Griff selbst gesetzt ist, kann der native
+    // dragstart gar nicht mehr von Slider/Buttons ausgehen.
     list.addEventListener('dragstart', e => {
-      const row = e.target.closest('.music-row'); if (!row) return;
+      const handle = e.target.closest('.music-row__handle'); if (!handle) return;
+      const row = handle.closest('.music-row'); if (!row) return;
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', row.dataset.id);
+      e.dataTransfer.setDragImage(row, 12, 12);
       row.classList.add('is-dragging');
     });
     list.addEventListener('dragend', e => {

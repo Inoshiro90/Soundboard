@@ -95,25 +95,16 @@
 
     </nav>
 
-    <!-- ══════════════════════════════════════════════════════════════════════
-       Die vormals hier sitzende globale Lautstärke wurde in den neuen
-       #fxToolbar-Bereich verschoben (direkt unter #soundMenubar, analog zu
-       .ambient-board__toolbar) — sie betrifft ohnehin nur Sound-Kacheln
-       (siehe audio.js), gehörte also strukturell dorthin, nicht in eine
-       immer sichtbare Leiste oberhalb beider Ansichten.
+    <!-- ══════════════════════ GLOBALE EINSTELLUNGEN ══════════════════════════
+       Nutzer-Feedback: "Einstellungen" (Export/Import/Reset/Speichern/Undo/
+       Redo) betrifft ALLE drei Ansichten (Sound/Ambient/Musik), nicht nur
+       Soundeffekte — deshalb jetzt in einer IMMER sichtbaren Leiste oberhalb
+       der Profil-/Szenen-/Playlist-Tabs, unabhängig vom aktiven viewMode.
+       "Wiedergabe" bleibt bewusst in #soundMenubar (steuert ausschließlich
+       das Abspielverhalten von Sound-Kacheln — Überlagern/Stop bei Neustart/
+       Mehrfachklick ergeben für Ambient/Musik keinen Sinn).
   ══════════════════════════════════════════════════════════════════════════ -->
-
-    <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
-       Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
-       betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
-       Enthält jetzt nur noch Einstellungen + Wiedergabe (je 2 Spalten breit,
-       Text immer sichtbar) — Stop + Lautstärke sitzen jetzt in #fxToolbar.
-  ══════════════════════════════════════════════════════════════════════════ -->
-    <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
-
-      <!-- Einstellungen: Verwalten (Export/Import/Reset) + Speichern +
-           Undo/Redo — occasional/administrative actions (Ebene 3),
-           gebündelt statt einzeln in der Leiste. -->
+    <div class="app-menubar" id="globalMenubar" role="toolbar" aria-label="Allgemeine Werkzeuge">
       <div class="popover-wrap">
         <button class="menubar-btn menubar-btn--wide popover-toggle" id="btnAppSettingsToggle" data-disclosure-toggle
           aria-expanded="false" aria-controls="appSettingsPopover" title="Verwalten, Speichern, Rückgängig/Wiederholen"
@@ -160,8 +151,23 @@
 
         </div>
       </div>
+    </div>
 
-      <div class="menubar-sep" aria-hidden="true"></div>
+    <!-- ══════════════════════════════════════════════════════════════════════
+       Die vormals hier sitzende globale Lautstärke wurde in den neuen
+       #fxToolbar-Bereich verschoben (direkt unter #soundMenubar, analog zu
+       .ambient-board__toolbar) — sie betrifft ohnehin nur Sound-Kacheln
+       (siehe audio.js), gehörte also strukturell dorthin, nicht in eine
+       immer sichtbare Leiste oberhalb beider Ansichten.
+  ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
+       Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
+       betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
+       Enthält jetzt nur noch Wiedergabe (Einstellungen ist in #globalMenubar
+       gewandert, da global relevant) — Stop + Lautstärke sitzen in #fxToolbar.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
 
       <!-- Wiedergabe: playback behaviour for sound tiles. Rarely changed
            once set, so tucked behind a popover (Ebene 3) instead of
@@ -344,11 +350,11 @@
         Noch keine Musikstücke in dieser Playlist. Füge z. B. Battle Theme, Tavern Theme oder Exploration Theme
         hinzu — beim Abspielen läuft dann immer genau ein Track, ideal zum schnellen Umschalten während der Session.
       </p>
-      <div class="music-list" id="musicList" role="list" aria-label="Musikstücke"></div>
 
       <!-- ── GLOBALE STEUERLEISTE ─────────────────────────────
-           Sticky innerhalb der Musikansicht (Kap. 31) — Previous/Play-Pause/
-           Next, Fortschritt, Lautstärke, Repeat/Shuffle, Crossfade/Autoplay. -->
+           Sticky innerhalb der Musikansicht (Kap. 31), über der Playlist —
+           Previous/Play-Pause/Next, Fortschritt, Lautstärke, Repeat/Shuffle,
+           Crossfade/Autoplay. -->
       <div class="music-player" aria-label="Musik-Player">
         <div class="music-player__now" id="musicPlayerName">Kein Track ausgewählt</div>
 
@@ -408,6 +414,8 @@
           </label>
         </div>
       </div>
+
+      <div class="music-list" id="musicList" role="list" aria-label="Musikstücke"></div>
     </main>
 
 
