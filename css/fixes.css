@@ -31,38 +31,38 @@
    semantische Komponente und sind entfallen. */
 
 .btn {
-  /* Basis bleibt aus components.css */
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+	/* Basis bleibt aus components.css */
+	white-space: nowrap;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 }
 
 /* Small — für kompakte UI-Bereiche (nur Typografie/Radius, keine
    eigene Höhe mehr — teilt sich var(--h-btn) mit .btn) */
 .btn--sm {
-  padding: 0 10px;
-  font-size: 0.72rem;
-  border-radius: var(--radius-micro);
+	padding: 0 10px;
+	font-size: 0.72rem;
+	border-radius: var(--radius-micro);
 }
 
 /* Large — für primäre Aktionen (Höhe bleibt bewusst über var(--h-btn),
    da dies eine hervorgehobene Primäraktion ist; wächst mit demselben
    Rasterbezug statt eines fixen 44px-Werts) */
 .btn--lg {
-  padding: 0 20px;
-  font-size: 1rem;
-  height: calc(var(--h-btn) * 1.3);
-  border-radius: var(--radius-sm);
-  font-weight: var(--fw-semibold);
+	padding: 0 20px;
+	font-size: 1rem;
+	height: calc(var(--h-btn) * 1.3);
+	border-radius: var(--radius-sm);
+	font-weight: var(--fw-semibold);
 }
 
 /* Icon-only Button — teilt sich var(--h-btn) mit .btn--icon
    (components.css); kein eigener 32px-Fixwert mehr. */
 .btn--icon-only {
-  width: var(--h-btn);
-  padding: 0;
-  justify-content: center;
+	width: var(--h-btn);
+	padding: 0;
+	justify-content: center;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -73,25 +73,34 @@
 .tl-toolbar,
 .macro-tl-toolbar,
 .sm-basics-actions {
-  gap: var(--space-2);
+	gap: var(--space-2);
 }
 
 /* Accordion-Sektionen gleichmäßig */
 .sm-section-body {
-  padding: var(--space-3) var(--space-4);
+	padding: var(--space-3) var(--space-4);
 }
 
 .sm-section-body > .fx-group:first-child {
-  margin-top: 0;
+	margin-top: 0;
 }
 
 /* Konsistente Abstände in Effekt-Gruppen */
-.fx-group + .fx-group { margin-top: var(--space-3); }
-.fx-group + .fx-divider { margin-top: var(--space-3); }
-.fx-divider + .fx-group { margin-top: var(--space-3); }
+.fx-group + .fx-group {
+	margin-top: var(--space-3);
+}
+.fx-group + .fx-divider {
+	margin-top: var(--space-3);
+}
+.fx-divider + .fx-group {
+	margin-top: var(--space-3);
+}
 
 /* Lab-Buttons einheitlich */
-.lab-ops-group .btn { width: 100%; justify-content: flex-start; }
+.lab-ops-group .btn {
+	width: 100%;
+	justify-content: flex-start;
+}
 
 /* ══════════════════════════════════════════════════════════════
    4. VISUELLE HIERARCHIE
@@ -99,30 +108,30 @@
 
 /* Primäre Aktion visuell hervorheben */
 .sm-basics-actions .btn--accent {
-  font-weight: var(--fw-semibold);
-  padding: 6px 14px;
-  font-size: 0.8rem;
+	font-weight: var(--fw-semibold);
+	padding: 6px 14px;
+	font-size: 0.8rem;
 }
 
 /* Section-Toggles: Icon-Farbe für aktive Sektionen */
 .sm-section-toggle.is-open {
-  color: var(--color-accent);
+	color: var(--color-accent);
 }
 .sm-section-toggle.is-open .sm-chevron {
-  color: var(--color-accent);
+	color: var(--color-accent);
 }
 
 /* Muted secondary content */
 .fx-slider-min,
 .fx-slider-max {
-  font-size: 0.65rem;
-  color: var(--text-muted);
+	font-size: 0.65rem;
+	color: var(--text-muted);
 }
 
 /* Aktive Effekte: Badge im Accordion-Header anzeigen */
 .sm-section-toggle.has-active-fx {
-  border-left: 3px solid var(--color-accent);
-  padding-left: calc(var(--space-4) - 3px);
+	border-left: 3px solid var(--color-accent);
+	padding-left: calc(var(--space-4) - 3px);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -136,43 +145,51 @@
    abgeschnittenen Buttons erzeugt. mobile.css definiert das
    Wrap-Verhalten bereits korrekt; hier bleibt nur die Grundregel,
    dass der Name nicht unnötig Platz von den Actions abzieht. */
-.sm-basics-name { min-width: 0; flex: 1; }
-.sm-name-input { min-width: 0; }
+.sm-basics-name {
+	min-width: 0;
+	flex: 1;
+}
+.sm-name-input {
+	min-width: 0;
+}
 
 /* Toolbar horizontal scroll statt wrap auf Mobile verhindern */
 .tl-toolbar {
-  overflow-x: auto;
-  padding-bottom: 4px; /* Scrollbar-Platz */
+	overflow-x: auto;
+	padding-bottom: 4px; /* Scrollbar-Platz */
 }
 
 /* Audio-Lab Ops-Grid: 2 Spalten auf kleinen Screens — Spez. Kap. 56:
    sanktionierter Breakpoint (767px) statt eigenem 600px-Wert. */
 @media (max-width: 767px) {
-  .lab-ops-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+	.lab-ops-grid {
+		grid-template-columns: 1fr 1fr;
+	}
 }
 
 /* Macro-Timeline: kein Overflow */
 .macro-tl-scroll {
-  overflow-x: auto;
-  max-width: 100%;
+	overflow-x: auto;
+	max-width: 100%;
 }
 
 /* Trim-Modal: Canvas nicht über Container-Breite */
-#trimCanvas, #labWaveform, #analyzerCanvas, #envCanvas {
-  max-width: 100%;
-  display: block;
+#trimCanvas,
+#labWaveform,
+#analyzerCanvas,
+#envCanvas {
+	max-width: 100%;
+	display: block;
 }
 
 /* Macro Step-Buttons: konsistente Breite */
 .macro-step-action-btns {
-  gap: var(--space-2);
+	gap: var(--space-2);
 }
 .macro-step-action-btns .btn--sm {
-  flex: 1;
-  min-width: 0;
-  justify-content: center;
+	flex: 1;
+	min-width: 0;
+	justify-content: center;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -182,10 +199,10 @@
 
 /* Sektion-Emoji-Icons standardisiert */
 .sm-section-toggle > span {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 0.85rem;
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: 0.85rem;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -193,14 +210,14 @@
    ══════════════════════════════════════════════════════════════ */
 
 [data-theme='dark'] .slider::-webkit-slider-runnable-track {
-  background: rgba(255,255,255,0.15);
+	background: rgba(255, 255, 255, 0.15);
 }
 [data-theme='dark'] .slider::-moz-range-track {
-  background: rgba(255,255,255,0.15);
+	background: rgba(255, 255, 255, 0.15);
 }
 [data-theme='dark'] .slider::-webkit-slider-thumb,
 [data-theme='dark'] .slider::-moz-range-thumb {
-  border-color: var(--bg-surface);
+	border-color: var(--bg-surface);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -208,33 +225,44 @@
    ══════════════════════════════════════════════════════════════ */
 
 .tl-picker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 }
 
 .tl-picker-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-micro);
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  transition: background 0.1s;
-  cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-micro);
+	width: 100%;
+	text-align: left;
+	border: 1px solid transparent;
+	transition: background 0.1s;
+	cursor: pointer;
 }
 
 .tl-picker-item:hover {
-  background: var(--border-color);
+	background: var(--border-color);
 }
 
 .tl-picker-item.is-selected {
-  background: var(--badge-bg);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+	background: var(--badge-bg);
+	border-color: var(--color-accent);
+	color: var(--color-accent);
 }
 
-.tl-picker-icon { font-size: 1.1em; flex-shrink: 0; }
-.tl-picker-name { font-size: 0.85rem; font-weight: var(--fw-medium); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-picker-icon {
+	font-size: 1.1em;
+	flex-shrink: 0;
+}
+.tl-picker-name {
+	font-size: 0.85rem;
+	font-weight: var(--fw-medium);
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

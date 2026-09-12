@@ -339,6 +339,10 @@
       <div class="music-toolbar">
         <span class="music-toolbar__count-badge" id="musicCount">0</span>
         <span class="u-ml-auto"></span>
+        <button class="btn btn--sm" id="btnMusicExportProfile" title="Aktive Playlist als Datei exportieren"
+          aria-label="Aktive Playlist exportieren">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist
+        </button>
         <button class="btn btn--sm btn--accent" id="btnMusicAdd" title="Musikstück hinzufügen"
           aria-label="Musikstück hinzufügen">
           <i class="fa-solid fa-plus" aria-hidden="true"></i> Musik
@@ -391,8 +395,8 @@
             aria-pressed="false">
             <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
           </button>
-          <button class="music-toggle-btn" id="btnMusicRepeat" title="Wiederholen: Aus"
-            aria-label="Wiederholen: Aus" aria-pressed="false">
+          <button class="music-toggle-btn" id="btnMusicRepeat" title="Wiederholen: Aus" aria-label="Wiederholen: Aus"
+            aria-pressed="false">
             <i class="fa-solid fa-repeat" aria-hidden="true"></i>
           </button>
         </div>
@@ -461,6 +465,10 @@
               </button>
               <button class="btn btn--sm btn--danger" id="btnDelSound" style="display:none" aria-label="Löschen">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i>
+              </button>
+              <button class="btn btn--sm" id="btnExportSound" style="display:none"
+                title="Diesen Sound als Datei exportieren" aria-label="Sound exportieren">
+                <i class="fa-solid fa-file-export" aria-hidden="true"></i>
               </button>
               <button class="btn btn--sm" data-bs-dismiss="modal">Abbruch</button>
               <button class="btn btn--sm btn--accent" id="btnSaveSound">
@@ -1516,9 +1524,15 @@
         </div>
 
         <div class="modal-footer u-flex-between">
-          <button class="btn btn--danger" id="btnDelProfile" style="display:none" aria-label="Profil löschen">
-            <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
-          </button>
+          <div class="u-flex u-gap-2">
+            <button class="btn btn--danger" id="btnDelProfile" style="display:none" aria-label="Profil löschen">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+            </button>
+            <button class="btn" id="btnExportProfile" style="display:none" title="Dieses Profil als Datei exportieren"
+              aria-label="Profil exportieren">
+              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
+            </button>
+          </div>
           <div class="u-flex u-gap-2">
             <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
             <button class="btn btn--accent" id="btnSaveProfile">Speichern</button>
@@ -1556,9 +1570,15 @@
         </div>
 
         <div class="modal-footer u-flex-between">
-          <button class="btn btn--danger" id="btnDelAmbientProfile" style="display:none" aria-label="Szene löschen">
-            <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
-          </button>
+          <div class="u-flex u-gap-2">
+            <button class="btn btn--danger" id="btnDelAmbientProfile" style="display:none" aria-label="Szene löschen">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+            </button>
+            <button class="btn" id="btnExportAmbientProfile" style="display:none"
+              title="Diese Szene als Datei exportieren" aria-label="Szene exportieren">
+              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
+            </button>
+          </div>
           <div class="u-flex u-gap-2">
             <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
             <button class="btn btn--accent" id="btnSaveAmbientProfile">Speichern</button>
@@ -1651,6 +1671,10 @@
         <div class="modal-footer">
           <button class="btn btn--danger" id="btnMusicEditDelete">
             <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+          </button>
+          <button class="btn" id="btnMusicEditExport" title="Dieses Musikstück als Datei exportieren"
+            aria-label="Musikstück exportieren">
+            <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
           </button>
           <span class="u-ml-auto"></span>
           <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
