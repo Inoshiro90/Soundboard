@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/ambient.css">
+  <link rel="stylesheet" href="css/music.css">
   <link rel="stylesheet" href="css/utilities.css">
   <link rel="stylesheet" href="css/mobile.css"><!-- Phase 5 -->
   <link rel="stylesheet" href="css/disclosure.css"><!-- Progressive Disclosure: popover toolbars -->
@@ -73,6 +74,15 @@
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path
               d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />
+          </svg>
+        </button>
+        <button class="mode-toggle__btn" id="btnModeMusic" title="Musikspuren" aria-label="Musikspuren anzeigen"
+          aria-pressed="false">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18V5l12-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="18" cy="16" r="3" />
           </svg>
         </button>
       </div>
@@ -298,6 +308,106 @@
         Vogelgezwitscher hinzu, um sie im Hintergrund zu untermalen — mehrere Clips können gleichzeitig laufen.
       </p>
       <div class="ambient-list" id="ambientList" role="list" aria-label="Ambient-Sounds"></div>
+    </main>
+
+    <!-- ═══════════════════════════ MUSIK-PLAYLIST-TABS ═══════════════════════════
+       Gleiches Tab-Muster wie Sound-Profile/Ambient-Szenen — jede Playlist
+       (Exploration, Battle, Town, …) ist ein eigener Tab. Hidden außerhalb
+       der Musikansicht.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <nav class="profile-bar" id="musicProfBar" aria-label="Musik-Playlists" hidden>
+      <!-- Tabs rendered by JS (renderMusicProfileTabs) -->
+      <button class="profile-add" id="btnAddMusicProfile" title="Neue Playlist erstellen"
+        aria-label="Neue Playlist erstellen">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        Playlist
+      </button>
+    </nav>
+
+    <!-- ═══════════════════════════════ MUSIK-ANSICHT ═══════════════════════════════
+       Eigenständige Playlist-/Player-Ansicht (kein Ambient-Klon!): normalerweise
+       genau ein aktiver Track, mit Next/Previous/Shuffle/Repeat/Crossfade/Seek.
+       Playback läuft unabhängig von der sichtbaren Ansicht weiter — wie Ambient.
+  ══════════════════════════════════════════════════════════════════════════ -->
+    <main class="board music-board" id="musicBoard" aria-label="Musikspuren" hidden>
+      <div class="music-toolbar">
+        <span class="music-toolbar__count-badge" id="musicCount">0</span>
+        <span class="u-ml-auto"></span>
+        <button class="btn btn--sm btn--accent" id="btnMusicAdd" title="Musikstück hinzufügen"
+          aria-label="Musikstück hinzufügen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Musik
+        </button>
+        <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
+      </div>
+
+      <p class="music-empty" id="musicEmpty">
+        Noch keine Musikstücke in dieser Playlist. Füge z. B. Battle Theme, Tavern Theme oder Exploration Theme
+        hinzu — beim Abspielen läuft dann immer genau ein Track, ideal zum schnellen Umschalten während der Session.
+      </p>
+      <div class="music-list" id="musicList" role="list" aria-label="Musikstücke"></div>
+
+      <!-- ── GLOBALE STEUERLEISTE ─────────────────────────────
+           Sticky innerhalb der Musikansicht (Kap. 31) — Previous/Play-Pause/
+           Next, Fortschritt, Lautstärke, Repeat/Shuffle, Crossfade/Autoplay. -->
+      <div class="music-player" aria-label="Musik-Player">
+        <div class="music-player__now" id="musicPlayerName">Kein Track ausgewählt</div>
+
+        <div class="music-player__seek-row">
+          <span class="music-player__time" id="musicCurTime">00:00</span>
+          <input type="range" class="slider music-player__seek" id="musicSeek" min="0" max="0" step="0.1" value="0"
+            aria-label="Wiedergabeposition">
+          <span class="music-player__time music-player__time--dur" id="musicDurTime">—:—</span>
+        </div>
+
+        <div class="music-player__transport">
+          <button class="music-transport-btn" id="btnMusicPrev" title="Vorheriger Track" aria-label="Vorheriger Track">
+            <i class="fa-solid fa-backward-step" aria-hidden="true"></i>
+          </button>
+          <button class="music-transport-btn" id="btnMusicPlayPause" title="Abspielen" aria-label="Abspielen" disabled>
+            <i class="fa-solid fa-play" aria-hidden="true"></i>
+          </button>
+          <button class="music-transport-btn" id="btnMusicNext" title="Nächster Track" aria-label="Nächster Track">
+            <i class="fa-solid fa-forward-step" aria-hidden="true"></i>
+          </button>
+          <button class="music-transport-btn" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
+            <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          </button>
+
+          <div class="music-player__vol-group" aria-label="Musik-Gesamtlautstärke">
+            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <input type="range" id="musicMasterVol" class="slider" min="0" max="1" step=".01" value="1"
+              aria-label="Musik-Gesamtlautstärke">
+            <input type="number" id="musicMasterVolNum" class="music-player__vol-num" min="0" max="100" value="100"
+              aria-label="Musik-Gesamtlautstärke Prozent">
+          </div>
+
+          <button class="music-toggle-btn" id="btnMusicShuffle" title="Shuffle" aria-label="Shuffle ein-/ausschalten"
+            aria-pressed="false">
+            <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+          </button>
+          <button class="music-toggle-btn" id="btnMusicRepeat" title="Wiederholen: Aus"
+            aria-label="Wiederholen: Aus" aria-pressed="false">
+            <i class="fa-solid fa-repeat" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="music-player__settings">
+          <label for="musicCrossfade">Crossfade
+            <select id="musicCrossfade" aria-label="Crossfade-Dauer in Sekunden">
+              <option value="0">Aus (harter Wechsel)</option>
+              <option value="1">1 s</option>
+              <option value="2" selected>2 s</option>
+              <option value="3">3 s</option>
+              <option value="5">5 s</option>
+              <option value="10">10 s</option>
+            </select>
+          </label>
+          <label for="musicAutoplay">
+            <input type="checkbox" id="musicAutoplay" checked>
+            Automatisch nächsten Track abspielen
+          </label>
+        </div>
+      </div>
     </main>
 
 
@@ -1477,6 +1587,66 @@
         <div class="modal-footer">
           <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
           <button class="btn btn--accent" id="btnApplyAmbientTrackIcon">Übernehmen</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ MUSIK-TRACK BEARBEITEN ═══════════════════════
+       Spez. Kap. 24: bewusst NUR musikrelevante Felder (Name/Artist/Album/
+       Icon/Farbe/Lautstärke) — keine Sound-spezifischen Felder wie Hotkey,
+       Zufall, One-shot oder Makro, die für einen Musiktrack keinen Sinn
+       ergeben. -->
+  <div class="modal fade" id="musicTrackModal" tabindex="-1" aria-labelledby="musicTrackModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="musicTrackModalTitle">Musikstück bearbeiten</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label" for="musicEditName">Name</label>
+          <input class="form-control u-mb-3" id="musicEditName" maxlength="60" aria-label="Trackname">
+
+          <label class="form-label" for="musicEditArtist">Künstler / Interpret</label>
+          <input class="form-control u-mb-3" id="musicEditArtist" maxlength="60" aria-label="Künstler">
+
+          <label class="form-label" for="musicEditAlbum">Album</label>
+          <input class="form-control u-mb-3" id="musicEditAlbum" maxlength="60" aria-label="Album">
+
+          <label class="form-label">Icon</label>
+          <!-- Icon picker injected by buildIconGrid() -->
+          <div id="musicIconGrid" class="icon-grid u-mb-2" aria-hidden="true"></div>
+          <input class="form-control u-mb-3" id="musicIconInput" placeholder="🎵" maxlength="4"
+            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+
+          <label class="form-label">Akzentfarbe</label>
+          <!-- Color swatches injected by buildColorOpts() -->
+          <div class="color-row u-mb-3" id="musicClrOpts"></div>
+
+          <label class="form-label" for="musicEditVol">Lautstärke</label>
+          <div class="u-flex u-gap-2" style="align-items:center">
+            <input type="range" class="slider" id="musicEditVol" min="0" max="1" step=".01" value="1"
+              aria-label="Track-Lautstärke" style="flex:1">
+            <span class="u-text-badge u-text-mono" id="musicEditVolLbl">100%</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn--danger" id="btnMusicEditDelete">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+          </button>
+          <span class="u-ml-auto"></span>
+          <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+          <button class="btn btn--accent" id="btnMusicEditSave">Speichern</button>
         </div>
 
       </div>

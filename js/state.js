@@ -39,8 +39,9 @@ export const APP = {
   labSound:     null,          // sound currently in Audio Lab
   masterBus:    { limiterEnabled: true, threshold: -1, peakL: 0, peakR: 0, rafId: null },
   noiseProfile: null,          // Float32Array spectral floor for noise reduction
-  // Sound-Effekte vs. Ambient-Szenen — zwei Ansichten, per Mode-Toggle umschaltbar.
-  viewMode: 'sound',           // 'sound' | 'ambient'
+  // Sound-Effekte vs. Ambient-Szenen vs. Musikspuren — drei Ansichten,
+  // per Mode-Toggle umschaltbar (siehe ambient.js: setViewMode()).
+  viewMode: 'sound',           // 'sound' | 'ambient' | 'music'
   // Ambient: separate, independently looping background layer.
   // Organised into scene-profiles (Marktplatz, Höhle, …) — same tab pattern
   // as the sound-effect profiles. Several tracks within the active scene can
@@ -49,11 +50,29 @@ export const APP = {
     profiles:        [],   // [{ id, name, icon, tracks: [{ id, name, icon, color, data, fileName, vol, loop, fadeIn, fadeOut }] }]
     activeProfileId: null,
     masterVol:       1.0
+  },
+  // Musikspuren: dritte, eigenständige Ansicht — im Unterschied zu Ambient
+  // (mehrere parallele Loops) läuft hier normalerweise genau EIN Track
+  // gleichzeitig, mit Playlist-Logik (Next/Previous/Shuffle/Repeat/
+  // Crossfade/Seek), siehe js/music.js. Playback läuft unabhängig von der
+  // sichtbaren Ansicht weiter (wie Ambient).
+  music: {
+    profiles:        [],   // [{ id, name, icon, tracks: [{ id, name, artist, album, icon, color, data, fileName, duration, vol, order }] }]
+    activeProfileId: null,
+    masterVol:       1.0,
+    activeTrackId:   null, // zuletzt ausgewählter/laufender Track (für Reload-Restore)
+    repeatMode:      'off', // 'off' | 'all' | 'one'
+    shuffle:         false,
+    crossfade:       2,     // Sekunden, 0 = harter Wechsel
+    autoplay:        true   // automatischer Wechsel zum nächsten Track bei Ende
   }
 };
 
 export function CAP()      { return APP.ambient.profiles.find(p => p.id === APP.ambient.activeProfileId) || APP.ambient.profiles[0]; }
 export function CATracks() { return CAP()?.tracks || []; }
+
+export function CMP()      { return APP.music.profiles.find(p => p.id === APP.music.activeProfileId) || APP.music.profiles[0]; }
+export function CMTracks() { return CMP()?.tracks || []; }
 
 export function CP()       { return APP.profiles.find(p => p.id === APP.activeProfileId) || APP.profiles[0]; }
 export function CItems()   { return CP()?.items || []; }

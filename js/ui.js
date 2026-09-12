@@ -9,7 +9,7 @@
  * - Theme icon updated on toggle
  */
 
-import { APP, CP, CItems, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
+import { APP, CP, CItems, CMTracks, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
 import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils.js';
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
@@ -300,11 +300,14 @@ export function updateStatus() {
   const n      = Object.keys(APP.activeAudio).length;
   const sounds = CItems().filter(x => x.type === 'sound').length;
   const macros = CItems().filter(x => x.type === 'macro').length;
+  const music  = CMTracks().length;
   const stxt = document.getElementById('stxt');
   const scnt = document.getElementById('scnt');
   const sdot = document.getElementById('sdot');
   if (stxt) stxt.textContent = n > 0 ? `${n} AKTIV` : 'BEREIT';
-  if (scnt) scnt.textContent = `${sounds} S · ${macros} M`;
+  // Spez. Kap. 40: kompakt ergänzt, nicht überladen — Musik nur anhängen,
+  // wenn tatsächlich Tracks in der aktiven Playlist vorhanden sind.
+  if (scnt) scnt.textContent = `${sounds} S · ${macros} M` + (music > 0 ? ` · ${music} Musik` : '');
   if (sdot) sdot.classList.toggle('is-active', n > 0);
 }
 
@@ -702,7 +705,7 @@ export function buildIconGrid(containerId, current) {
   if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...catBar.querySelectorAll('[data-lucide]')] });
 
   // Input ID map
-  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput' };
+  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput', musicIconGrid: 'musicIconInput' };
 
   function selectIco(ico) {
     grid.querySelectorAll('.icon-opt').forEach(x => x.classList.remove('is-selected'));

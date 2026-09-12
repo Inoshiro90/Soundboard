@@ -25,6 +25,7 @@ import {
   setAmbientTrackIcon, setAmbientTrackEffects, renameAmbientTrack,
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
+import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack } from './music.js';
 
 // ─── EFFECTS UI HELPERS ──────────────────────────────────────
 
@@ -521,6 +522,46 @@ function openAmbientEffectsModal(trackId) {
 
 document.addEventListener('ambient:editEffects', e => openAmbientEffectsModal(e.detail?.id));
 
+// ─── MUSIC TRACK MODAL ───────────────────────────────────────
+// Bewusst ein eigenes, schlankes Modal statt Wiederverwendung des großen
+// geteilten Sound/Ambient-Editors — die Feldmenge ist komplett anders
+// (Name/Artist/Album/Icon/Farbe/Lautstärke, keine Hotkeys/Zufall/Makro,
+// Kap. 24) und ein eigenes Modal minimiert das Risiko, den bestehenden
+// Sound-/Ambient-Editor versehentlich zu beschädigen (Kap. 69).
+let _musicEditId = null;
+
+function openMusicTrackModal(trackId) {
+  const t = findMusicTrack(trackId);
+  if (!t) return;
+  _musicEditId = trackId;
+
+  document.getElementById('musicEditName').value   = t.name || '';
+  document.getElementById('musicEditArtist').value = t.artist || '';
+  document.getElementById('musicEditAlbum').value  = t.album || '';
+  document.getElementById('musicEditVol').value    = t.vol ?? 1;
+  document.getElementById('musicEditVolLbl').textContent = Math.round((t.vol ?? 1) * 100) + '%';
+
+  buildIconGrid('musicIconGrid', t.icon || '🎵');
+  buildColorOpts('musicClrOpts', t.color || 'none');
+
+  document.getElementById('musicTrackModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#musicTrackModal .icon-picker__cats');
+    if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
+  }, { once: true });
+
+  new bootstrap.Modal(document.getElementById('musicTrackModal')).show();
+}
+
+document.addEventListener('music:editTrack', e => openMusicTrackModal(e.detail?.id));
+
+function findMusicTrack(id) {
+  for (const p of APP.music.profiles) {
+    const t = (p.tracks || []).find(x => x.id === id);
+    if (t) return t;
+  }
+  return null;
+}
+
 // ─── MACRO MODAL ─────────────────────────────────────────────
 
 export function openMacroModal(id, placeholderId = null) {
@@ -749,6 +790,31 @@ export function registerEvents() {
   document.getElementById('btnStop')?.addEventListener('click', stopAll);
   document.getElementById('btnSave')?.addEventListener('click', save);
 
+  // ─── Musik-Track-Bearbeiten-Modal ────────────────────────────
+  document.getElementById('musicEditVol')?.addEventListener('input', function () {
+    document.getElementById('musicEditVolLbl').textContent = Math.round(parseFloat(this.value) * 100) + '%';
+  });
+  document.getElementById('btnMusicEditSave')?.addEventListener('click', () => {
+    if (!_musicEditId) return;
+    const icon  = document.getElementById('musicIconInput').value.trim();
+    const clrEl = document.querySelector('#musicClrOpts .color-swatch.is-selected');
+    editMusicTrackMeta(_musicEditId, {
+      name:   document.getElementById('musicEditName').value,
+      artist: document.getElementById('musicEditArtist').value,
+      album:  document.getElementById('musicEditAlbum').value,
+      icon:   icon || undefined,
+      color:  clrEl?.dataset.color
+    });
+    setMusicTrackVolume(_musicEditId, parseFloat(document.getElementById('musicEditVol').value));
+    bootstrap.Modal.getInstance(document.getElementById('musicTrackModal'))?.hide();
+  });
+  document.getElementById('btnMusicEditDelete')?.addEventListener('click', () => {
+    if (!_musicEditId) return;
+    if (!confirm('Dieses Musikstück wirklich löschen?')) return;
+    removeMusicTrack(_musicEditId);
+    bootstrap.Modal.getInstance(document.getElementById('musicTrackModal'))?.hide();
+  });
+
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
   document.getElementById('btnExitEditMode')?.addEventListener('click', () => setTileEditMode(false));
   document.addEventListener('pointerdown', e => {
@@ -786,7 +852,10 @@ export function registerEvents() {
   });
   document.getElementById('btnReset')?.addEventListener('click', () => {
     resetAll({
-      onDone: () => { applyProfileSettings(); renderProfileTabs(); renderGrid(); resetAmbient(); }
+      onDone: () => {
+        applyProfileSettings(); renderProfileTabs(); renderGrid(); resetAmbient();
+        import('./music.js').then(m => m.resetMusic());
+      }
     });
   });
 

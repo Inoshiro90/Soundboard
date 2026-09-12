@@ -59,7 +59,7 @@ export function ensureAmbientState() {
     APP.ambient.activeProfileId = APP.ambient.profiles[0].id;
   }
   if (typeof APP.ambient.masterVol !== 'number') APP.ambient.masterVol = 1;
-  if (APP.viewMode !== 'sound' && APP.viewMode !== 'ambient') APP.viewMode = 'sound';
+  if (!['sound', 'ambient', 'music'].includes(APP.viewMode)) APP.viewMode = 'sound';
 }
 
 function _persist() {
@@ -748,26 +748,36 @@ function _updateRowPlayState(trackId, playing) {
 /** Swaps the visible section (sound grid vs. ambient scene) — playback of either keeps running. */
 export function setViewMode(mode) {
   ensureAmbientState();
-  APP.viewMode = mode === 'ambient' ? 'ambient' : 'sound';
-  const soundOn = APP.viewMode === 'sound';
+  APP.viewMode = ['sound', 'ambient', 'music'].includes(mode) ? mode : 'sound';
+  const soundOn   = APP.viewMode === 'sound';
+  const ambientOn = APP.viewMode === 'ambient';
+  const musicOn   = APP.viewMode === 'music';
 
   document.getElementById('profBar')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundMenubar')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
-  document.getElementById('ambProfBar')?.toggleAttribute('hidden', soundOn);
-  document.getElementById('ambientBoard')?.toggleAttribute('hidden', soundOn);
+  document.getElementById('ambProfBar')?.toggleAttribute('hidden', !ambientOn);
+  document.getElementById('ambientBoard')?.toggleAttribute('hidden', !ambientOn);
   // Stop sitzt jetzt zusammen mit der Sound-Lautstärke in #fxToolbar
   // innerhalb von #soundBoard (stoppt nur Sound-Kacheln, s. audio.js) —
   // wird durch das hidden-Attribut auf #soundBoard bereits mitversteckt;
   // dieser Toggle bleibt zusätzlich als explizite Absicherung bestehen.
   document.getElementById('btnStop')?.toggleAttribute('hidden', !soundOn);
 
+  // Musikansicht: nur DOM-Sichtbarkeit umschalten, Playback läuft im
+  // Hintergrund unabhängig weiter (Kap. 38) — siehe music.js. Dynamischer
+  // Import vermeidet einen zirkulären Import ambient.js ⇄ music.js.
+  import('./music.js').then(m => m.applyMusicViewVisibility(musicOn));
+
   const bSound = document.getElementById('btnModeSound');
   const bAmb   = document.getElementById('btnModeAmbient');
+  const bMusic = document.getElementById('btnModeMusic');
   bSound?.classList.toggle('is-active', soundOn);
   bSound?.setAttribute('aria-pressed', String(soundOn));
-  bAmb?.classList.toggle('is-active', !soundOn);
-  bAmb?.setAttribute('aria-pressed', String(!soundOn));
+  bAmb?.classList.toggle('is-active', ambientOn);
+  bAmb?.setAttribute('aria-pressed', String(ambientOn));
+  bMusic?.classList.toggle('is-active', musicOn);
+  bMusic?.setAttribute('aria-pressed', String(musicOn));
 
   _persist();
 }
@@ -780,6 +790,7 @@ export function registerAmbientEvents() {
   // View-mode toggle (navbar)
   document.getElementById('btnModeSound')?.addEventListener('click', () => setViewMode('sound'));
   document.getElementById('btnModeAmbient')?.addEventListener('click', () => setViewMode('ambient'));
+  document.getElementById('btnModeMusic')?.addEventListener('click', () => setViewMode('music'));
 
   // Ambient scene tabs — mirrors #profBar delegation in events.js.
   // Editing a scene opens a modal owned by events.js, so we signal via a

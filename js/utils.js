@@ -75,6 +75,24 @@ export function fmtDur(s) {
 }
 
 /**
+ * Formats a duration in seconds as mm:ss, or h:mm:ss for durations of an
+ * hour or more. Used by the music player (Spez. Kap. 13) for track time
+ * displays ("02:37", "01:23:17") — never raw fractional seconds.
+ * @param {number} s  seconds
+ * @returns {string}  e.g. "02:37", "1:23:17", or "—:—" if unknown
+ */
+export function fmtTime(s) {
+  if (s == null || !isFinite(s) || s < 0) return '—:—';
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(h > 0 ? 2 : 1, '0');
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
  * Icons throughout the app are either a short emoji string, or — for
  * custom-uploaded icons (PNG/JPEG/GIF/WEBP/BMP/SVG) — a `data:image/...`
  * URI. This is the single shared convention every renderer checks.

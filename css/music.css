@@ -1,0 +1,406 @@
+/**
+ * music.css — Musikspuren-Ansicht
+ *
+ * Baut ausschließlich auf bestehenden Design-Tokens auf (Farben, Abstände,
+ * Radien, Schatten, var(--h-btn)/var(--h-tabbar) für Bedienelemente-Höhen,
+ * .slider für Regler) — keine neue visuelle Sprache (Spez. Kap. 7/48).
+ * Eigene Datei statt Erweiterung von ambient.css, da Musik ein eigenes
+ * Wiedergabemodell ist, kein Ambient-Klon.
+ */
+
+/* ─── MODE-TOGGLE: LIVE-INDIKATOR (Kap. 39) ──────────────────
+   Kleiner pulsierender Punkt am Musik-Button, sichtbar aus jeder Ansicht,
+   solange im Hintergrund Musik läuft. Wiederverwendet die vorhandene
+   ambient-pulse-Animation/Optik des Szenen-Tab-Indikators. */
+.mode-toggle__btn {
+  position: relative;
+}
+.mode-toggle__btn.has-live-indicator::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-teal);
+  box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.2);
+  animation: ambient-pulse 1.6s ease-in-out infinite;
+}
+
+/* ─── BOARD LAYOUT ────────────────────────────────────────────
+   Analog zu .ambient-board: Toolbar/Player oben, Liste darunter. */
+.music-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.music-empty {
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+  max-width: 560px;
+  line-height: 1.5;
+}
+
+/* ─── TOOLBAR (Hinzufügen) ────────────────────────────────────
+   Mirrors .ambient-board__toolbar. */
+.music-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.music-toolbar__count-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-pill);
+  min-width: var(--h-btn);
+  height: var(--h-btn);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-2);
+}
+
+/* ─── TRACK LIST ──────────────────────────────────────────────
+   Rasterbasierte Mindestbreite statt eigenständiger Pixelkonstante
+   (Spez. Kap. 9, dieselbe min()-Sicherheitslogik wie .ambient-list). */
+.music-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.music-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  padding: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  transition: border-color var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
+}
+.music-row.is-active {
+  border-color: var(--color-accent);
+  background: var(--bg-surface);
+}
+.music-row.is-drag-over {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -2px;
+}
+.music-row.is-dragging {
+  opacity: 0.4;
+}
+
+.music-row__play {
+  /* Spez. Kap. 13/59: eigenständiges Icon-only-Target -> var(--h-btn) */
+  width: var(--h-btn);
+  height: var(--h-btn);
+  border-radius: var(--radius-circle);
+  border: var(--border-whisper);
+  background: var(--bg-surface);
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+}
+.music-row__play:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.music-row.is-active .music-row__play {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+.music-row__icon {
+  width: var(--h-btn);
+  height: var(--h-btn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.music-row__icon-img { width: 70%; height: 70%; border-radius: 22%; object-fit: cover; }
+
+.music-row__info {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.music-row__name {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.music-row.is-active .music-row__name {
+  color: var(--color-accent);
+  font-weight: var(--fw-semibold);
+}
+.music-row__artist {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Dezente Fortschrittsanzeige innerhalb der aktiven Zeile (Kap. 56) —
+   keine übermäßig auffällige Animation, nur eine ruhige Füllung. */
+.music-row__progress {
+  height: 2px;
+  background: var(--border-color);
+  border-radius: var(--radius-pill);
+  margin-top: 2px;
+  overflow: hidden;
+}
+.music-row__progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  width: 0%;
+}
+
+.music-row__duration {
+  font-family: var(--font-mono);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 42px;
+  text-align: right;
+}
+
+.music-row__vol {
+  width: calc(var(--grid-row-h) * 2);
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.music-row__reorder {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.music-row__reorder-btn {
+  width: var(--h-btn);
+  height: calc(var(--h-btn) / 2);
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.65rem;
+  border-radius: var(--radius-micro);
+}
+.music-row__reorder-btn:hover { color: var(--color-accent); }
+
+.music-row__opt {
+  width: var(--h-btn);
+  height: var(--h-btn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-whisper);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border-radius: var(--radius-micro);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+}
+.music-row__opt svg { width: 14px; height: 14px; display: block; }
+.music-row__opt--danger:hover { color: var(--color-orange); border-color: var(--color-orange); }
+
+/* ─── GLOBALE STEUERLEISTE (PLAYER) ───────────────────────────
+   Sticky innerhalb der Musikansicht (Kap. 31) — verdeckt aber nicht die
+   ganze App, orientiert sich an .app-menubar/.fx-toolbar-Konventionen. */
+.music-player {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-nav);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg-surface);
+  border: var(--border-whisper);
+  border-radius: var(--radius-subtle);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-card);
+}
+
+.music-player__now {
+  font-size: var(--text-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.music-player__seek-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.music-player__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  min-width: 40px;
+  flex-shrink: 0;
+}
+.music-player__time--dur { text-align: left; }
+.music-player__seek {
+  flex: 1;
+  min-width: 0;
+}
+
+.music-player__transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.music-transport-btn {
+  width: var(--h-btn);
+  height: var(--h-btn);
+  border-radius: var(--radius-circle);
+  border: var(--border-whisper);
+  background: var(--bg-warm);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+}
+.music-transport-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.music-transport-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+#btnMusicPlayPause {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+  width: calc(var(--h-btn) * 1.2);
+  height: calc(var(--h-btn) * 1.2);
+}
+
+.music-toggle-btn {
+  width: var(--h-btn);
+  height: var(--h-btn);
+  border-radius: var(--radius-micro);
+  border: var(--border-whisper);
+  background: var(--bg-warm);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
+}
+.music-toggle-btn.is-active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+/* Repeat-Ein-Track: kleine "1"-Badge zusätzlich zum Aktiv-Zustand,
+   damit sich "Alle" und "Ein Track" optisch unterscheiden (Kap. 15). */
+.music-toggle-btn.is-repeat-one { position: relative; }
+.music-toggle-btn.is-repeat-one::after {
+  content: '1';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 0.55rem;
+  font-weight: var(--fw-bold);
+  background: var(--bg-surface);
+  color: var(--color-accent);
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.music-player__vol-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 1 33.333%;
+  min-width: calc(var(--grid-row-h) * 3);
+}
+.music-player__vol-group .slider { flex: 1; min-width: 60px; }
+.music-player__vol-num {
+  width: calc(var(--w-1col)/2);
+  height: var(--h-btn);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  padding: 0 var(--space-1);
+  background: var(--bg-warm);
+  border: var(--border-whisper);
+  border-radius: var(--radius-micro);
+  color: var(--text-primary);
+}
+
+.music-player__settings {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+.music-player__settings select {
+  height: var(--h-btn);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-micro);
+  border: var(--border-whisper);
+  background: var(--bg-warm);
+  color: var(--text-primary);
+  font-size: var(--text-badge);
+}
+.music-player__settings label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--h-btn);
+  cursor: pointer;
+}
+
+/* ─── RESPONSIVE (XS/SM, Kap. 30/31) ──────────────────────────
+   Sanktionierte Breakpoints (Kap. 56) statt eigener Zwischenwerte. */
+@media (max-width: 767px) {
+  .music-row { padding: var(--space-2); }
+  .music-row__vol { flex-basis: 100%; order: 5; }
+  .music-row__reorder { order: 6; flex-direction: row; }
+  .music-player__transport { justify-content: space-between; }
+  .music-player__vol-group { flex-basis: 100%; }
+}
+@media (max-width: 575px) {
+  .music-row__artist { display: none; }
+  .music-player__settings { justify-content: space-between; width: 100%; }
+}

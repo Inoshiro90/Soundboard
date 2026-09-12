@@ -12,6 +12,7 @@ import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
 import { APP }                         from './state.js';
 import { registerAmbientEvents }       from './ambient.js';
+import { registerMusicEvents }         from './music.js';
 import { initDisclosure }              from './ui/disclosure.js';
 
 async function init() {
@@ -24,6 +25,7 @@ async function init() {
   syncThemeIcon();
   registerEvents();
   registerAmbientEvents();
+  registerMusicEvents();
 
   // Progressive-disclosure popovers (Einstellungen / Wiedergabe …).
   // Purely presentational — wraps existing controls, no state logic here.
