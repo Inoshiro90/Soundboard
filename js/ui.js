@@ -122,7 +122,7 @@ export function makeSoundTile(s) {
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
       <button class="tile-ctrl-btn js-edit-btn" title="Bearbeiten" aria-label="Sound bearbeiten">
-        <i data-lucide="pencil" aria-hidden="true"></i>
+        ${PENCIL_ICON_SVG}
       </button>
     </div>
     <div class="drag-dots" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
@@ -130,13 +130,14 @@ export function makeSoundTile(s) {
 
   const tile = wrap.querySelector('.tile');
 
-  // NEW click logic: always play / advance slot. No per-tile stop.
-  // Im Bearbeitungsmodus (Touch-Long-Press, siehe setupTileEditGestures)
-  // öffnet ein Tap stattdessen den Editor — Abspielen ist dort bewusst
-  // deaktiviert (Konfliktvermeidung: Tap = Bearbeiten, Ziehen = Verschieben).
+  // Im Bearbeitungsmodus (Toggle über #btnTileEditMode) editiert ein Tap
+  // auf die Kachel direkt, statt abzuspielen — Abspielen ist dort bewusst
+  // deaktiviert, damit ein normaler Klick nicht versehentlich Sounds
+  // auslöst, während man eigentlich Kacheln durchgeht/bearbeitet.
+  // Außerhalb des Bearbeitungsmodus spielt ein Tap wie gewohnt ab.
   tile.addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
-    if (isTileEditMode()) { import('./events.js').then(m => m.openSoundModal(s.id)); return; }
+    if (isTileEditMode()) { import('./events.js').then(mod => mod.openSoundModal(s.id)); return; }
     playSound(s);
   });
 
@@ -171,15 +172,17 @@ export function makeMacroTile(m) {
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
       <button class="tile-ctrl-btn js-edit-btn" title="Bearbeiten" aria-label="Makro bearbeiten">
-        <i data-lucide="pencil" aria-hidden="true"></i>
+        ${PENCIL_ICON_SVG}
       </button>
     </div>
     <div class="drag-dots" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
   `;
 
+  // Gleiche Logik wie bei Sound-Kacheln: im Bearbeitungsmodus editiert ein
+  // Tap direkt, statt das Makro auszuführen.
   wrap.querySelector('.tile').addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
-    if (isTileEditMode()) { import('./events.js').then(ev => ev.openMacroModal(m.id)); return; }
+    if (isTileEditMode()) { import('./events.js').then(mod => mod.openMacroModal(m.id)); return; }
     runMacro(m);
   });
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
@@ -365,7 +368,14 @@ export function setupDrag() {
       // native HTML5-DnD-Operation zulassen (manche Browser lösen bei
       // Long-Press auch natives Drag aus).
       if (_touchDragSrcId) { e.preventDefault(); return; }
-      _dragSrc = w.dataset.id; w.classList.add('is-dragging'); e.dataTransfer.effectAllowed = 'move';
+      _dragSrc = w.dataset.id; w.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      // WICHTIG: manche Browser (insbesondere Firefox, teils auch Chrome
+      // je nach Konfiguration) behandeln eine Drag-Operation ohne
+      // dataTransfer.setData() als "ungültig" und liefern das drop-Event
+      // dann nicht zuverlässig aus — ohne diese Zeile könnte das Ziehen
+      // rein optisch starten, aber beim Loslassen wirkungslos bleiben.
+      e.dataTransfer.setData('text/plain', w.dataset.id);
     });
     w.addEventListener('dragend', () => {
       w.classList.remove('is-dragging');
@@ -376,18 +386,34 @@ export function setupDrag() {
     w.addEventListener('drop', e => {
       e.preventDefault();
       if (!_dragSrc || _dragSrc === w.dataset.id) return;
-      _swapTileOrder(_dragSrc, w.dataset.id);
+      _moveTileOrder(_dragSrc, w.dataset.id);
     });
     setupTileEditGestures(w);
   });
 }
 
-function _swapTileOrder(idA, idB) {
-  const items = CItems();
-  const ai = items.findIndex(x => x.id === idA);
-  const bi = items.findIndex(x => x.id === idB);
-  if (ai < 0 || bi < 0) return;
-  [items[ai].order, items[bi].order] = [items[bi].order, items[ai].order];
+/**
+ * Verschiebt Kachel `srcId` an die Position von `dstId` — echtes Einfügen
+ * (Splice), nicht paarweises Tauschen: alle dazwischenliegenden Kacheln
+ * rücken nach, wie beim Neuanordnen einer Liste (iOS-Homescreen-Prinzip),
+ * statt dass Quelle und Ziel stur ihre Position tauschen.
+ *
+ * BUGFIX: die vorherige _swapTileOrder() tauschte ausschließlich die
+ * .order-Werte von GENAU zwei Elementen. Das fühlte sich beim Ablegen auf
+ * einer LEEREN Platzhalter-Kachel wie ein Fehlschlag an — die Zielkachel
+ * "sprang" nicht wirklich an die neue Stelle, sondern es entstand
+ * lediglich ein Platzhalter an der alten Position, während alle
+ * dazwischenliegenden Kacheln unverändert blieben (kein echtes
+ * Verschieben mit Nachrücken).
+ */
+function _moveTileOrder(srcId, dstId) {
+  const items = CItems().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const ai = items.findIndex(x => x.id === srcId);
+  const bi = items.findIndex(x => x.id === dstId);
+  if (ai < 0 || bi < 0 || ai === bi) return;
+  const [moved] = items.splice(ai, 1);
+  items.splice(bi, 0, moved);
+  items.forEach((x, i) => { x.order = i; });
   renderGrid();
 }
 
@@ -395,18 +421,25 @@ export function normaliseOrders() {
   CItems().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach((x, i) => { x.order = i; });
 }
 
-// ─── TILE-BEARBEITUNGSMODUS (iOS-Homescreen-Prinzip) ────────────
-// Löst den Gestenkonflikt auf Touch-Geräten zwischen "Kachel
-// verschieben" (Ziehen) und "Kachel bearbeiten" (der kleine, auf
-// kleinen Kacheln schwer präzise zu treffende Edit-Button): ein Tap
-// spielt normal ab, ein Long-Press aktiviert für das GESAMTE Grid
-// einen Bearbeitungsmodus (alle Kacheln "wackeln", Edit-Buttons
-// bleiben dauerhaft sichtbar). Innerhalb dieses Modus ist ein Tap
-// auf eine Kachel = Bearbeiten, Ziehen = Verschieben — zwei klar
-// getrennte, eindeutige Gesten statt einer doppelt belegten.
-// Auf Desktop (Maus) bleibt alles unverändert: Hover zeigt den
-// Edit-Button, Klick spielt ab, natives HTML5-Drag&Drop verschiebt —
-// dort gibt es den Gestenkonflikt gar nicht (kein Long-Press nötig).
+// ─── TILE-BEARBEITUNGSMODUS ──────────────────────────────────────
+// Zwei bewusst ENTKOPPELTE Mechanismen (vorher beide an Long-Press
+// gekoppelt, das war der alte "iOS-Homescreen"-Ansatz):
+//
+// 1) Bearbeitungsmodus (dieser Abschnitt, isTileEditMode()/
+//    setTileEditMode()): wird per Toolbar-Button #btnTileEditMode
+//    (events.js) EIN-/AUSGESCHALTET, nicht mehr per Long-Press. Während
+//    dieser Modus aktiv ist, öffnet ein Tap auf eine Sound-/Makro-Kachel
+//    direkt den Editor (statt abzuspielen/auszuführen) — bewusst OHNE
+//    Abhängigkeit von einem sichtbaren Stift-Icon, da dessen Sichtbarkeit
+//    sich als unzuverlässig erwiesen hat (siehe makeSoundTile/
+//    makeMacroTile Klick-Handler). Der Stift-Button (.js-edit-btn) bleibt
+//    als zusätzlicher, unabhängiger Weg bestehen (z.B. Desktop-Hover
+//    außerhalb des Bearbeitungsmodus).
+//
+// 2) Kachel verschieben (setupTileEditGestures()/_beginTouchDrag()
+//    unten): auf Touch löst ein Long-Press DIREKT das Ziehen aus,
+//    unabhängig vom Bearbeitungsmodus — kein Zwischenschritt mehr
+//    nötig. Auf Desktop (Maus) unverändert: natives HTML5-Drag&Drop.
 
 let _tileEditMode = false;
 
@@ -417,6 +450,11 @@ export function setTileEditMode(on) {
   document.getElementById('grid')?.classList.toggle('is-edit-mode', _tileEditMode);
   const bar = document.getElementById('editModeBar');
   if (bar) bar.hidden = !_tileEditMode;
+  const btn = document.getElementById('btnTileEditMode');
+  if (btn) {
+    btn.classList.toggle('is-active', _tileEditMode);
+    btn.setAttribute('aria-pressed', String(_tileEditMode));
+  }
   if (!_tileEditMode) _endTouchDrag();
 }
 
@@ -474,7 +512,7 @@ function _onTouchDragEnd(e) {
   const target = el && el.closest ? el.closest('.tile-wrap') : null;
   const srcId  = _touchDragSrcId;
   _endTouchDrag();
-  if (target && srcId && target.dataset.id !== srcId) _swapTileOrder(srcId, target.dataset.id);
+  if (target && srcId && target.dataset.id !== srcId) _moveTileOrder(srcId, target.dataset.id);
 }
 
 function _onTouchDragCancel() { _endTouchDrag(); }
@@ -489,15 +527,14 @@ function _endTouchDrag() {
 }
 
 /** Long-Press-Erkennung pro Kachel — nur für Touch-Pointer (Desktop/Maus
- *  bleibt vom bestehenden Hover+Klick+HTML5-DnD-Verhalten unberührt). */
+ *  bleibt vom bestehenden Hover+Klick+HTML5-DnD-Verhalten unberührt).
+ *  Löst DIREKT das Verschieben aus (kein Bearbeitungsmodus mehr dazwischen,
+ *  s. Kommentarblock oben). */
 export function setupTileEditGestures(wrap) {
   wrap.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'touch') return;
     _armLongPress(e, wrap, () => {
-      if (!isTileEditMode()) {
-        setTileEditMode(true);
-        if (navigator.vibrate) navigator.vibrate(12);
-      }
+      if (navigator.vibrate) navigator.vibrate(12);
       _beginTouchDrag(wrap);
     });
   });
@@ -995,6 +1032,9 @@ export function renderSlotList() {
 // Ein einziger, wiederverwendeter Dialog für alle Slots (statt einem
 // Modal pro Slot) — gleiches Muster wie die "+"-Kachel Sound/Makro-Wahl.
 let _slotEditIdx = null;
+
+/** Slot-Index, der aktuell im (geteilten) Slot-Edit-Modal offen ist, oder null. */
+export function getSlotEditIndex() { return _slotEditIdx; }
 
 export function openSlotEditModal(i) {
   const sl = APP.editSlots[i];

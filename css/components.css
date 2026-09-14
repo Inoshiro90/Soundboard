@@ -552,50 +552,37 @@
 	pointer-events: auto;
 }
 
-/* ─── BEARBEITUNGSMODUS (iOS-Homescreen-Prinzip, Touch-only) ───────
-   Aktiviert per Long-Press (ui.js: setupTileEditGestures). Löst den
-   Gestenkonflikt zwischen Verschieben und Bearbeiten: Edit-Controls
-   bleiben dauerhaft sichtbar (nicht nur bei :hover, das Touch ohnehin
-   nicht hat), alle Kacheln "wackeln" als Signal, dass Tap jetzt
-   bearbeitet statt abspielt und Ziehen verschiebt. */
+/* ─── BEARBEITUNGSMODUS (Toolbar-Button #btnTileEditMode) ───────────
+   Zeigt die Stift-Edit-Controls dauerhaft (nicht nur bei :hover, das
+   Touch ohnehin nicht hat). Betrifft NUR die Sichtbarkeit des
+   Stift-Buttons — Tap-auf-Kachel spielt weiterhin normal ab
+   (Bearbeiten geht ausschließlich über den Stift-Button), und
+   Verschieben ist davon unabhängig (s. Abschnitt "KACHEL VERSCHIEBEN"
+   unten, per Long-Press jederzeit verfügbar). */
 .tile-grid.is-edit-mode .tile-controls {
 	opacity: 1;
 	pointer-events: auto;
 }
-.tile-grid.is-edit-mode .tile-wrap {
-	cursor: grab;
-	user-select: none;
-	-webkit-user-select: none;
-	/* Erlaubt vertikales Scrollen der Seite weiterhin, aber gibt dem
-	   Pointer-Drag Vorrang vor Browser-Pan/Zoom-Gesten auf der Kachel
-	   selbst, sobald man im Bearbeitungsmodus ist. */
+
+/* ─── KACHEL VERSCHIEBEN (Touch: Long-Press, Desktop: natives HTML5-DnD) ───
+   Bewusst UNABHÄNGIG vom Bearbeitungsmodus oben: Long-Press
+   (ui.js: setupTileEditGestures/_beginTouchDrag) löst das Ziehen direkt
+   aus, ohne dass vorher ein Modus aktiviert werden muss. */
+.tile-wrap {
+	/* Gibt dem Pointer-Long-Press/Drag Vorrang vor Browser-Pan/Zoom-
+	   Gesten auf der Kachel selbst — sonst würde ein Long-Press-Versuch
+	   auf Touch oft vom Seiten-Scroll gekapert, bevor der Timer feuert. */
 	touch-action: none;
 }
-.tile-grid.is-edit-mode .tile-wrap.is-dragging {
+.tile-wrap.is-dragging {
 	opacity: 0.5;
 	cursor: grabbing;
+	user-select: none;
+	-webkit-user-select: none;
 }
-.tile-grid.is-edit-mode .tile-wrap.is-drag-over .tile {
+.tile-wrap.is-drag-over .tile {
 	outline: 2px solid var(--color-accent);
 	outline-offset: -2px;
-}
-
-@keyframes tile-jiggle {
-	0%   { transform: rotate(-1deg); }
-	50%  { transform: rotate(1deg); }
-	100% { transform: rotate(-1deg); }
-}
-.tile-grid.is-edit-mode .tile-wrap:not(.is-dragging) {
-	animation: tile-jiggle 0.22s ease-in-out infinite;
-}
-/* Leicht versetzt, damit es nicht wie ein einziger starrer Block wackelt. */
-.tile-grid.is-edit-mode .tile-wrap:nth-child(even):not(.is-dragging) {
-	animation-delay: -0.11s;
-}
-@media (prefers-reduced-motion: reduce) {
-	.tile-grid.is-edit-mode .tile-wrap {
-		animation: none;
-	}
 }
 
 .edit-mode-bar {

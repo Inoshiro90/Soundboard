@@ -7,12 +7,12 @@ import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer } from './audio.js';
-import { invalidateBuffer } from './audioCache.js';
+import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
 import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, updateTrimDurLabel, normaliseOrders,
-  syncThemeIcon, isTileEditMode, setTileEditMode
+  syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
@@ -28,6 +28,11 @@ import {
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
 import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack } from './music.js';
+import {
+  editTrimApply, editNormalize, editReverse, editFadeIn, editFadeOut,
+  editGainApply, editRemoveSilence, editNoiseGate, learnNoiseProfile, editNoiseReduce,
+  editLoudnessNormalize
+} from './editor.js';
 
 // ─── EFFECTS UI HELPERS ──────────────────────────────────────
 
@@ -833,15 +838,28 @@ export function registerEvents() {
   });
 
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
+  // Umschaltung jetzt per Toolbar-Button #btnTileEditMode statt Long-Press
+  // (Long-Press verschiebt jetzt direkt die Kachel, siehe ui.js
+  // setupTileEditGestures). #btnTileEditMode muss von der "Klick außerhalb
+  // schließt den Modus"-Erkennung ausgenommen werden — sonst würde das
+  // pointerdown-Ereignis des eigenen Klicks den Modus schon VOR dem
+  // click-Handler unten schließen, der ihn dann direkt wieder öffnet
+  // (pointerdown feuert vor click → Toggle würde nie richtig "aus" gehen).
   document.getElementById('btnExitEditMode')?.addEventListener('click', () => setTileEditMode(false));
+  document.getElementById('btnTileEditMode')?.addEventListener('click', () => setTileEditMode(!isTileEditMode()));
   document.addEventListener('pointerdown', e => {
     if (!isTileEditMode()) return;
-    if (e.target.closest('#grid') || e.target.closest('#editModeBar')) return;
+    if (e.target.closest('#grid') || e.target.closest('#editModeBar') || e.target.closest('#btnTileEditMode')) return;
     setTileEditMode(false);
   });
-  // Makro-Erstellung lebt jetzt im "+"-Menü leerer Kacheln
+
+  // ─── Direkter Anlege-Einstieg in der Toolbar (+ Sound / + Makro) ──
+  document.getElementById('btnToolbarAddSound')?.addEventListener('click', () => openSoundModal(null));
+  document.getElementById('btnToolbarAddMacro')?.addEventListener('click', () => openMacroModal(null));
+
+  // Makro-Erstellung lebt außerdem weiterhin im "+"-Menü leerer Kacheln
   // (ui.js: _openTileAddChoice → openMacroModal(null, placeholderId))
-  // statt als eigener Menüband-Button.
+  // für den Fall, dass eine bestimmte leere Kachel befüllt werden soll.
 
   // Wiedergabe-Einstellungen (Popover im soundMenubar)
   document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; _syncPlaybackSettingsIndicator(); });
@@ -1465,6 +1483,162 @@ export function registerEvents() {
     APP.editSlots[APP.trim.slotIdx].fadeOut   = fo;
     bootstrap.Modal.getInstance(document.getElementById('trimModal')).hide();
     renderSlotList(); toast('Trim übernommen ✓', 'ok');
+  });
+
+  // ── DESTRUKTIVE SLOT-BEARBEITUNG (Editor.js-Anschluss, P0) ──
+  // Verdrahtet die eigene Dialogbox #slotDestructiveModal (aus dem kompakten
+  // Slot-Edit-Modal heraus geöffnet, Progressive Disclosure — siehe
+  // index.html) mit den (bisher toten) Funktionen aus editor.js.
+  //
+  // Wichtiger Kontext: der Slot-Editor arbeitet mit einer Arbeitskopie
+  // (APP.editSlots), die erst beim Speichern des GESAMTEN Sounds in das
+  // persistierte Item übernommen wird. editor.js-Funktionen schreiben aber
+  // direkt in die persistierte Sound-Struktur + IndexedDB. Deshalb:
+  //  1) Destruktive Aktionen sind nur für bereits gespeicherte Slots mit
+  //     persistierter Audiodatei erlaubt (sonst gäbe es nichts, worauf die
+  //     Funktion dauerhaft schreiben könnte) — der Öffnen-Button prüft das
+  //     bereits VOR dem Öffnen der Dialogbox.
+  //  2) "Trim anwenden" nutzt explizit die aktuell im Draft sichtbaren
+  //     Trim-Werte (nicht die zuletzt gespeicherten), siehe editTrimApply().
+  //  3) Nach jeder Aktion werden Cache (_ed_N + bk()-Cache), Trim-Wellenform
+  //     und Slot-Edit-Felder aktualisiert, damit UI und Audiodaten wieder
+  //     konsistent sind.
+
+  /** Sucht einen Sound anhand der ID über alle Profile hinweg (nicht nur das aktive). */
+  function _findSoundAnyProfile(soundId) {
+    for (const prof of APP.profiles) {
+      const s = (prof.items || []).find(x => x.id === soundId && x.type === 'sound');
+      if (s) return s;
+    }
+    return null;
+  }
+
+  function _persistedSlotHasAudio(soundId, slotIdx) {
+    if (!soundId || slotIdx == null) return false;
+    const s = _findSoundAnyProfile(soundId);
+    return !!(s && s.slots && s.slots[slotIdx] && s.slots[slotIdx].data);
+  }
+
+  function _refreshEditorActionsAvailability() {
+    const soundId = APP.editId;
+    const slotIdx = getSlotEditIndex();
+    const available = _persistedSlotHasAudio(soundId, slotIdx);
+    const body = document.getElementById('editorActionsBody');
+    const unavailable = document.getElementById('editorActionsUnavailable');
+    if (body)        body.style.display        = available ? '' : 'none';
+    if (unavailable) unavailable.style.display = available ? 'none' : '';
+    const nrBtn = document.querySelector('#slotDestructiveModal [data-editor-action="noiseReduce"]');
+    if (nrBtn) nrBtn.title = APP.noiseProfile ? '' : 'Zuerst „Rauschprofil lernen“ ausführen';
+  }
+
+  /** Nach einer destruktiven Editor-Aktion: Caches und UI-Anzeige neu synchronisieren. */
+  async function _refreshSlotAfterDestructiveEdit(soundId, slotIdx) {
+    invalidateBuffer(soundId, slotIdx);
+    delete APP.audioBuffers[`_ed_${slotIdx}`];
+
+    const s = _findSoundAnyProfile(soundId);
+    const persistedSlot = s?.slots?.[slotIdx];
+    const draftSlot = APP.editSlots?.[slotIdx];
+
+    // Trim wird von manchen Aktionen (v.a. Trim selbst) auf der persistierten
+    // Seite zurückgesetzt — Arbeitskopie im offenen Modal muss das spiegeln,
+    // sonst zeigt der Trim-Dialog weiter die alten (jetzt ungültigen) Werte.
+    if (draftSlot && persistedSlot) {
+      draftSlot.trimStart = persistedSlot.trimStart || 0;
+      draftSlot.trimEnd   = persistedSlot.trimEnd ?? null;
+    }
+
+    let buf = null;
+    if (s && persistedSlot?.data) {
+      try { buf = await getOrDecodeBuffer(soundId, slotIdx, persistedSlot.data, actx()); }
+      catch (e) { console.error('[editor] Buffer-Refresh fehlgeschlagen', e); }
+    }
+    if (buf) APP.audioBuffers[`_ed_${slotIdx}`] = buf;
+
+    if (getSlotEditIndex() === slotIdx) {
+      const durEl = document.getElementById('slotEditDuration');
+      if (durEl) durEl.textContent = buf ? buf.duration.toFixed(1) + 's' : '–';
+    }
+
+    // Falls der Trim-Dialog gerade für genau diesen Slot offen ist: Wellenform neu zeichnen.
+    if (APP.trim.slotIdx === slotIdx && buf) {
+      APP.trim.buf = buf;
+      drawTrimWaveform();
+    }
+
+    renderSlotList();
+  }
+
+  async function _onEditorActionClick(action, btn) {
+    const soundId = APP.editId;
+    const slotIdx = getSlotEditIndex();
+    if (!soundId || slotIdx == null) { toast('Kein Slot ausgewählt', 'err'); return; }
+    if (!_persistedSlotHasAudio(soundId, slotIdx)) {
+      toast('Erst speichern, dann dauerhaft bearbeiten', 'err');
+      return;
+    }
+
+    const num = (id, def) => {
+      const v = parseFloat(document.getElementById(id)?.value);
+      return Number.isFinite(v) ? v : def;
+    };
+
+    if (action === 'noiseReduce' && !APP.noiseProfile) {
+      toast('Zuerst „Rauschprofil lernen“ ausführen', 'err');
+      return;
+    }
+
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    try {
+      switch (action) {
+        case 'trim': {
+          const sl = APP.editSlots?.[slotIdx];
+          await editTrimApply(soundId, slotIdx, sl?.trimStart, sl?.trimEnd);
+          break;
+        }
+        case 'normalize':     await editNormalize(soundId, slotIdx, num('editorNormalizeDb', 0)); break;
+        case 'loudness':      await editLoudnessNormalize(soundId, slotIdx, { targetRmsDb: num('editorLoudnessDb', -18) }); break;
+        case 'reverse':       await editReverse(soundId, slotIdx); break;
+        case 'fadeIn':        await editFadeIn(soundId, slotIdx, num('editorFadeInSec', 0.5)); break;
+        case 'fadeOut':       await editFadeOut(soundId, slotIdx, num('editorFadeOutSec', 0.5)); break;
+        case 'gain':          await editGainApply(soundId, slotIdx, num('editorGainDb', 0)); break;
+        case 'removeSilence': await editRemoveSilence(soundId, slotIdx, num('editorSilenceDb', -60)); break;
+        case 'noiseGate':     await editNoiseGate(soundId, slotIdx, num('editorNoiseGateDb', -40)); break;
+        case 'learnNoise':    await learnNoiseProfile(soundId, slotIdx); break;
+        case 'noiseReduce':   await editNoiseReduce(soundId, slotIdx, num('editorNoiseReduceAmount', 0.6)); break;
+        default: return;
+      }
+      await _refreshSlotAfterDestructiveEdit(soundId, slotIdx);
+    } catch (err) {
+      console.error(`[editor] Aktion "${action}" fehlgeschlagen:`, err);
+      toast(`Fehler bei "${action}": ${err.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+      _refreshEditorActionsAvailability();
+    }
+  }
+
+  document.getElementById('slotDestructiveModal')?.addEventListener('shown.bs.modal', _refreshEditorActionsAvailability);
+
+  document.getElementById('btnOpenSlotDestructiveModal')?.addEventListener('click', () => {
+    if (!_persistedSlotHasAudio(APP.editId, getSlotEditIndex())) {
+      toast('Erst diesen Sound speichern, dann dauerhaft bearbeiten', 'err');
+      return;
+    }
+    new bootstrap.Modal(document.getElementById('slotDestructiveModal')).show();
+  });
+
+  document.querySelectorAll('#slotDestructiveModal [data-editor-action]').forEach(b => {
+    b.addEventListener('click', () => _onEditorActionClick(b.dataset.editorAction, b));
+  });
+
+  const _nrAmount = document.getElementById('editorNoiseReduceAmount');
+  const _nrLbl    = document.getElementById('editorNoiseReduceAmountLbl');
+  _nrAmount?.addEventListener('input', () => {
+    if (_nrLbl) _nrLbl.textContent = Math.round(parseFloat(_nrAmount.value) * 100) + '%';
   });
 
   /** Berechnet eine sinnvolle Startzeit für den nächsten Schritt (Ende des letzten Schritts) */

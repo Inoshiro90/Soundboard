@@ -9,7 +9,8 @@
 import { APP }  from './state.js';
 import { toast } from './notifications.js';
 import { bk }   from './utils.js';
-import { actx, buildEffectChain, defaultEffects } from './audio.js';
+import { actx } from './audio.js';
+import { renderSoundGraph } from './renderPipeline.js';
 import { idbGet, audioKey, isIdbRef } from './db.js';
 import { decodeAudio } from './audio.js';
 import { timelineMixdown } from './timeline.js';
@@ -118,24 +119,20 @@ async function renderSoundOffline(s, slotIdx) {
   const sr     = liveBuf.sampleRate;
   const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + tail) * sr), sr);
 
-  const trimLen = Math.ceil(dur * sr);
-  const trimBuf = offCtx.createBuffer(numCh, trimLen, sr);
-  for (let ch = 0; ch < numCh; ch++) {
-    const s2 = Math.floor(ts * sr);
-    const src = liveBuf.getChannelData(ch);
-    const dst = trimBuf.getChannelData(ch);
-    for (let i = 0; i < trimLen; i++) dst[i] = src[s2 + i] ?? 0;
-  }
-
-  const srcNode = offCtx.createBufferSource();
-  srcNode.buffer = trimBuf;
-  srcNode.playbackRate.value = s.pitch || 1;
-
-  const gain = offCtx.createGain(); gain.gain.value = s.vol || 1;
-  const chain = hasFx ? buildEffectChain(offCtx, s.effects) : null;
-  if (chain) { srcNode.connect(gain); gain.connect(chain.input); chain.output.connect(offCtx.destination); }
-  else { srcNode.connect(gain); gain.connect(offCtx.destination); }
-  srcNode.start(0);
+  // P1 Render-Pipeline (renderPipeline.js): renderSoundOffline() ist der
+  // tatsächlich von exportSoundWav()/exportSoundMp3() genutzte Render-Pfad
+  // und baute bisher UNABHÄNGIG von playSound()/exportSoundToWav() einen
+  // eigenen Graphen nach (Quelle des P0-Pitch-Bugs). Jetzt derselbe
+  // Baustein wie überall sonst — inkl. Fades/Envelope, die hier bisher
+  // komplett fehlten. Trim geschieht per start(when, offset, duration)
+  // direkt auf dem ungetrimmten liveBuf (funktioniert für
+  // OfflineAudioContext identisch wie live), die manuelle Trim-Buffer-
+  // Kopie entfällt dadurch.
+  const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
+    mode: 'export',
+    destination: offCtx.destination
+  });
+  graph.start(0);
   return offCtx.startRendering();
 }
 

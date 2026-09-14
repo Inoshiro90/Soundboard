@@ -214,6 +214,47 @@
   border-color: var(--color-accent);
 }
 
+/* +Sound / +Makro / Bearbeiten im #fxToolbar: exakt 2 Rasterspalten breit,
+   gleiche Höhe wie der Stop-Button (beides von .menubar-btn geerbt bzw.
+   hier fixiert), auf Nutzerwunsch. overflow/ellipsis als Schutz, falls der
+   Label-Text bei sehr kleinem --grid-row-h (viele Spalten/schmaler
+   Viewport) nicht mehr ganz hineinpasst — die Zeile scrollt in diesem Fall
+   aber ohnehin horizontal (siehe .fx-toolbar), Kürzung ist nur ein
+   zusätzliches Sicherheitsnetz. */
+.menubar-btn--col2 {
+  width: var(--w-2col);
+  min-height: var(--h-btn);
+  justify-content: center;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  overflow: hidden;
+}
+.menubar-btn--col2 .menubar-btn__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Aktiver Bearbeitungsmodus (siehe setTileEditMode() in ui.js): visuelles
+   Feedback, analog .menubar-btn.is-active. */
+.menubar-btn--col2.is-active {
+  background: var(--badge-bg);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+/* +Sound / +Makro: gleiche blaue Akzentfarbe wie "+ Hinzufügen" im
+   Ambient-/Musikbereich (dort .btn--accent), hier als menubar-btn-Variante
+   nachgebildet. */
+.menubar-btn--accent {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+}
+.menubar-btn--accent:hover {
+  background: var(--color-accent-active);
+  border-color: transparent;
+  color: #fff;
+}
+
 /* Einstellungen/Wiedergabe: 2 Rasterspalten breit an JEDEM Breakpoint,
    Text bleibt immer sichtbar (Nutzer-Feedback) — daher explizit von der
    Icon-only-Kollabierungsregel unten ausgenommen. */
@@ -409,7 +450,16 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-wrap: wrap;
+  /* Nutzerwunsch: Buttons bleiben in EINER Zeile (kein Umbruch mehr) und
+     die Zeile wird horizontal scrollbar, sobald nicht mehr alles auf den
+     Bildschirm passt — statt Buttons zu quetschen oder umzubrechen.
+     .menubar-btn hat bereits flex-shrink:0 (s. weiter unten), Buttons
+     bleiben also bei ihrer festen Breite und lösen bei Platzmangel Scroll
+     statt Verzerrung aus. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .tile-grid {

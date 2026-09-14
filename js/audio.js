@@ -14,6 +14,7 @@ import { bk, sleep }   from './utils.js';
 import { toast }       from './notifications.js';
 import { idbGet, audioKey, IDB_SENTINEL, isIdbRef, openDB } from './db.js';
 import { getOrDecodeBuffer, invalidateBuffer } from './audioCache.js';
+import { renderSoundGraph } from './renderPipeline.js';
 
 // ─── AUDIO CONTEXT ───────────────────────────────────────────
 // BUGFIX: ctx is NEVER created automatically on module load.
@@ -37,20 +38,48 @@ export function actx() {
 export function hasAudioContext() { return _ctx !== null; }
 
 // ─── WORKLET INIT ────────────────────────────────────────────
+// BUGFIX (Pitch-Export-Konsistenz): das Pitch-Worklet-Modul muss pro
+// BaseAudioContext einzeln registriert werden (AudioWorklet-Module sind
+// context-gebunden). Der frühere globale `APP.pitchWorkletReady`-Flag
+// bezog sich implizit NUR auf den einen Live-AudioContext — dadurch wurde
+// beim WAV/MP3-Export (der einen eigenen OfflineAudioContext nutzt) nie
+// geprüft/geladen, ob DAS Modul in diesem Context verfügbar ist, obwohl
+// der globale Flag "true" meldete. Ergebnis: Pitch-Shift wurde beim
+// Export stillschweigend ignoriert. Fix: readiness wird jetzt pro Context
+// in einem WeakSet verfolgt, und jeder Aufrufer (Live ODER Offline) MUSS
+// vor dem Bau eines Pitch-Nodes `ensurePitchWorkletFor(ctx)` aufrufen.
+
+const _pitchWorkletReadyContexts = new WeakSet();
+
+/**
+ * Lädt das Pitch-Worklet-Modul für EINEN gegebenen Context (Live- oder
+ * OfflineAudioContext) und merkt sich das Ergebnis pro Context.
+ * Muss vor jedem `buildPitchNode(ctx, …)`-Aufruf für diesen Context
+ * ausgeführt worden sein, sonst bleibt der Worklet-Pfad inaktiv und
+ * `buildPitchNode()` liefert `null` (Aufrufer nutzt dann den
+ * `detune`-Fallback).
+ * @returns {Promise<boolean>} true, wenn das Modul in diesem Context bereit ist
+ */
+export async function ensurePitchWorkletFor(ctx) {
+  if (!ctx || !ctx.audioWorklet) return false;
+  if (_pitchWorkletReadyContexts.has(ctx)) return true;
+  try {
+    await ctx.audioWorklet.addModule('./js/worklets/pitch-processor.js');
+    _pitchWorkletReadyContexts.add(ctx);
+    return true;
+  } catch (e) {
+    console.warn('[audio] PitchWorklet unavailable for context:', e.message);
+    return false;
+  }
+}
 
 let _workletLoading = false;
 
+/** Lädt das Pitch-Worklet für den (Lazy-erzeugten) Live-AudioContext. */
 export async function ensurePitchWorklet() {
   if (APP.pitchWorkletReady || _workletLoading) return;
   _workletLoading = true;
-  try {
-    const ctx = actx();
-    await ctx.audioWorklet.addModule('./js/worklets/pitch-processor.js');
-    APP.pitchWorkletReady = true;
-  } catch (e) {
-    console.warn('[audio] PitchWorklet unavailable:', e.message);
-    APP.pitchWorkletReady = false;
-  }
+  APP.pitchWorkletReady = await ensurePitchWorkletFor(actx());
   _workletLoading = false;
 }
 
@@ -139,7 +168,10 @@ export function defaultEffects() {
     envelope:   { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 },
     analyzer:   { enabled: false },
     spatial:    { enabled: false, x: 0, y: 0, z: -1, rolloff: 1, maxDistance: 10000, refDistance: 1, coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0 },
-    noiseGate:  { enabled: false, threshold: -50 }
+    // attack/release: Stufe-A-Compressor-Approximation (siehe buildEffectChain).
+    // Bestehende Presets ohne diese Felder funktionieren unverändert weiter,
+    // da buildEffectChain() sie mit `?? 5`/`?? 150` defaultet.
+    noiseGate:  { enabled: false, threshold: -50, attack: 5, release: 150 }
   };
 }
 
@@ -224,12 +256,37 @@ function _buildDelay(ctx, p) {
   return { input: inp, output: out };
 }
 
-function _buildPitchNode(ctx, p) {
+/**
+ * Baut einen Pitch-Shift-Node für GENAU den übergebenen Context.
+ * BUGFIX (Pitch-Export-Konsistenz): prüft die Context-spezifische
+ * Worklet-Readiness (`_pitchWorkletReadyContexts`) statt des globalen,
+ * nur für den Live-Context gültigen `APP.pitchWorkletReady`-Flags. Damit
+ * liefert dieselbe Funktion für Live-AudioContext UND OfflineAudioContext
+ * (Export) ein konsistentes Ergebnis, sofern der Aufrufer zuvor
+ * `ensurePitchWorkletFor(ctx)` ausgeführt hat.
+ * Exportiert, damit export.js denselben Baustein wiederverwenden kann
+ * (keine zweite, abweichende Pitch-Node-Implementierung für den Export).
+ *
+ * @param {number} [numChannels=2] Kanalzahl der Quelle (buffer.numberOfChannels).
+ *   Stereo-fähiger Worklet (P1): `channelCountMode:'explicit'` +
+ *   `channelInterpretation:'discrete'` verhindert, dass der Browser bei
+ *   Mono-Quellen automatisch hoch- bzw. bei Multi-Channel-Quellen
+ *   heruntermischt, BEVOR der Worklet die Kanäle sieht — jeder Kanal
+ *   bekommt im Prozessor eine eigene, unabhängige Overlap-Add-Instanz.
+ */
+export function buildPitchNode(ctx, p, numChannels = 2) {
   const semitones = p.semitones ?? 0;
   if (semitones === 0) return null;
-  if (APP.pitchWorkletReady) {
+  if (_pitchWorkletReadyContexts.has(ctx)) {
     try {
-      const n = new AudioWorkletNode(ctx, 'pitch-shifter-processor', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+      const ch = Math.max(1, Math.min(2, numChannels || 2));
+      const n = new AudioWorkletNode(ctx, 'pitch-shifter-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1,
+        channelCount: ch,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'discrete',
+        outputChannelCount: [ch]
+      });
       n.parameters.get('pitchFactor').setValueAtTime(Math.pow(2, semitones / 12), ctx.currentTime);
       return { input: n, output: n };
     } catch (e) { console.warn('[audio] PitchWorklet node failed:', e.message); }
@@ -292,6 +349,24 @@ export function buildEffectChain(ctx, effects) {
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay));
 
+  // BUGFIX (Noise-Gate P0, Stufe A): `effects.noiseGate` wurde bisher an
+  // keiner Stelle in buildEffectChain() ausgelesen — der UI-Regler
+  // (fxNoiseGateEnabled/-Threshold) hatte dadurch NULL Audiowirkung.
+  // Sofortmaßnahme: Compressor-Approximation. Das ist AUSDRÜCKLICH kein
+  // echtes Gate (ein DynamicsCompressorNode dämpft oberhalb, nicht
+  // unterhalb des Thresholds) — nur "irgendeine hörbare Wirkung", damit
+  // der Regler nicht mehr wirkungslos ist. Zielarchitektur (P1): echter
+  // Envelope-Follower-Gate als AudioWorkletNode (analog pitch-processor.js).
+  if (effects.noiseGate?.enabled) {
+    const g = ctx.createDynamicsCompressor();
+    g.threshold.value = Math.max(-100, Math.min(0, effects.noiseGate.threshold ?? -45));
+    g.ratio.value = 20;        // maximal mögliches Ratio der Web Audio API
+    g.knee.value = 0;          // harte Kennlinie, Annäherung an Gate-Verhalten
+    g.attack.value = Math.max(0.001, (effects.noiseGate.attack ?? 5) / 1000);
+    g.release.value = Math.max(0.01, (effects.noiseGate.release ?? 150) / 1000);
+    segs.push({ input: g, output: g });
+  }
+
   const panner = _buildPanner(ctx, effects);
   if (panner) segs.push(panner);
 
@@ -301,21 +376,12 @@ export function buildEffectChain(ctx, effects) {
 }
 
 // ─── ENVELOPE ────────────────────────────────────────────────
-
-function _applyEnvelope(ctx, gainNode, env, baseGain, dur) {
-  const t0  = ctx.currentTime;
-  const att = Math.max(0.001, env.attack  ?? 0.01);
-  const dec = Math.max(0.001, env.decay   ?? 0.15);
-  const sus = Math.max(0, Math.min(1, env.sustain ?? 0.8));
-  const rel = Math.max(0.001, env.release ?? 0.25);
-  gainNode.gain.cancelScheduledValues(t0);
-  gainNode.gain.setValueAtTime(0, t0);
-  gainNode.gain.linearRampToValueAtTime(baseGain, t0 + att);
-  gainNode.gain.linearRampToValueAtTime(baseGain * sus, t0 + att + dec);
-  const relStart = Math.max(t0 + att + dec, t0 + dur - rel);
-  gainNode.gain.setValueAtTime(baseGain * sus, relStart);
-  gainNode.gain.linearRampToValueAtTime(0, relStart + rel);
-}
+// BUGFIX (P1 Render-Pipeline): Envelope-/Fade-Kurvenberechnung lebt jetzt
+// zentral in renderPipeline.js (renderSoundGraph()), auf getrennten,
+// in Serie geschalteten Gain-Nodes statt konkurrierend auf demselben Node
+// (siehe Plan Abschnitt 1.5). Die frühere _applyEnvelope()/_applyFades()/
+// _wire() hier in audio.js sind damit überflüssig geworden und entfallen
+// — playSound()/playSoundAndWait() rufen jetzt renderSoundGraph() auf.
 
 // ─── ANALYZER ────────────────────────────────────────────────
 
@@ -378,52 +444,6 @@ export async function decodeAudioSmart(soundId, slotIdx, slotData) {
   return getOrDecodeBuffer(soundId, slotIdx, slotData, _ctx);
 }
 
-// ─── CORE CONNECT + PLAY HELPER ──────────────────────────────
-
-/**
- * Wire src → [pitchNode] → [effectChain] → [analyser] → gain → destination.
- * BUGFIX: preview now uses the same code path as playback.
- */
-function _wire(ctx, src, effects, gainNode, { isPreview = false } = {}) {
-  let pitchNode = null;
-  if (effects?.pitchShift?.enabled && effects.pitchShift.semitones !== 0) {
-    pitchNode = _buildPitchNode(ctx, effects.pitchShift);
-    if (!pitchNode) src.detune.value = (effects.pitchShift.semitones ?? 0) * 100;
-  }
-  const chain    = buildEffectChain(ctx, effects);
-  let analyser   = null;
-  if (!isPreview && effects?.analyzer?.enabled) analyser = createAnalyzerSplit(ctx);
-
-  let node = src;
-  if (pitchNode) { node.connect(pitchNode.input); node = pitchNode.output; }
-  if (chain)     { node.connect(chain.input);     node = chain.output; }
-  if (analyser)  node.connect(analyser);
-  node.connect(gainNode);
-  gainNode.connect(ctx.destination);
-  return analyser;
-}
-
-function _applyFades(ctx, gainNode, slot, s, dur, baseGain) {
-  if (s.effects?.envelope?.enabled) {
-    _applyEnvelope(ctx, gainNode, s.effects.envelope, baseGain, dur); return;
-  }
-  if (s.fade && !s.loop) {
-    const fs = Math.max(0, dur - 0.8);
-    gainNode.gain.setValueAtTime(baseGain, ctx.currentTime + fs);
-    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
-  }
-  const fi = slot.fadeIn || 0; const fo = slot.fadeOut || 0;
-  if (fi > 0 && !s.loop) {
-    gainNode.gain.setValueAtTime(0, ctx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(baseGain, ctx.currentTime + Math.min(fi, dur * 0.5));
-  }
-  if (fo > 0 && !s.loop && !s.fade) {
-    const foStart = Math.max(ctx.currentTime, ctx.currentTime + dur - fo);
-    gainNode.gain.setValueAtTime(baseGain, foStart);
-    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
-  }
-}
-
 // ─── PLAYBACK ────────────────────────────────────────────────
 
 export function playItem(id, callStack = []) {
@@ -433,7 +453,7 @@ export function playItem(id, callStack = []) {
   else runMacro(item, callStack);
 }
 
-export function playSound(s, opts = {}) {
+export async function playSound(s, opts = {}) {
   const slots = s.slots || [];
   let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
   if (!s.random) s.curSlot = (idx + 1) % slots.length;
@@ -454,28 +474,21 @@ export function playSound(s, opts = {}) {
   const ctx      = actx();
   if (!gs.overlap && !opts.isPreview) stopAll();
 
-  const baseGain = (s.vol ?? 1) * (opts.isPreview ? 1 : (gs.masterVol ?? 1));
-  const gainNode = ctx.createGain(); gainNode.gain.value = baseGain;
-
-  const src      = ctx.createBufferSource();
-  src.buffer     = buf;
-  src.playbackRate.value = s.pitch || 1;
-  src.loop       = !opts.isPreview && !!s.loop;
-
-  const ts = slot.trimStart || 0;
-  let   te = slot.trimEnd ?? buf.duration;
-  if (te <= ts) te = buf.duration;
-  const dur = te - ts;
-
-  // BUGFIX: preview uses same engine as playback (same _wire call)
-  const analyser = _wire(ctx, src, s.effects, gainNode, opts);
-
-  _applyFades(ctx, gainNode, slot, s, dur, baseGain);
+  // P1 Render-Pipeline (renderPipeline.js): identischer Graph-Aufbau wie
+  // Export — behebt strukturell die im P0-Audit beschriebenen Divergenzen
+  // (Pitch/Noise-Gate) und eine bei der Vereinheitlichung zusätzlich
+  // entdeckte: Fades/Envelope fehlten bisher komplett im Export-Pfad.
+  const graph = await renderSoundGraph(ctx, buf, slot, s, {
+    mode: opts.isPreview ? 'preview' : 'live',
+    destination: ctx.destination,
+    masterVol: gs.masterVol ?? 1
+  });
+  const { src, masterGain, analyser, dur } = graph;
 
   if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
-  APP.activeAudio[s.id].push({ src, gain: gainNode, dur });
+  APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
 
-  src.start(0, ts, src.loop ? undefined : dur);
+  graph.start(0);
   src.onended = () => {
     if (APP.activeAudio[s.id]) {
       APP.activeAudio[s.id] = APP.activeAudio[s.id].filter(x => x.src !== src);
@@ -495,23 +508,28 @@ export function playSound(s, opts = {}) {
 }
 
 export function playSoundAndWait(s) {
-  return new Promise(resolve => {
+  return new Promise(async resolve => {
     const slots = s.slots || [];
     let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
     if (!s.random) s.curSlot = (idx + 1) % slots.length;
     const slot = slots[idx]; if (!slot?.data) { resolve(); return; }
     const buf  = APP.audioBuffers[bk(s.id, idx)]; if (!buf) { resolve(); return; }
     const gs = APP.globalSettings; const ctx = actx();
-    const baseGain = (s.vol ?? 1) * (gs.masterVol ?? 1);
-    const gainNode = ctx.createGain(); gainNode.gain.value = baseGain;
-    const src      = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = s.pitch || 1;
-    const ts = slot.trimStart || 0; let te = slot.trimEnd ?? buf.duration; if (te <= ts) te = buf.duration;
-    const dur = te - ts;
-    _wire(ctx, src, s.effects, gainNode);
-    _applyFades(ctx, gainNode, slot, s, dur, baseGain);
+
+    // allowLoop:false — Bestandsverhalten bewusst beibehalten: sequenzielle
+    // Makro-Wiedergabe darf NIE loopen, sonst würde `onended` nie feuern
+    // und die await-Kette der Makro-Sequenz für immer hängen bleiben.
+    const graph = await renderSoundGraph(ctx, buf, slot, s, {
+      mode: 'live',
+      destination: ctx.destination,
+      masterVol: gs.masterVol ?? 1,
+      allowLoop: false
+    });
+    const { src, masterGain, dur } = graph;
+
     if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
-    APP.activeAudio[s.id].push({ src, gain: gainNode, dur });
-    src.start(0, ts, dur);
+    APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
+    graph.start(0);
     src.onended = () => {
       if (APP.activeAudio[s.id]) {
         APP.activeAudio[s.id] = APP.activeAudio[s.id].filter(x => x.src !== src);
@@ -697,17 +715,25 @@ export async function exportSoundToWav(s) {
   const dur = te - ts; if (dur <= 0) { toast('Ungültige Trim-Punkte', 'err'); return; }
   toast('Exportiere WAV…');
   try {
-    const hasFx = s.effects?.enabled; const numCh = liveBuf.numberOfChannels; const sr = liveBuf.sampleRate;
+    const hasFx = s.effects?.enabled;
+    const numCh = liveBuf.numberOfChannels; const sr = liveBuf.sampleRate;
+    // Tail-Puffer für Reverb/Delay-Ausklang (Bestandsverhalten unverändert).
     const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + (hasFx ? 3.5 : 0)) * sr), sr);
-    const trimLen = Math.ceil(dur * sr); const trimBuf = offCtx.createBuffer(numCh, trimLen, sr);
-    for (let ch = 0; ch < numCh; ch++) { const src = liveBuf.getChannelData(ch); const dst = trimBuf.getChannelData(ch); const ss = Math.floor(ts * sr); for (let i = 0; i < trimLen; i++) dst[i] = src[ss + i] ?? 0; }
-    const srcNode = offCtx.createBufferSource(); srcNode.buffer = trimBuf; srcNode.playbackRate.value = s.pitch || 1;
-    if (s.effects?.pitchShift?.enabled && !APP.pitchWorkletReady) srcNode.detune.value = (s.effects.pitchShift.semitones ?? 0) * 100;
-    const gain = offCtx.createGain(); gain.gain.value = s.vol || 1;
-    const chain = hasFx ? buildEffectChain(offCtx, s.effects) : null;
-    if (chain) { srcNode.connect(gain); gain.connect(chain.input); chain.output.connect(offCtx.destination); }
-    else { srcNode.connect(gain); gain.connect(offCtx.destination); }
-    srcNode.start(0); const rendered = await offCtx.startRendering();
+
+    // P1 Render-Pipeline (renderPipeline.js): derselbe Graph-Aufbau wie
+    // Live-Playback/Preview. Trim geschieht per start(when, offset, duration)
+    // direkt auf dem UNGETRIMMTEN liveBuf — die manuelle Trim-Buffer-Kopie
+    // entfällt dadurch (AudioBufferSourceNode.start() mit offset/duration
+    // funktioniert für OfflineAudioContext identisch wie live). Als
+    // Nebeneffekt der Vereinheitlichung werden jetzt AUCH Fades/Envelope
+    // korrekt mitgerendert, die im alten Export-Code komplett fehlten.
+    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
+      mode: 'export',
+      destination: offCtx.destination
+    });
+    graph.start(0);
+    const rendered = await offCtx.startRendering();
+
     const blob = new Blob([_bufToWav(rendered)], { type: 'audio/wav' });
     const url  = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url;
     a.download = (s.name || 'sound').replace(/[^a-zA-Z0-9äöüÄÖÜß _-]/g, '') + '.wav'; a.click();

@@ -15,6 +15,9 @@ import { bk }       from './utils.js';
 import { actx }     from './audio.js';
 import { idbSet, idbGet, audioKey, IDB_SENTINEL } from './db.js';
 import { historyPush } from './history.js';
+import { fft, hannWindow } from './dsp/fft.js';
+import { reduceNoiseSpectral } from './dsp/noiseReduction.js';
+import { getPeakDb, getRmsDb, getWeightedRmsDb } from './analysis.js';
 
 const P4 = 'p4_'; // IDB key prefix for undo snapshots
 
@@ -109,8 +112,15 @@ async function persistEdit(sound, slotIdx, newBuf, label) {
 
 /**
  * Apply trim permanently — removes audio before trimStart and after trimEnd.
+ *
+ * @param {number} [overrideStart] - Optional: aktuell im UI gesetzter (evtl.
+ *   noch nicht gespeicherter) Trim-Start. Der Slot-Editor arbeitet mit einer
+ *   Arbeitskopie (APP.editSlots) bis der Sound insgesamt gespeichert wird —
+ *   ohne dieses Override würde hier der zuletzt GESPEICHERTE Trim verwendet,
+ *   nicht der gerade im Trim-Dialog sichtbare.
+ * @param {number|null} [overrideEnd]
  */
-export async function editTrimApply(soundId, slotIdx) {
+export async function editTrimApply(soundId, slotIdx, overrideStart, overrideEnd) {
   const sound = findSound(soundId);
   const slot  = sound?.slots[slotIdx];
   if (!sound || !slot) return;
@@ -119,8 +129,8 @@ export async function editTrimApply(soundId, slotIdx) {
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr  = buf.sampleRate;
-  const ts  = slot.trimStart || 0;
-  let   te  = slot.trimEnd ?? buf.duration;
+  const ts  = overrideStart ?? slot.trimStart ?? 0;
+  let   te  = overrideEnd   ?? slot.trimEnd   ?? buf.duration;
   if (te <= ts || ts === 0 && te >= buf.duration) { toast('Kein Trim gesetzt'); return; }
 
   const startSmp = Math.floor(ts * sr);
@@ -168,6 +178,47 @@ export async function editNormalize(soundId, slotIdx, targetDb = 0) {
 
   await persistEdit(sound, slotIdx, newBuf, 'Normalisiert');
   toast(`Normalisiert (×${gain.toFixed(2)}) ✓`, 'ok');
+}
+
+/**
+ * RMS-Lautstärke-Normalisierung (P1). Bewusst NICHT "LUFS" genannt — misst
+ * echtes RMS (optional mit grober K-Weighting-Annäherung), keine volle
+ * ITU-R BS.1770/EBU-R128-Lautheitsmessung. Peak-Schutz hat immer Vorrang
+ * vor exakter Zielerreichung, um Clipping zu vermeiden (siehe Plan-Beispiel).
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.targetRmsDb=-18]
+ * @param {boolean} [opts.weighted=true]
+ * @param {number} [opts.peakCeilingDb=-1]
+ */
+export async function editLoudnessNormalize(soundId, slotIdx, opts = {}) {
+  const sound = findSound(soundId);
+  if (!sound) return;
+  const buf = APP.audioBuffers[bk(soundId, slotIdx)];
+  if (!buf) { toast('Audio nicht geladen', 'err'); return; }
+
+  const { targetRmsDb = -18, weighted = true, peakCeilingDb = -1 } = opts;
+
+  const currentRmsDb = weighted ? await getWeightedRmsDb(buf, actx()) : getRmsDb(buf);
+  if (currentRmsDb === -Infinity) { toast('Stille — nichts zu normalisieren'); return; }
+
+  let gainDb = targetRmsDb - currentRmsDb;
+  const currentPeakDb = getPeakDb(buf);
+  const resultingPeakDb = currentPeakDb + gainDb;
+  if (resultingPeakDb > peakCeilingDb) {
+    gainDb -= (resultingPeakDb - peakCeilingDb); // Peak-Schutz hat Vorrang
+  }
+
+  const linear = Math.pow(10, gainDb / 20);
+  const sr = buf.sampleRate;
+  const offCtx = new OfflineAudioContext(buf.numberOfChannels, buf.length, sr);
+  const src  = offCtx.createBufferSource(); src.buffer = buf;
+  const gain = offCtx.createGain(); gain.gain.value = linear;
+  src.connect(gain); gain.connect(offCtx.destination); src.start();
+  const newBuf = await offCtx.startRendering();
+
+  await persistEdit(sound, slotIdx, newBuf, `Lautstärke normalisiert (${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB)`);
+  toast(`Auf ${targetRmsDb} dB RMS normalisiert (${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB) ✓`, 'ok');
 }
 
 /**
@@ -358,67 +409,112 @@ export async function editNoiseGate(soundId, slotIdx, thresholdDb = -40, attackM
 
 /**
  * Learn noise profile from a buffer region.
- * Stores spectral floor in APP.noiseProfile.
- * Uses the first ~500ms as the noise sample.
+ *
+ * BUGFIX/Erweiterung (P1 „Echte spektrale Noise Reduction"): analysiert
+ * jetzt per echter FFT (statt AnalyserNode-getFloatFrequencyData, dessen
+ * Werte in dBFS UND geglättet/gefenstert nach AnalyserNode-eigenen Regeln
+ * vorliegen und damit nicht direkt als linearer Noise-Floor für
+ * Spektralsubtraktion nutzbar waren) ein lineares, über mehrere
+ * Hann-gefensterte Frames gemitteltes Magnitudenspektrum. Das Profil wird
+ * zusätzlich am Slot persistiert (nicht nur flüchtig in APP.noiseProfile),
+ * damit es eine Sitzung überlebt.
+ *
+ * @param {number} [startSec=0] Beginn der Rauschregion
+ * @param {number} [durationSec=0.5] Länge der Rauschregion
  */
-export async function learnNoiseProfile(soundId, slotIdx) {
+export async function learnNoiseProfile(soundId, slotIdx, startSec = 0, durationSec = 0.5) {
+  const sound = findSound(soundId);
   const buf = APP.audioBuffers[bk(soundId, slotIdx)];
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
-  const fftSize   = 2048;
-  const sampleLen = Math.min(buf.length, Math.floor(buf.sampleRate * 0.5));
-  const data      = buf.getChannelData(0).slice(0, sampleLen);
+  const fftSize = 2048;
+  const sr = buf.sampleRate;
+  const startSmp = Math.max(0, Math.floor(startSec * sr));
+  const endSmp   = Math.min(buf.length, startSmp + Math.floor(durationSec * sr));
+  const hop = Math.floor(fftSize / 4);
+  const half = fftSize / 2;
+  const window = hannWindow(fftSize);
 
-  // Compute magnitude spectrum via manual DFT (simplified, real FFT via OfflineAudioContext)
-  const sr     = buf.sampleRate;
-  const offCtx = new OfflineAudioContext(1, sampleLen, sr);
-  const src    = offCtx.createBufferSource();
-  const nBuf   = offCtx.createBuffer(1, sampleLen, sr);
-  nBuf.getChannelData(0).set(data);
-  src.buffer   = nBuf;
-  const analyser = offCtx.createAnalyser();
-  analyser.fftSize = fftSize;
-  src.connect(analyser); analyser.connect(offCtx.destination);
-  src.start();
+  // Über alle Kanäle gemittelt (siehe Plan, Abschnitt "Mono/Stereo": robuster,
+  // Unterschied für Umgebungsrauschen meist gering).
+  const magnitudes = new Float64Array(half + 1);
+  let frames = 0;
 
-  const profile = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(profile);
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const data = buf.getChannelData(ch);
+    for (let pos = startSmp; pos + fftSize <= endSmp; pos += hop) {
+      const re = new Float64Array(fftSize);
+      const im = new Float64Array(fftSize);
+      for (let i = 0; i < fftSize; i++) re[i] = data[pos + i] * window[i];
+      fft(re, im);
+      for (let b = 0; b <= half; b++) magnitudes[b] += Math.hypot(re[b], im[b]);
+      frames++;
+    }
+  }
+
+  // Fehlerfall: Region kürzer als 1 FFT-Frame — kein Profil berechenbar.
+  if (frames === 0) {
+    toast('Rauschregion zu kurz für eine Analyse (mind. ~46ms bei 44.1kHz)', 'err');
+    return;
+  }
+  for (let b = 0; b < magnitudes.length; b++) magnitudes[b] /= frames;
+
+  const profile = {
+    magnitudes: Array.from(magnitudes), // JSON-serialisierbar (kein Float32Array — sound.slots wird per JSON.stringify persistiert)
+    sampleRate: sr,
+    fftSize,
+    frames
+  };
+
+  if (sound && sound.slots[slotIdx]) sound.slots[slotIdx].noiseProfile = profile;
   APP.noiseProfile = profile;
-  toast('Rausch-Profil gelernt ✓', 'ok');
+
+  // Fehlerfall: Region kürzer als 3 Frames — Qualitätshinweis, aber nutzbar.
+  if (frames < 3) {
+    toast(`Rauschprofil gelernt, aber Region sehr kurz (${frames} Frames) — Ergebnis ggf. unzuverlässig`);
+  } else {
+    toast(`Rauschprofil gelernt (${frames} Frames) ✓`, 'ok');
+  }
 }
 
 /**
- * Spectral Subtraction — basic noise reduction.
- * Applies noise profile as a floor filter using OfflineAudioContext + BiquadFilter chain.
+ * Echte spektrale Rauschunterdrückung (FFT-Overlap-Add-Spektralsubtraktion).
+ *
+ * BUGFIX (P1): ersetzt die bisherige Pseudo-Implementierung (Highpass +
+ * Compressor, verwendete das gelernte Profil gar nicht) durch eine
+ * tatsächliche, profilbasierte Spektralsubtraktion, siehe
+ * dsp/noiseReduction.js.
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.amount=0.6] Dry/Wet-Mix (0 = Original, 1 = voll bearbeitet)
+ * @param {number} [opts.sensitivity=6] Über-Subtraktions-Stärke (UI-Skala 1–10)
+ * @param {number} [opts.smoothing=2] Frequency-Smoothing-Radius in Bins
  */
-export async function editNoiseReduce(soundId, slotIdx, amount = 0.6) {
+export async function editNoiseReduce(soundId, slotIdx, opts = {}) {
   const sound = findSound(soundId);
   if (!sound) return;
   const buf = APP.audioBuffers[bk(soundId, slotIdx)];
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
-  // Pragmatic approach: use a highpass + gentle compressor as noise reduction
-  // This avoids the full spectral subtraction complexity while giving usable results
-  const sr = buf.sampleRate;
-  const offCtx = new OfflineAudioContext(buf.numberOfChannels, buf.length, sr);
-  const src = offCtx.createBufferSource(); src.buffer = buf;
+  // Rückwärtskompatibel: bisheriger Aufrufer übergibt eine einzelne
+  // amount-Zahl statt eines Options-Objekts (siehe events.js).
+  const params = typeof opts === 'number' ? { amount: opts } : (opts || {});
+  const { amount = 0.6, sensitivity = 6, smoothing = 2 } = params;
 
-  // Noise reduction chain: highpass → compressor (noise gate behavior) → lowpass cleanup
-  const hp = offCtx.createBiquadFilter();
-  hp.type = 'highpass'; hp.frequency.value = 80; hp.Q.value = 0.5;
+  const profile = sound.slots[slotIdx]?.noiseProfile || APP.noiseProfile;
+  if (!profile) {
+    toast('Kein Rauschprofil vorhanden. Bitte zuerst „Rauschprofil lernen" ausführen.', 'err');
+    return;
+  }
 
-  const comp = offCtx.createDynamicsCompressor();
-  comp.threshold.value = -60 + amount * 30; // -60 to -30 dBFS
-  comp.knee.value      = 10;
-  comp.ratio.value     = 3 + amount * 5;
-  comp.attack.value    = 0.01;
-  comp.release.value   = 0.1;
-
-  const gain = offCtx.createGain(); gain.gain.value = 1 + amount * 0.5;
-
-  src.connect(hp); hp.connect(comp); comp.connect(gain); gain.connect(offCtx.destination);
-  src.start();
-  const newBuf = await offCtx.startRendering();
+  let newBuf;
+  try {
+    newBuf = reduceNoiseSpectral(buf, profile, { amount, sensitivity, smoothing });
+  } catch (e) {
+    // z.B. Sample-Rate-Mismatch (Profil auf anderem Slot/mit anderer SR gelernt)
+    toast(e.message, 'err');
+    return;
+  }
 
   await persistEdit(sound, slotIdx, newBuf, `Rauschreduzierung ${Math.round(amount * 100)}%`);
   toast('Rauschreduzierung angewendet ✓', 'ok');

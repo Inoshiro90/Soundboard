@@ -137,6 +137,7 @@
 @media (min-width: 768px) {
   #soundModal   .modal-dialog { max-width: var(--w-8col); }  /* Sound-Editor: MD = voll */
   #soundFxModal .modal-dialog,
+  #slotDestructiveModal .modal-dialog,
   #macroModal   .modal-dialog { max-width: var(--w-7col); }
   #trimModal    .modal-dialog { max-width: var(--w-6col); }
   #profModal    .modal-dialog,
@@ -150,6 +151,7 @@
 @media (min-width: 912px) {
   #soundModal   .modal-dialog { max-width: var(--w-10col); }
   #soundFxModal .modal-dialog,
+  #slotDestructiveModal .modal-dialog,
   #macroModal   .modal-dialog { max-width: var(--w-8col); }
   #trimModal    .modal-dialog { max-width: var(--w-7col); }
 }
@@ -157,6 +159,7 @@
 @media (min-width: 1200px) {
   #soundModal   .modal-dialog { max-width: var(--w-9col); }
   #soundFxModal .modal-dialog,
+  #slotDestructiveModal .modal-dialog,
   #macroModal   .modal-dialog { max-width: var(--w-7col); }
   #trimModal    .modal-dialog { max-width: var(--w-6col); }
 }
@@ -164,6 +167,7 @@
 @media (min-width: 1400px) {
   #soundModal   .modal-dialog { max-width: var(--w-8col); }
   #soundFxModal .modal-dialog,
+  #slotDestructiveModal .modal-dialog,
   #macroModal   .modal-dialog { max-width: var(--w-6col); }
   #trimModal    .modal-dialog { max-width: var(--w-5col); }
   #profModal    .modal-dialog,

@@ -223,6 +223,49 @@
           <span class="menubar-btn__label">Stop</span>
         </button>
 
+        <!-- Direkter Einstieg zum Anlegen (ersetzt den Umweg über eine leere
+             Kachel): öffnet dieselben Dialogboxen wie #tileAddChoicePopover,
+             ohne dass zuerst ein Platzhalter angeklickt werden muss.
+             Icons als Inline-SVG statt data-lucide: rendert garantiert
+             sofort, unabhängig davon, ob/wann das externe Lucide-Skript
+             (CDN) lädt — identisches Markup wie lucide.createIcons() es
+             zur Laufzeit erzeugen würde, nur fest eingebettet. -->
+        <button class="menubar-btn menubar-btn--col2 menubar-btn--accent" id="btnToolbarAddSound"
+          title="Neuen Sound hinzufügen" aria-label="Neuen Sound hinzufügen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
+          <span class="menubar-btn__label">Sound</span>
+        </button>
+        <button class="menubar-btn menubar-btn--col2 menubar-btn--accent" id="btnToolbarAddMacro"
+          title="Neues Makro hinzufügen" aria-label="Neues Makro hinzufügen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
+          <span class="menubar-btn__label">Makro</span>
+        </button>
+
+        <!-- Ersetzt den bisherigen Long-Press-Trigger für den Bearbeitungs-
+             modus (siehe setTileEditMode() in ui.js): dieser Button schaltet
+             die Stift-Icons auf den Kacheln dauerhaft sichtbar, statt sie nur
+             per Long-Press einzublenden. Long-Press verschiebt jetzt direkt
+             die Kachel (siehe setupTileEditGestures()), unabhängig von
+             diesem Modus. aria-pressed wird von setTileEditMode() gepflegt. -->
+        <button class="menubar-btn menubar-btn--col2" id="btnTileEditMode" title="Bearbeitungsmodus umschalten"
+          aria-label="Bearbeitungsmodus umschalten" aria-pressed="false">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path
+              d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+            <path d="m15 5 4 4" />
+          </svg>
+          <span class="menubar-btn__label">Bearbeiten</span>
+        </button>
+
         <div class="menubar-volume" aria-label="Sound-Lautstärke">
           <span class="menubar-volume__label">
             <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
@@ -236,14 +279,20 @@
         </div>
       </div>
 
-      <!-- Bearbeitungsmodus-Leiste (iOS-Homescreen-Prinzip): erscheint nur
-           auf Touch nach Long-Press auf eine Kachel, siehe setTileEditMode()
-           in ui.js. Auf Desktop bleibt das bisherige Hover/Klick-Verhalten
-           unverändert, diese Leiste wird dort nie eingeblendet. -->
+      <!-- Bearbeitungsmodus-Leiste: erscheint, wenn #btnTileEditMode oben
+           aktiviert ist, siehe setTileEditMode() in ui.js. Verschieben von
+           Kacheln (Long-Press auf Touch, natives Drag&Drop auf Desktop)
+           funktioniert unabhängig davon jederzeit, auch außerhalb dieses
+           Modus. -->
       <div class="edit-mode-bar" id="editModeBar" hidden>
         <span class="edit-mode-bar__label">
-          <i class="fa-solid fa-arrows-up-down-left-right" aria-hidden="true"></i>
-          Bearbeitungsmodus — Kachel antippen zum Bearbeiten, ziehen zum Verschieben
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path
+              d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+            <path d="m15 5 4 4" />
+          </svg>
+          Bearbeitungsmodus — Kachel antippen zum Bearbeiten (kein Abspielen)
         </span>
         <button class="btn btn--sm btn--accent" id="btnExitEditMode">Fertig</button>
       </div>
@@ -1383,9 +1432,171 @@
               </button>
             </div>
           </div>
+
+          <!-- ══ DAUERHAFTE BEARBEITUNG: KOMPAKTER EINSTIEG ═══════════════
+               Gleiches Muster wie Audio-Effekte im Sound-Editor (#soundFxModal):
+               Das Slot-Edit-Modal ist bewusst klein gehalten (Spez. Kap. 26,
+               analog Profil-Modal). 10 destruktive Funktionen mit eigenen
+               Eingabefeldern gehören NICHT hier hinein (Progressive
+               Disclosure) — sie leben in einer eigenen Dialogbox
+               (#slotDestructiveModal), die erst auf Wunsch geöffnet wird. ══ -->
+          <div class="sm-entry-card">
+            <div class="sm-entry-card__head">
+              <span class="sm-entry-card__title">
+                <i class="fa-solid fa-triangle-exclamation" style="color:var(--color-orange)" aria-hidden="true"></i>
+                Dauerhaft bearbeiten
+              </span>
+              <button class="btn btn--sm" id="btnOpenSlotDestructiveModal" type="button">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                Bearbeiten
+              </button>
+            </div>
+            <p class="u-text-muted u-text-badge u-mb-0 u-mt-2" id="slotDestructiveHint">
+              Trim, Normalisieren, Gain, Fades, Stille &amp; Rauschen entfernen — schreibt die Audiodatei permanent
+              neu.
+            </p>
+          </div>
         </div>
         <div class="modal-footer u-flex-between">
-          <span class="u-text-muted u-text-badge">Änderungen wirken erst nach dem Speichern des Sounds.</span>
+          <span class="u-text-muted u-text-badge">Trim/Fade-Felder oben wirken erst nach dem Speichern des Sounds.</span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SLOT: DAUERHAFTE BEARBEITUNG (DIALOGBOX) ══════════════════
+       Ausgelagert aus #slotEditModal (Progressive Disclosure, s.o.). Analog
+       #soundFxModal in Aufbau und Gruppierung (.fx-group/.fx-group__head),
+       obwohl es hier keine Ein/Aus-Toggles, sondern Einmal-Aktionen sind —
+       das Gruppieren nach Kategorie hält die Liste trotz 10 Funktionen
+       überschaubar, statt alle Regler auf einmal darzustellen. -->
+  <div class="modal fade" id="slotDestructiveModal" tabindex="-1" aria-labelledby="slotDestructiveModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="slotDestructiveModalTitle">
+            <i class="fa-solid fa-triangle-exclamation" style="color:var(--color-orange)" aria-hidden="true"></i>
+            Slot dauerhaft bearbeiten
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <p class="u-text-muted u-text-badge u-mb-2">
+            Diese Aktionen schreiben die Audiodatei permanent neu — im Unterschied zu den Effekten im Sound-Editor,
+            die nur die Wiedergabe verändern. Rückgängig über den Verlauf (Strg+Z) möglich.
+          </p>
+
+          <p id="editorActionsUnavailable" class="u-text-muted u-text-caption" style="display:none">
+            Erst diesen Sound speichern, danach ist die dauerhafte Bearbeitung verfügbar.
+          </p>
+
+          <div id="editorActionsBody">
+            <div class="fx-group">
+              <div class="fx-group__head">
+                <span class="fx-check-label"><span>Zuschnitt &amp; Struktur</span></span>
+              </div>
+              <div class="fx-controls u-flex u-gap-2 u-wrap">
+                <button class="btn btn--sm" data-editor-action="trim"
+                  title="Wendet den oben/im Trim-Dialog gesetzten Zuschnitt dauerhaft an">
+                  <i class="fa-solid fa-scissors" aria-hidden="true"></i> Trim anwenden
+                </button>
+                <button class="btn btn--sm" data-editor-action="reverse" title="Kehrt die Audiodatei um">
+                  <i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i> Umkehren
+                </button>
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorSilenceDb">Stille-Schwelle (dBFS)</label>
+                  <input type="number" id="editorSilenceDb" class="form-control"
+                    style="width:70px;font-size:var(--text-caption)" value="-60" step="1" max="0">
+                  <button class="btn btn--sm" data-editor-action="removeSilence"
+                    title="Entfernt Stille am Anfang und Ende">Stille entfernen</button>
+                </span>
+              </div>
+            </div>
+
+            <div class="fx-group">
+              <div class="fx-group__head">
+                <span class="fx-check-label"><span>Lautstärke</span></span>
+              </div>
+              <div class="fx-controls u-flex u-gap-2 u-wrap">
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorNormalizeDb">Normalisieren auf (dBFS Peak)</label>
+                  <input type="number" id="editorNormalizeDb" class="form-control"
+                    style="width:70px;font-size:var(--text-caption)" value="0" step="1" max="0">
+                  <button class="btn btn--sm" data-editor-action="normalize">Anwenden</button>
+                </span>
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorGainDb">Gain (dB)</label>
+                  <input type="number" id="editorGainDb" class="form-control"
+                    style="width:70px;font-size:var(--text-caption)" value="0" step="1">
+                  <button class="btn btn--sm" data-editor-action="gain">Anwenden</button>
+                </span>
+                <span class="u-flex u-gap-2" style="align-items:center" title="RMS-Lautstärke-Normalisierung (keine LUFS-Messung) mit automatischem Peak-Schutz">
+                  <label class="form-label u-mb-0" for="editorLoudnessDb">Ziel-Lautstärke (RMS dBFS)</label>
+                  <input type="number" id="editorLoudnessDb" class="form-control"
+                    style="width:70px;font-size:var(--text-caption)" value="-18" step="1" min="-40" max="-6">
+                  <button class="btn btn--sm" data-editor-action="loudness">Anwenden</button>
+                </span>
+              </div>
+            </div>
+
+            <div class="fx-group">
+              <div class="fx-group__head">
+                <span class="fx-check-label"><span>Fades rendern</span></span>
+              </div>
+              <div class="fx-controls u-flex u-gap-2 u-wrap">
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorFadeInSec">Fade-In (s)</label>
+                  <input type="number" id="editorFadeInSec" class="form-control"
+                    style="width:64px;font-size:var(--text-caption)" value="0.5" step=".1" min="0">
+                  <button class="btn btn--sm" data-editor-action="fadeIn">Rendern</button>
+                </span>
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorFadeOutSec">Fade-Out (s)</label>
+                  <input type="number" id="editorFadeOutSec" class="form-control"
+                    style="width:64px;font-size:var(--text-caption)" value="0.5" step=".1" min="0">
+                  <button class="btn btn--sm" data-editor-action="fadeOut">Rendern</button>
+                </span>
+              </div>
+            </div>
+
+            <div class="fx-group">
+              <div class="fx-group__head">
+                <span class="fx-check-label"><span>Stille &amp; Rauschen</span></span>
+              </div>
+              <div class="fx-controls u-flex u-gap-2 u-wrap">
+                <span class="u-flex u-gap-2" style="align-items:center">
+                  <label class="form-label u-mb-0" for="editorNoiseGateDb">Noise Gate Schwelle (dBFS)</label>
+                  <input type="number" id="editorNoiseGateDb" class="form-control"
+                    style="width:70px;font-size:var(--text-caption)" value="-40" step="1" max="0">
+                  <button class="btn btn--sm" data-editor-action="noiseGate"
+                    title="Destruktiv: setzt leise Passagen dauerhaft auf Stille">Anwenden</button>
+                </span>
+                <span class="u-flex u-gap-2 u-wrap" style="align-items:center">
+                  <button class="btn btn--sm" data-editor-action="learnNoise"
+                    title="Lernt ein Rauschprofil aus den ersten 0,5s — Voraussetzung für Rauschreduzierung">
+                    <i class="fa-solid fa-wave-square" aria-hidden="true"></i> Rauschprofil lernen
+                  </button>
+                  <label class="form-label u-mb-0" for="editorNoiseReduceAmount">Reduzierung</label>
+                  <input type="range" id="editorNoiseReduceAmount" class="slider" min="0" max="1" step="0.05"
+                    value="0.6" style="width:100px">
+                  <span id="editorNoiseReduceAmountLbl" class="fx-value-badge">60%</span>
+                  <button class="btn btn--sm" data-editor-action="noiseReduce">Anwenden</button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span class="u-text-muted u-text-badge">Änderungen wirken sofort auf die gespeicherte Audiodatei.</span>
           <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
             <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
           </button>
