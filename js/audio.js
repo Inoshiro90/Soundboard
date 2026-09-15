@@ -15,6 +15,11 @@ import { toast }       from './notifications.js';
 import { idbGet, audioKey, IDB_SENTINEL, isIdbRef, openDB } from './db.js';
 import { getOrDecodeBuffer, invalidateBuffer } from './audioCache.js';
 import { renderSoundGraph } from './renderPipeline.js';
+// P2 Auto Duck: zirkulärer Import (ambient.js importiert umgekehrt actx/
+// hasAudioContext/buildEffectChain aus audio.js) — funktioniert für reine
+// Funktionsreferenzen, die erst zur Laufzeit (nicht beim Modul-Ladevorgang)
+// aufgerufen werden, siehe bereits bestehendes renderPipeline.js-Muster oben.
+import { duckAmbient } from './ambient.js';
 
 // ─── AUDIO CONTEXT ───────────────────────────────────────────
 // BUGFIX: ctx is NEVER created automatically on module load.
@@ -155,14 +160,22 @@ export function defaultEffects() {
     enabled: false, preset: null,
     lowpass:  { enabled: false, frequency: 20000, Q: 0.7 },
     highpass: { enabled: false, frequency: 20,    Q: 0.7 },
+    notch:    { enabled: false, frequency: 50, Q: 10 },
     pan: 0,
     reverb:   { enabled: false, amount: 0.35, duration: 2.2, decay: 2.0 },
     delay:    { enabled: false, time: 0.22, feedback: 0.35, wet: 0.35 },
+    chorus:   { enabled: false, baseDelay: 15, depth: 8,   rate: 0.8, mix: 0.3 },
+    flanger:  { enabled: false, baseDelay: 2,  depth: 1.5, rate: 0.2, feedback: 0.5, mix: 0.5 },
+    tremolo:  { enabled: false, rate: 5, depth: 0.5, waveform: 'sine' },
     eq:       { enabled: false, low: 0, mid: 0, high: 0 },
     eq10:     { enabled: false, bands: [0,0,0,0,0,0,0,0,0,0] },
     compressor: { enabled: false, threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 },
     limiter:    { enabled: false, threshold: -1,  knee: 0,  ratio: 20, attack: 0.001, release: 0.08 },
-    distortion: { enabled: false, amount: 40, oversample: '4x' },
+    // mode: P2-Erweiterung (softClip = bisheriges, unverändertes Verhalten;
+    // hardClip/bitcrush neu). Presets ohne "mode"-Feld fallen über den
+    // switch-default in _buildDistortionCurve() weiterhin auf softClip
+    // zurück — kein Migrationsschritt für bestehende Presets nötig.
+    distortion: { enabled: false, mode: 'softClip', amount: 40, oversample: '4x' },
     pitchShift: { enabled: false, semitones: 0 },
     irReverb:   { enabled: false, impulse: null, wet: 0.35 },
     envelope:   { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 },
@@ -211,11 +224,120 @@ function _buildCompressor(ctx, p) {
   return n;
 }
 
-function _buildDistortionCurve(amount) {
-  const n = 512; const curve = new Float32Array(n); const k = Math.max(0.1, amount);
-  for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x)); }
+/**
+ * P2-Erweiterung: mehrere Verzerrungs-Kurvenformen statt nur der einen
+ * bisherigen weichen Sättigungskurve.
+ * WICHTIG: der 'softClip'/default-Zweig verwendet BEWUSST die exakte,
+ * bereits bestehende Formel (Math.PI-basiert, nicht die im Plan
+ * vorgeschlagene vereinfachte (1+k)-Variante) — alle 17 FX-Presets sind
+ * auf genau diese Kurve abgestimmt; ein Formelwechsel hätte deren Klang
+ * unbeabsichtigt verändert.
+ */
+function _buildDistortionCurve(mode, amount) {
+  const n = 512; const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1; // -1..1
+    switch (mode) {
+      case 'hardClip': {
+        const threshold = Math.max(0.05, Math.min(1, amount / 100)); // amount 0-100 -> threshold 1-0.05
+        curve[i] = Math.max(-threshold, Math.min(threshold, x)) / threshold; // normalisiert
+        break;
+      }
+      case 'bitcrush': {
+        const bitDepth = Math.max(1, Math.min(16, Math.round(16 - (amount / 100) * 14))); // amount -> 1..16 bit
+        const steps = Math.pow(2, bitDepth);
+        curve[i] = Math.round(x * steps) / steps;
+        break;
+      }
+      case 'softClip':
+      default: {
+        const k = Math.max(0.1, amount);
+        curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
+      }
+    }
+  }
   return curve;
 }
+
+/** P2: schmalbandige Frequenzunterdrückung, primär gegen Netzbrummen (50/60Hz). */
+function _buildNotch(ctx, p) {
+  const n = ctx.createBiquadFilter();
+  n.type = 'notch';
+  n.frequency.value = Math.max(20, Math.min(20000, p.frequency ?? 50));
+  n.Q.value = Math.max(0.5, Math.min(30, p.Q ?? 10));
+  return { input: n, output: n };
+}
+
+/**
+ * P2: klassische Lautstärke-Modulation. Gain = dcOffset + LFO*lfoGain,
+ * pendelt zwischen [1-depth, 1] (depth=0 → konstant 1, kein Effekt;
+ * depth=1 → pendelt zwischen 0 und 1). Siehe Plan-Funktionsbeispiel.
+ */
+function _buildTremolo(ctx, p) {
+  const lfo = ctx.createOscillator();
+  lfo.type = ['sine', 'triangle', 'square'].includes(p.waveform) ? p.waveform : 'sine';
+  lfo.frequency.value = Math.max(0.1, Math.min(20, p.rate ?? 5));
+
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.value = Math.max(0, Math.min(1, p.depth ?? 0.5)) * 0.5; // auf ±0.5 skaliert
+
+  const dcOffset = ctx.createConstantSource();
+  dcOffset.offset.value = 1 - lfoGain.gain.value; // Basispegel, damit Gain nie negativ wird
+
+  const outGain = ctx.createGain();
+  outGain.gain.value = 0; // wird ausschließlich per LFO+DC moduliert
+  lfo.connect(lfoGain).connect(outGain.gain);
+  dcOffset.connect(outGain.gain);
+  lfo.start(); dcOffset.start();
+
+  return { input: outGain, output: outGain };
+}
+
+/**
+ * P2: modulierte Delay-Line, gemeinsame Basis für Chorus (lang, kein
+ * Feedback) und Flanger (kurz, mit Feedback) — siehe _buildChorus/
+ * _buildFlanger. `maxDelay` (Sekunden) begrenzt den DelayNode-Puffer und
+ * muss baseDelay+depth mit Sicherheitsabstand abdecken, sonst würde die
+ * LFO-Modulation bei hohen depth-Werten den erlaubten Bereich verlassen.
+ */
+function _buildModulatedDelay(ctx, p, { withFeedback, maxDelay = 0.05 }) {
+  const input = ctx.createGain();
+  const delay = ctx.createDelay(maxDelay);
+  delay.delayTime.value = Math.max(0, (p.baseDelay ?? 15) / 1000);
+
+  const lfo = ctx.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.value = Math.max(0.01, Math.min(10, p.rate ?? 0.8));
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.value = Math.max(0, (p.depth ?? 8) / 1000); // ms -> s
+  lfo.connect(lfoGain).connect(delay.delayTime);
+  lfo.start();
+
+  const wetGain = ctx.createGain(); wetGain.gain.value = Math.max(0, Math.min(1, p.mix ?? 0.3));
+  const dryGain = ctx.createGain(); dryGain.gain.value = 1 - wetGain.gain.value;
+  const output = ctx.createGain();
+
+  input.connect(dryGain).connect(output);
+  input.connect(delay);
+  if (withFeedback) {
+    const fb = ctx.createGain(); fb.gain.value = Math.max(0, Math.min(0.95, p.feedback ?? 0.5));
+    delay.connect(fb).connect(delay);
+  }
+  delay.connect(wetGain).connect(output);
+
+  return { input, output };
+}
+
+// Chorus: lange Basis-Delay-Zeit (10-30ms), kein Feedback — "mehrere
+// leicht verstimmte Stimmen". Flanger: sehr kurze Basis-Delay-Zeit
+// (0.5-5ms) MIT Feedback — Kammfilter-/"Jet"-Effekt.
+// maxDelay-Puffer bewusst mit Sicherheitsabstand über dem theoretischen
+// Maximum von baseDelay+depth (Chorus: 40+20=60ms, Flanger: 5+20=25ms aus
+// den jeweiligen Parametertabellen) gewählt — DelayNode moduliert additiv
+// (delayTime-AudioParam + LFO-Signal), ein zu knapper Puffer würde die
+// LFO-Modulation bei hohen depth-Werten stillschweigend kappen.
+function _buildChorus(ctx, p)  { return _buildModulatedDelay(ctx, p, { withFeedback: false, maxDelay: 0.08 }); }
+function _buildFlanger(ctx, p) { return _buildModulatedDelay(ctx, p, { withFeedback: true,  maxDelay: 0.04 }); }
 
 function _buildReverb(ctx, p) {
   const wet = Math.max(0, Math.min(1, p.amount ?? 0.35));
@@ -331,6 +453,7 @@ export function buildEffectChain(ctx, effects) {
     n.Q.value = Math.max(0.1, Math.min(10, effects.lowpass.Q ?? 0.7));
     segs.push({ input: n, output: n });
   }
+  if (effects.notch?.enabled)      segs.push(_buildNotch(ctx, effects.notch));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));
 
@@ -339,15 +462,28 @@ export function buildEffectChain(ctx, effects) {
 
   if (effects.distortion?.enabled) {
     const s = ctx.createWaveShaper();
-    s.curve = _buildDistortionCurve(effects.distortion.amount ?? 40);
+    s.curve = _buildDistortionCurve(effects.distortion.mode, effects.distortion.amount ?? 40);
     s.oversample = ['none','2x','4x'].includes(effects.distortion.oversample) ? effects.distortion.oversample : '4x';
     segs.push({ input: s, output: s });
   }
+
+  // Chorus/Flanger: Modulationseffekte, bewusst vor Reverb/Delay platziert
+  // (typische Effektketten-Reihenfolge: Filter → Verzerrung → Modulation →
+  // Zeitbasierte Effekte). Gegenseitig exklusiv wie EQ/EQ10 wäre unnötig
+  // einschränkend (Chorus+Flanger gleichzeitig ist klanglich sinnvoll),
+  // daher hier — anders als z.B. bei eq/eq10 — KEIN else-if.
+  if (effects.chorus?.enabled)     segs.push(_buildChorus(ctx, effects.chorus));
+  if (effects.flanger?.enabled)    segs.push(_buildFlanger(ctx, effects.flanger));
 
   if (effects.irReverb?.enabled)   segs.push(_buildIRReverb(ctx, effects.irReverb));
   else if (effects.reverb?.enabled) segs.push(_buildReverb(ctx, effects.reverb));
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay));
+
+  // Tremolo: bewusst NACH dem Delay-Block platziert (Plan-Vorgabe) —
+  // moduliert damit auch die Delay-Wiederholungen mit, nicht nur das
+  // Trockensignal.
+  if (effects.tremolo?.enabled)    segs.push(_buildTremolo(ctx, effects.tremolo));
 
   // BUGFIX (Noise-Gate P0, Stufe A): `effects.noiseGate` wurde bisher an
   // keiner Stelle in buildEffectChain() ausgelesen — der UI-Regler
@@ -444,6 +580,33 @@ export async function decodeAudioSmart(soundId, slotIdx, slotData) {
   return getOrDecodeBuffer(soundId, slotIdx, slotData, _ctx);
 }
 
+// ─── AUTO DUCK (P2) ──────────────────────────────────────────
+// Senkt die Ambient-Ebene automatisch ab, sobald ein Soundboard-Sound
+// aktiv ist. Wirkungsbereich bewusst GLOBAL (ein "mindestens ein Sound
+// läuft"-Zustand), NICHT pro Sound/Szene — siehe Plan-Begründung:
+// Pro-Sound-Ducking würde bei vielen kurzen, häufig getriggerten Sounds
+// zu unruhigem Auf-und-Ab-Pumpen führen.
+
+/** Bei Start eines Sounds: Ambient duckt Richtung (1-amount). */
+export function notifyDuckTrigger() {
+  const duckSettings = APP.globalSettings?.autoDuck;
+  if (!duckSettings?.enabled) return;
+  const amount = Math.min(1, Math.max(0, duckSettings.amount ?? 0.7));
+  const targetFactor = 1 - amount;
+  // Zeitkonstante so gewählt, dass ~95% des Zielwerts nach `attack`ms erreicht sind (≈3τ).
+  const timeConstant = Math.max(0.001, (duckSettings.attack ?? 150) / 1000 / 3);
+  duckAmbient(targetFactor, timeConstant);
+}
+
+/** Bei Ende eines Sounds, NUR wenn wirklich kein anderer Sound mehr aktiv ist: Ambient released auf 1.0. */
+export function notifyDuckRelease() {
+  if (Object.keys(APP.activeAudio).length > 0) return; // noch andere Sounds aktiv → nicht releasen
+  const duckSettings = APP.globalSettings?.autoDuck;
+  if (!duckSettings?.enabled) return;
+  const timeConstant = Math.max(0.001, (duckSettings.release ?? 500) / 1000 / 3);
+  duckAmbient(1.0, timeConstant);
+}
+
 // ─── PLAYBACK ────────────────────────────────────────────────
 
 export function playItem(id, callStack = []) {
@@ -487,6 +650,7 @@ export async function playSound(s, opts = {}) {
 
   if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
   APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
+  notifyDuckTrigger(); // P2 Auto Duck
 
   graph.start(0);
   src.onended = () => {
@@ -496,6 +660,7 @@ export async function playSound(s, opts = {}) {
     }
     _updateStatusDot(); refreshRotBadge(s.id);
     if (analyser && !APP.activeAudio[s.id]?.length) stopAnalyzer();
+    notifyDuckRelease(); // P2 Auto Duck — no-op, falls noch andere Sounds aktiv sind
   };
 
   _setPlaying(s.id, true); _updateStatusDot();
@@ -529,13 +694,16 @@ export function playSoundAndWait(s) {
 
     if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
     APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
+    notifyDuckTrigger(); // P2 Auto Duck
     graph.start(0);
     src.onended = () => {
       if (APP.activeAudio[s.id]) {
         APP.activeAudio[s.id] = APP.activeAudio[s.id].filter(x => x.src !== src);
         if (!APP.activeAudio[s.id].length) { delete APP.activeAudio[s.id]; _setPlaying(s.id, false); }
       }
-      _updateStatusDot(); refreshRotBadge(s.id); resolve();
+      _updateStatusDot(); refreshRotBadge(s.id);
+      notifyDuckRelease(); // P2 Auto Duck
+      resolve();
     };
     _setPlaying(s.id, true); _updateStatusDot(); animProg(s.id, dur); refreshRotBadge(s.id);
   });

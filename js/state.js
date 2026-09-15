@@ -6,7 +6,13 @@
 export const APP = {
   profiles: [],
   activeProfileId: null,
-  globalSettings: { overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0 },
+  globalSettings: {
+    overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
+    // P2 Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
+    // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
+    // Siehe audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+    autoDuck: { enabled: false, amount: 0.7, attack: 150, release: 500 }
+  },
   audioBuffers: {},
   activeAudio:  {},
   editId: null, editSlots: [], loadingSlotIdx: null, _phReplacingId: null,
@@ -15,7 +21,8 @@ export const APP = {
   hkTarget: null,
   activeCategory: 'all',
   trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null,
-           zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null },
+           zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null,
+           clippingRegions: [] },
   // Phase 3
   analyzer:     { node: null, canvas: null, rafId: null, mode: 'bars', active: false },
   irCache:      {},

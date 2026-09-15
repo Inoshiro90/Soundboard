@@ -12,6 +12,7 @@ import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, updateTrimDurLabel, normaliseOrders,
+  startPeakRmsMeter, stopPeakRmsMeter,
   syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex
 } from './ui.js';
 import {
@@ -1445,6 +1446,14 @@ export function registerEvents() {
 
   document.getElementById('trimStart')?.addEventListener('input', () => { updateTrimDurLabel(); drawTrimWaveform(); });
   document.getElementById('trimEnd')?.addEventListener('input',   () => { updateTrimDurLabel(); drawTrimWaveform(); });
+  // Aufräumen beim Schließen: laufende Vorschau + Meter-Loop nicht über
+  // das offene Modal hinaus weiterlaufen lassen (sonst Audio- bzw.
+  // rAF-Leak, wenn der Nutzer während der Vorschau auf "Schließen" klickt).
+  document.getElementById('trimModal')?.addEventListener('hidden.bs.modal', () => {
+    if (APP.trim.previewSrc) { try { APP.trim.previewSrc.stop(); } catch (e) {} APP.trim.previewSrc = null; }
+    stopPeakRmsMeter();
+  });
+
   document.getElementById('btnTrimReset')?.addEventListener('click', () => {
     if (!APP.trim.buf) return;
     document.getElementById('trimStart').value   = '0';
@@ -1462,14 +1471,22 @@ export function registerEvents() {
     if (APP.trim.previewSrc) { try { APP.trim.previewSrc.stop(); } catch (e) {} APP.trim.previewSrc = null; }
     const ts  = parseFloat(document.getElementById('trimStart').value) || 0;
     const te  = parseFloat(document.getElementById('trimEnd').value)   || APP.trim.buf.duration;
-    const ctx = actx(); const gain = ctx.createGain(); gain.gain.value = 0.8; gain.connect(ctx.destination);
+    const ctx = actx(); const gain = ctx.createGain(); gain.gain.value = 0.8;
+    // P2 Peak/RMS-Meter: AnalyserNode zwischen Gain und Destination
+    // eingeschleift, damit der gemessene Pegel den tatsächlich hörbaren
+    // (bereits gain-skalierten) Signalpfad widerspiegelt.
+    const meterAnalyser = ctx.createAnalyser();
+    meterAnalyser.fftSize = 1024;
+    gain.connect(meterAnalyser); meterAnalyser.connect(ctx.destination);
     const src = ctx.createBufferSource(); src.buffer = APP.trim.buf; src.connect(gain);
     src.start(0, ts, te - ts); APP.trim.previewSrc = src;
-    src.onended = () => { APP.trim.previewSrc = null; };
+    startPeakRmsMeter(meterAnalyser);
+    src.onended = () => { APP.trim.previewSrc = null; stopPeakRmsMeter(); };
     toast('Vorschau läuft…');
   });
   document.getElementById('btnTrimStop')?.addEventListener('click', () => {
     if (APP.trim.previewSrc) { try { APP.trim.previewSrc.stop(); } catch (e) {} APP.trim.previewSrc = null; }
+    stopPeakRmsMeter();
   });
   document.getElementById('btnTrimSave')?.addEventListener('click', () => {
     if (APP.trim.slotIdx === null || !APP.trim.buf) return;

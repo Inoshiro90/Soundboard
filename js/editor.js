@@ -17,7 +17,7 @@ import { idbSet, idbGet, audioKey, IDB_SENTINEL } from './db.js';
 import { historyPush } from './history.js';
 import { fft, hannWindow } from './dsp/fft.js';
 import { reduceNoiseSpectral } from './dsp/noiseReduction.js';
-import { getPeakDb, getRmsDb, getWeightedRmsDb } from './analysis.js';
+import { getPeakDb, getRmsDb, getWeightedRmsDb, findSilenceRegions } from './analysis.js';
 
 const P4 = 'p4_'; // IDB key prefix for undo snapshots
 
@@ -368,6 +368,74 @@ export async function editRemoveSilence(soundId, slotIdx, thresholdDb = -60) {
   const startSec = (start / sr).toFixed(2);
   const endSec   = ((buf.length - end) / sr).toFixed(2);
   toast(`Stille entfernt (${startSec}s – ${endSec}s) ✓`, 'ok');
+}
+
+/**
+ * Truncate Silence (P2) — kürzt INTERNE Stille-Abschnitte (nicht nur
+ * Anfang/Ende wie editRemoveSilence) auf eine Zielminimaldauer, statt sie
+ * komplett zu entfernen. Nutzt findSilenceRegions() aus analysis.js, das
+ * bewusst über ALLE Kanäle gemeinsam prüft (Korrektur des Single-Channel-
+ * Bugs von editRemoveSilence(), siehe dortiger Kommentar/Audit).
+ *
+ * Jede erkannte Region wird symmetrisch um ihre Mitte gekürzt: die ersten
+ * und letzten targetSilenceDurationSec/2 Samples der Original-Stille
+ * bleiben erhalten, die Mitte wird herausgeschnitten. targetSilenceDurationSec
+ * === 0 entfernt die Stille komplett (Sonderfall).
+ */
+export async function editTruncateSilence(soundId, slotIdx, opts = {}) {
+  const sound = findSound(soundId);
+  if (!sound) return;
+  const buf = APP.audioBuffers[bk(soundId, slotIdx)];
+  if (!buf) { toast('Audio nicht geladen', 'err'); return; }
+
+  const { thresholdDb = -50, minSilenceDurationSec = 0.5, targetSilenceDurationSec = 0.3 } = opts;
+  const sr = buf.sampleRate;
+  const numCh = buf.numberOfChannels;
+
+  const regions = findSilenceRegions(buf, { thresholdDb, minDurationSec: minSilenceDurationSec });
+  if (!regions.length) { toast('Keine internen Stille-Abschnitte gefunden'); return; }
+
+  const targetSamples = Math.round(Math.max(0, targetSilenceDurationSec) * sr);
+
+  // Neue Gesamtlänge: Original abzüglich der Differenz jeder Region zur Zieldauer
+  // (Regionen kürzer als die Zieldauer bleiben unverändert — nichts zu kürzen).
+  let newLength = buf.length;
+  for (const r of regions) {
+    const regionLen = r.endSample - r.startSample + 1;
+    if (regionLen > targetSamples) newLength -= (regionLen - targetSamples);
+  }
+  if (newLength <= 0) { toast('Ergebnis wäre leer — Parameter anpassen', 'err'); return; }
+
+  const newBuf = actx().createBuffer(numCh, newLength, sr);
+  for (let ch = 0; ch < numCh; ch++) {
+    const src = buf.getChannelData(ch);
+    const dst = newBuf.getChannelData(ch);
+    let srcPos = 0, dstPos = 0;
+    for (const r of regions) {
+      // Audio VOR der Stille-Region unverändert kopieren
+      const preLen = r.startSample - srcPos;
+      if (preLen > 0) { dst.set(src.subarray(srcPos, r.startSample), dstPos); dstPos += preLen; }
+
+      // Stille-Region ggf. kürzen: erste+letzte targetSamples/2 Samples behalten
+      // (symmetrisches Kürzen um die Mitte, s. Plan-Funktionsbeispiel), Rest entfernen.
+      const regionLen = r.endSample - r.startSample + 1;
+      const keepLen = Math.min(regionLen, targetSamples);
+      if (keepLen > 0) {
+        const half = Math.floor(keepLen / 2);
+        dst.set(src.subarray(r.startSample, r.startSample + half), dstPos);
+        dstPos += half;
+        const secondHalfLen = keepLen - half;
+        dst.set(src.subarray(r.endSample + 1 - secondHalfLen, r.endSample + 1), dstPos);
+        dstPos += secondHalfLen;
+      }
+      srcPos = r.endSample + 1;
+    }
+    // Rest nach der letzten Region
+    if (srcPos < src.length) dst.set(src.subarray(srcPos), dstPos);
+  }
+
+  await persistEdit(sound, slotIdx, newBuf, `Truncate Silence (${regions.length} Region(en))`);
+  toast(`Truncate Silence: ${regions.length} Region(en) gekürzt ✓`, 'ok');
 }
 
 /**

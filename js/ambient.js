@@ -31,6 +31,7 @@ import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportAmbientTrack }          from './storage.js';
 import { PENCIL_ICON_SVG }                       from './ui.js';
+import { buildNoiseGenerator, setNoiseGeneratorType } from './generators.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -41,6 +42,37 @@ const AMBIENT_ICONS = ['🎐','🌧️','🌊','🔥','🌬️','🐦','🐴','�
 // For 'interval' tracks, src/gain are null while waiting between plays —
 // the track still counts as "playing" (scheduled) the whole time.
 const _active = new Map();
+
+// P2 Auto Duck: globaler Ducking-Multiplikator (1.0 = kein Ducking, s.
+// duckAmbient()/audio.js notifyDuckTrigger()). Bewusst NICHT in APP.ambient
+// persistiert — reiner Laufzeitzustand, analog zu _active.
+let _duckFactor = 1.0;
+
+/** Zentrale Ziel-Gain-Formel für einen Ambient-Track (Lautstärke × Master × Duck). */
+function _ambientTargetGain(t) {
+  return (t.vol ?? 0.7) * (APP.ambient.masterVol ?? 1) * _duckFactor;
+}
+
+/**
+ * Auto Duck (P2): setzt den globalen Ducking-Multiplikator und rampt alle
+ * AKTUELL aktiven Ambient-Tracks dorthin. Neu gestartete Tracks (s.
+ * _ambientTargetGain() in _playLoopTrack/_playChainCycle/_playIntervalCycle)
+ * berücksichtigen _duckFactor automatisch von Anfang an, auch wenn sie
+ * WÄHREND eines aktiven Duckings starten.
+ * @param {number} factor - Ziel-Multiplikator (1.0 = normal, (1-amount) = geduckt)
+ * @param {number} timeConstantSec - Zeitkonstante der Rampe (setTargetAtTime)
+ */
+export function duckAmbient(factor, timeConstantSec) {
+  _duckFactor = factor;
+  if (!hasAudioContext()) return;
+  const ctx = actx();
+  _active.forEach((rec, id) => {
+    if (!rec.gain) return; // interval/chain-Track gerade zwischen zwei Clips — nichts zu rampen
+    const t = _find(id); if (!t) return;
+    rec.gain.gain.cancelScheduledValues(ctx.currentTime);
+    rec.gain.gain.setTargetAtTime(_ambientTargetGain(t), ctx.currentTime, timeConstantSec);
+  });
+}
 
 // ─── STATE HELPERS ───────────────────────────────────────────
 
@@ -235,7 +267,37 @@ export async function addAmbientFiles(fileList) {
   toast(`${files.length} Ambient-Sound${files.length > 1 ? 's' : ''} hinzugefügt`, 'ok');
 }
 
-/** Adds one more file variant to an existing track (e.g. a 2nd/3rd dog-bark clip). */
+/**
+ * Legt einen neuen Noise-Generator-Track an (P2) — analog zu
+ * addAmbientFiles(), aber ohne Datei: `sourceType:'generator'` statt
+ * `files`. playAmbientTrack()/_playGeneratorTrack() erkennen diesen
+ * Track-Typ automatisch.
+ * @param {'white'|'pink'|'brown'} generatorType
+ */
+export function addNoiseGeneratorTrack(generatorType = 'pink') {
+  ensureAmbientState();
+  const label = { white: 'White Noise', pink: 'Pink Noise', brown: 'Brown Noise' }[generatorType] || 'Noise';
+  const track = _mkTrack(label);
+  track.sourceType    = 'generator';
+  track.generatorType = generatorType;
+  CATracks().push(track);
+  _persist();
+  renderAmbientPanel();
+  toast(`${label}-Generator hinzugefügt`, 'ok');
+  return track.id;
+}
+
+/** Ändert den Rauschtyp eines bestehenden Generator-Tracks (auch während er läuft). */
+export function setGeneratorType(trackId, generatorType) {
+  const t = _find(trackId); if (!t || t.sourceType !== 'generator') return;
+  t.generatorType = generatorType;
+  const rec = _active.get(trackId);
+  if (rec?.kind === 'generator' && rec.src) setNoiseGeneratorType(rec.src, generatorType);
+  _persist();
+  renderAmbientPanel();
+}
+
+
 export async function addFileVariant(trackId, file) {
   const t = _find(trackId);
   if (!t || !file) return;
@@ -348,9 +410,8 @@ export function setAmbientMasterVolume(val) {
     _active.forEach((rec, id) => {
       if (!rec.gain) return; // interval track currently waiting — nothing to ramp
       const t = _find(id); if (!t) return;
-      const target = t.vol * APP.ambient.masterVol;
       rec.gain.gain.cancelScheduledValues(ctx.currentTime);
-      rec.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.03);
+      rec.gain.gain.setTargetAtTime(_ambientTargetGain(t), ctx.currentTime, 0.03);
     });
   }
   _persist();
@@ -424,8 +485,12 @@ export async function toggleAmbientPlay(trackId) {
 
 export async function playAmbientTrack(trackId) {
   const t = _find(trackId); if (!t) return;
-  if (!(t.files || []).some(f => f.data)) { toast('Keine Audiodatei geladen', 'err'); return; }
   if (_active.has(trackId)) return;
+
+  // P2 Noise-Generator-Tracks haben keine Dateien — eigener Startpfad.
+  if (t.sourceType === 'generator') { await _playGeneratorTrack(trackId); return; }
+
+  if (!(t.files || []).some(f => f.data)) { toast('Keine Audiodatei geladen', 'err'); return; }
 
   if (t.intervalMode) {
     _active.set(trackId, { kind: 'interval', src: null, gain: null, timerId: null });
@@ -434,6 +499,44 @@ export async function playAmbientTrack(trackId) {
   } else {
     await _startLoopPlayback(trackId);
   }
+}
+
+/**
+ * Startet einen Noise-Generator-Track (P2). Läuft endlos (kein "Ende" wie
+ * bei einer Audiodatei) — wird ausschließlich über stopAmbientTrack()
+ * beendet, s. dortige kind==='generator'-Sonderbehandlung (disconnect()
+ * statt stop(), AudioWorkletNode kennt kein .stop()).
+ */
+async function _playGeneratorTrack(trackId) {
+  _active.set(trackId, { kind: 'generator', src: null, gain: null, timerId: null });
+  const ctx = actx();
+  const node = await buildNoiseGenerator(ctx, _find(trackId)?.generatorType || 'pink');
+
+  // Re-Check: Track könnte während des (async) Worklet-Ladens gestoppt
+  // worden sein.
+  const rec = _active.get(trackId);
+  if (!rec || rec.kind !== 'generator') { try { node?.disconnect(); } catch (e) {} return; }
+
+  if (!node) {
+    toast('Rauschgenerator konnte nicht geladen werden', 'err');
+    _active.delete(trackId); _updateRowPlayState(trackId, false);
+    return;
+  }
+
+  const t = _find(trackId); if (!t) { node.disconnect(); _active.delete(trackId); return; }
+
+  const gainNode = ctx.createGain();
+  const target  = _ambientTargetGain(t);
+  const fadeIn  = Math.max(0, t.fadeIn || 0);
+  const now     = ctx.currentTime;
+  gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
+  if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
+  gainNode.connect(ctx.destination);
+  _connectWithFx(ctx, node, t.effects, gainNode);
+
+  rec.src  = node;
+  rec.gain = gainNode;
+  _updateRowPlayState(trackId, true);
 }
 
 /** Routes src → [pitch] → [FX chain] → gainNode, applying the track's effects (if enabled). */
@@ -471,7 +574,7 @@ async function _startLoopPlayback(trackId) {
   if (_active.has(trackId)) return; // started elsewhere while decoding
 
   const gainNode = ctx.createGain();
-  const target   = (t.vol ?? 0.7) * (APP.ambient.masterVol ?? 1);
+  const target   = _ambientTargetGain(t);
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
@@ -522,7 +625,7 @@ async function _playChainCycle(trackId) {
   if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); _active.delete(trackId); _updateRowPlayState(trackId, false); return; }
 
   const gainNode = ctx.createGain();
-  const target    = (t.vol ?? 0.7) * (APP.ambient.masterVol ?? 1);
+  const target    = _ambientTargetGain(t);
   // Only fade in on the very first clip of the chain — subsequent variants
   // continue seamlessly at full volume, like a continuous ambience loop.
   const fadeIn    = rec.started ? 0 : Math.max(0, t.fadeIn || 0);
@@ -574,7 +677,7 @@ async function _playIntervalCycle(trackId) {
   if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); _active.delete(trackId); _updateRowPlayState(trackId, false); return; }
 
   const gainNode = ctx.createGain();
-  const target   = (t.vol ?? 0.7) * (APP.ambient.masterVol ?? 1);
+  const target   = _ambientTargetGain(t);
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
@@ -612,6 +715,15 @@ export function stopAmbientTrack(trackId, { fade = true } = {}) {
   if (rec.timerId) { clearTimeout(rec.timerId); rec.timerId = null; }
   if (rec.src) {
     const t = _find(trackId);
+    // P2 Noise-Generatoren sind AudioWorkletNodes — die kennen kein
+    // .stop() (laufen endlos, bis man sie trennt). BUGFIX: ein
+    // unbedingtes rec.src.stop() hätte hier nur eine TypeError geworfen
+    // (vom umgebenden try/catch verschluckt) und den Node NIE getrennt —
+    // stiller Ressourcen-Leak (Worklet läuft unhörbar, aber weiter,
+    // bis die Seite neu geladen wird).
+    const stopNode = () => { try {
+      if (rec.kind === 'generator') rec.src.disconnect(); else rec.src.stop();
+    } catch (e) { /* already stopped */ } };
     try {
       if (hasAudioContext()) {
         const ctx     = actx();
@@ -621,15 +733,15 @@ export function stopAmbientTrack(trackId, { fade = true } = {}) {
           rec.gain.gain.cancelScheduledValues(now);
           rec.gain.gain.setValueAtTime(rec.gain.gain.value, now);
           rec.gain.gain.linearRampToValueAtTime(0, now + fadeOut);
-          setTimeout(() => { try { rec.src.stop(); } catch (e) {} }, fadeOut * 1000 + 60);
+          setTimeout(stopNode, fadeOut * 1000 + 60);
         } else {
-          rec.src.stop();
+          stopNode();
         }
       } else {
-        rec.src.stop();
+        stopNode();
       }
     } catch (e) { /* already stopped */ }
-    rec.src.onended = null; // prevent the natural-end handler from re-scheduling
+    if ('onended' in rec.src) rec.src.onended = null; // prevent the natural-end handler from re-scheduling (n/a for generator nodes)
   }
   _active.delete(trackId);
   _updateRowPlayState(trackId, false);
@@ -673,8 +785,15 @@ export function renderAmbientProfileTabs() {
 function _rowTemplate(t) {
   const playing = isAmbientPlaying(t.id);
   const waiting = playing && isAmbientWaiting(t.id);
+  const isGenerator = t.sourceType === 'generator';
   const files   = t.files || [];
-  const loaded  = files.some(f => f.data);
+  // BUGFIX: Noise-Generator-Tracks (P2) haben keine Dateien — ohne diese
+  // Erweiterung wäre `loaded` für sie immer false und der Play-Button
+  // dauerhaft disabled (Generator braucht nichts zu "laden").
+  const loaded  = isGenerator || files.some(f => f.data);
+  const generatorBadge = isGenerator
+    ? `<span class="ambient-row__gen-badge" title="Rauschgenerator">${_esc({white:'White',pink:'Pink',brown:'Brown'}[t.generatorType] || 'Noise')}</span>`
+    : '';
   return `
   <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}" data-id="${t.id}">
     <button class="ambient-row__play" data-act="play" ${loaded ? '' : 'disabled'}
@@ -684,6 +803,7 @@ function _rowTemplate(t) {
     <button class="ambient-row__icon" data-act="icon" title="Icon auswählen" aria-label="Icon auswählen">${iconHtmlOr(t.icon, '🌫️', 'ambient-row__icon-img')}</button>
     <input type="text" class="ambient-row__name" data-act="name" value="${_esc(t.name)}" maxlength="30"
       aria-label="Name des Ambient-Sounds" placeholder="Ambient-Name">
+    ${generatorBadge}
     <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
     <div class="ambient-row__vol">
       <i class="fa-solid fa-volume-low" aria-hidden="true"></i>
@@ -815,6 +935,42 @@ export function registerAmbientEvents() {
   document.getElementById('ambientFile')?.addEventListener('change', function () {
     if (this.files?.length) addAmbientFiles(this.files);
     this.value = '';
+  });
+
+  // P2 Noise-Generatoren: eigenes kleines Popover (White/Pink/Brown),
+  // Positionierung analog _openTileAddChoice() in ui.js.
+  const genBtn   = document.getElementById('btnAmbientAddGenerator');
+  const genPanel = document.getElementById('ambientGeneratorPopover');
+  function _closeGenPopover() {
+    if (genPanel) genPanel.hidden = true;
+    genBtn?.setAttribute('aria-expanded', 'false');
+  }
+  genBtn?.addEventListener('click', () => {
+    if (!genPanel) return;
+    const wasOpen = !genPanel.hidden;
+    _closeGenPopover();
+    if (wasOpen) return; // erneuter Klick schließt nur
+    const rect = genBtn.getBoundingClientRect();
+    genPanel.style.position = 'fixed';
+    genPanel.style.top  = `${Math.round(rect.bottom + 6)}px`;
+    genPanel.style.left = `${Math.round(rect.left)}px`;
+    genPanel.hidden = false;
+    genBtn.setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => {
+      if (genPanel.hidden) return;
+      const pad = 8, pRect = genPanel.getBoundingClientRect();
+      if (pRect.right > window.innerWidth - pad) {
+        genPanel.style.left = `${Math.max(pad, window.innerWidth - pad - pRect.width)}px`;
+      }
+    });
+  });
+  document.getElementById('genAddWhite')?.addEventListener('click', () => { addNoiseGeneratorTrack('white'); _closeGenPopover(); });
+  document.getElementById('genAddPink') ?.addEventListener('click', () => { addNoiseGeneratorTrack('pink');  _closeGenPopover(); });
+  document.getElementById('genAddBrown')?.addEventListener('click', () => { addNoiseGeneratorTrack('brown'); _closeGenPopover(); });
+  document.addEventListener('pointerdown', e => {
+    if (!genPanel || genPanel.hidden) return;
+    if (e.target.closest('#ambientGeneratorPopover') || e.target.closest('#btnAmbientAddGenerator')) return;
+    _closeGenPopover();
   });
 
   document.getElementById('ambientMasterVol')?.addEventListener('input', function () {

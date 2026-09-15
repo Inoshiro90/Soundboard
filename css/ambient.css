@@ -233,6 +233,19 @@
 .ambient-row__name:hover  { border-bottom-color: var(--border-color); }
 .ambient-row__name:focus  { border-bottom-color: var(--color-accent); }
 
+/* P2 Noise-Generator-Kennzeichnung (weder Datei noch normaler Ambient-Sound). */
+.ambient-row__gen-badge {
+  flex-shrink: 0;
+  font-size: var(--text-badge);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent);
+  background: var(--badge-bg);
+  border-radius: var(--radius-subtle);
+  padding: 1px var(--space-1);
+}
+
 /* Spez. Kap. 32: Ambient Volume Group — auf XS/SM flexibel/volle Breite,
    ab MD rasterbasiert (~1/3 der Zeile). */
 .ambient-row__vol {

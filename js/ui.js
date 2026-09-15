@@ -14,6 +14,7 @@ import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
 import { toast }                           from './notifications.js';
+import { getPeak, getRms, detectClipping } from './analysis.js';
 
 // Lucide "pencil" icon (Nutzer-Vorgabe) — als Konstante, damit Profile-
 // und Ambient-Tabs (ui.js/ambient.js) exakt dasselbe Icon verwenden.
@@ -1108,6 +1109,16 @@ export function openTrimModal(slotIdx) {
   APP.trim.scrollOffset = 0;
   APP.trim.playheadPos  = null;
 
+  // P2 Find Clipping: einmalig beim Öffnen berechnen (nicht bei jedem
+  // Redraw — detectClipping() iteriert einmal über alle Samples, das bei
+  // Zoom/Scroll wiederholt auszuführen wäre unnötige Arbeit).
+  const clip = detectClipping(buf, { threshold: 0.999 });
+  APP.trim.clippingRegions = clip.clippingRegions;
+  const warnEl  = document.getElementById('trimClipWarning');
+  const warnTxt = document.getElementById('trimClipWarningText');
+  if (warnEl) warnEl.style.display = clip.clippingRegions.length ? '' : 'none';
+  if (warnTxt) warnTxt.textContent = `Clipping erkannt (${clip.clippingRegions.length} Stelle${clip.clippingRegions.length === 1 ? '' : 'n'})`;
+
   const dur = buf.duration;
   const si  = document.getElementById('trimSlotInfo');
   if (si) si.textContent = `Slot ${slotIdx + 1}: ${sl.name || 'Audio'} — ${dur.toFixed(2)}s`;
@@ -1368,6 +1379,20 @@ export function drawTrimWaveform() {
   ctx.fillStyle = accentClr + '18';
   ctx.fillRect(x1, 0, Math.max(0, x2 - x1), H);
 
+  // P2 Find Clipping: rote Marker an den beim Öffnen erkannten Clipping-
+  // Regionen (siehe openTrimModal() → detectClipping()). Mindestbreite
+  // 1.5px, damit auch kurze Regionen bei starkem Zoom-out noch sichtbar
+  // bleiben (sonst < 1 Pixel und optisch unsichtbar).
+  if (APP.trim.clippingRegions?.length) {
+    ctx.fillStyle = 'rgba(220,40,40,0.55)';
+    for (const r of APP.trim.clippingRegions) {
+      const rx1 = _normToCanvasX(r.start / totalSamples, W);
+      const rx2 = _normToCanvasX((r.end + 1) / totalSamples, W);
+      if (rx2 < 0 || rx1 > W) continue; // außerhalb des sichtbaren Fensters
+      ctx.fillRect(rx1, 0, Math.max(1.5, rx2 - rx1), H);
+    }
+  }
+
   // Start/End markers
   const drawMarker = (x, label, side) => {
     if (x < -10 || x > W + 10) return;
@@ -1425,6 +1450,95 @@ export function drawTrimWaveform() {
   ctx.strokeRect(ovX1, 0, ovX2 - ovX1, ovH);
 }
 
+
+// ─── PEAK/RMS-METER (P2) ─────────────────────────────────────────
+// Läuft ausschließlich während einer aktiven Vorschau-Wiedergabe (siehe
+// events.js #btnTrimPreview), gespeist von einem in den Preview-Signalpfad
+// eingeschleiften AnalyserNode. Eigenständige rAF-Schleife, unabhängig vom
+// bestehenden APP.analyzer-Singleton (der ist für den FX-Spektrum-Effekt
+// während LIVE-Playback reserviert, s. startAnalyzerLoop()).
+
+let _meterRaf = null;
+let _meterPeakHoldDb = -Infinity;
+let _meterPeakHoldSetAt = 0;
+let _meterLastFrameAt = 0;
+
+/**
+ * @param {AnalyserNode} analyserNode
+ * @param {{updateRateHz?:number, peakHoldMs?:number}} [opts]
+ */
+export function startPeakRmsMeter(analyserNode, opts = {}) {
+  stopPeakRmsMeter();
+  if (!analyserNode) return;
+  const updateRateHz = Math.max(10, Math.min(60, opts.updateRateHz ?? 30));
+  const peakHoldMs    = Math.max(0, Math.min(5000, opts.peakHoldMs ?? 1500));
+  const intervalMs    = 1000 / updateRateHz;
+
+  const data = new Float32Array(analyserNode.fftSize);
+  let lastUpdate = 0;
+  _meterPeakHoldDb = -Infinity;
+  _meterPeakHoldSetAt = performance.now();
+  _meterLastFrameAt   = _meterPeakHoldSetAt;
+
+  function loop(now) {
+    _meterRaf = requestAnimationFrame(loop);
+    if (now - lastUpdate < intervalMs) return;
+    lastUpdate = now;
+
+    analyserNode.getFloatTimeDomainData(data);
+    // getPeak()/getRms() aus analysis.js erwarten ein AudioBuffer-artiges
+    // Objekt (getChannelData) — hier reicht ein minimaler Adapter um das
+    // rohe Float32Array, statt die Funktionen für diesen einen Aufrufer
+    // zu duplizieren.
+    const bufLike = { numberOfChannels: 1, getChannelData: () => data };
+    const peak = getPeak(bufLike);
+    const rms  = getRms(bufLike);
+    const peakDb = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+    const rmsDb  = rms  > 0 ? 20 * Math.log10(rms)  : -Infinity;
+
+    // Peak-Hold-Ballistik: neuer Peak übernimmt sofort; nach Ablauf von
+    // peakHoldMs klingt der gehaltene Wert langsam ab (~20dB/s, angelehnt
+    // an klassische Studio-Meter-Ballistik), statt abrupt zu springen.
+    const dtSec = Math.max(0, (now - _meterLastFrameAt) / 1000);
+    _meterLastFrameAt = now;
+    if (peakDb >= _meterPeakHoldDb) {
+      _meterPeakHoldDb = peakDb;
+      _meterPeakHoldSetAt = now;
+    } else if (now - _meterPeakHoldSetAt > peakHoldMs) {
+      _meterPeakHoldDb = Math.max(peakDb, _meterPeakHoldDb - 20 * dtSec);
+    }
+
+    _renderPeakRmsMeter(peakDb, rmsDb, _meterPeakHoldDb);
+  }
+  _meterRaf = requestAnimationFrame(loop);
+}
+
+export function stopPeakRmsMeter() {
+  if (_meterRaf) cancelAnimationFrame(_meterRaf);
+  _meterRaf = null;
+  _renderPeakRmsMeter(-Infinity, -Infinity, -Infinity);
+}
+
+function _renderPeakRmsMeter(peakDb, rmsDb, peakHoldDb) {
+  const peakBar = document.getElementById('trimMeterPeakBar');
+  const rmsBar  = document.getElementById('trimMeterRmsBar');
+  const holdEl  = document.getElementById('trimMeterPeakHold');
+  const lbl     = document.getElementById('trimMeterLbl');
+  // -60..0 dBFS linear auf 0..100% abgebildet — deckt den für Soundboard-
+  // Clips relevanten Bereich ab, ohne dass leise Passagen die ganze Zeit
+  // bei 0% "unsichtbar" wären.
+  const dbToPct = db => Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+  if (peakBar) peakBar.style.width = dbToPct(peakDb) + '%';
+  if (rmsBar)  rmsBar.style.width  = dbToPct(rmsDb)  + '%';
+  if (holdEl) {
+    if (peakHoldDb > -60) { holdEl.style.opacity = '1'; holdEl.style.left = `calc(${dbToPct(peakHoldDb)}% - 1px)`; }
+    else                  { holdEl.style.opacity = '0'; }
+  }
+  if (lbl) {
+    const fmt = db => db > -60 ? db.toFixed(1) : '–∞';
+    lbl.textContent = `Peak ${fmt(peakDb)} dB · RMS ${fmt(rmsDb)} dB`;
+  }
+}
 
 export function updateTrimDurLabel() {
   const dur = APP.trim.buf?.duration || 0;
