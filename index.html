@@ -193,6 +193,22 @@
             <input type="checkbox" id="setMultiClick" checked>
             Mehrfachklick
           </label>
+
+          <!-- P2 Auto Duck: senkt die Ambient-Ebene automatisch ab, solange
+               mindestens ein Sound-Kachel-Sound spielt (audio.js
+               notifyDuckTrigger()/notifyDuckRelease() + ambient.js
+               duckAmbient()). Hier statt im Sound-FX-Modal, da GLOBAL
+               wirksam, nicht pro Sound. -->
+          <label class="popover-check" title="Ambient-Lautstärke automatisch absenken, solange ein Sound spielt">
+            <input type="checkbox" id="setAutoDuck">
+            Auto Duck (Ambient)
+          </label>
+          <div class="u-flex u-gap-2 u-mt-1" id="autoDuckAmountRow" style="align-items:center;padding-left:24px">
+            <span class="u-text-muted u-text-badge">Stärke</span>
+            <input type="range" class="slider" id="setAutoDuckAmount" min="0" max="1" step="0.05" value="0.7"
+              style="flex:1;max-width:100px">
+            <span class="u-text-muted u-text-badge" id="setAutoDuckAmountLbl">70%</span>
+          </div>
         </div>
       </div>
 
@@ -889,6 +905,22 @@
                   </div>
                 </div>
               </div>
+              <!-- Notch (P2): schmalbandige Unterdrückung, primär gegen Netzbrummen (50/60Hz) -->
+              <div class="fx-group">
+                <div class="fx-group__head">
+                  <label class="fx-check-label"><input type="checkbox" id="fxNotchEnabled"><span>Notch
+                      (Brummfilter)</span></label>
+                  <span class="fx-value-badge" id="fxNotchFreqLbl">50 Hz</span>
+                </div>
+                <div id="fxNotchControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Freq</span><input type="range"
+                      class="slider fx-slider" id="fxNotchFreq" min="20" max="2000" step="1" value="50"><span
+                      class="fx-slider-max">2k</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Breite</span><input type="range"
+                      class="slider fx-slider" id="fxNotchQ" min="0.5" max="30" step="0.5" value="10"><span
+                      class="fx-value-badge" id="fxNotchQLbl">Q 10</span></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -929,34 +961,64 @@
                   <div class="fx-eq10-grid">
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_0" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_0">+0</span><span
-                        class="fx-eq10-freq">31</span></div>
+                        class="fx-eq10-freq">31</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_0" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_0">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_1" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_1">+0</span><span
-                        class="fx-eq10-freq">62</span></div>
+                        class="fx-eq10-freq">62</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_1" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_1">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_2" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_2">+0</span><span
-                        class="fx-eq10-freq">125</span></div>
+                        class="fx-eq10-freq">125</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_2" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_2">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_3" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_3">+0</span><span
-                        class="fx-eq10-freq">250</span></div>
+                        class="fx-eq10-freq">250</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_3" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_3">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_4" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_4">+0</span><span
-                        class="fx-eq10-freq">500</span></div>
+                        class="fx-eq10-freq">500</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_4" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_4">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_5" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_5">+0</span><span
-                        class="fx-eq10-freq">1k</span></div>
+                        class="fx-eq10-freq">1k</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_5" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_5">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_6" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_6">+0</span><span
-                        class="fx-eq10-freq">2k</span></div>
+                        class="fx-eq10-freq">2k</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_6" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_6">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_7" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_7">+0</span><span
-                        class="fx-eq10-freq">4k</span></div>
+                        class="fx-eq10-freq">4k</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_7" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_7">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_8" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_8">+0</span><span
-                        class="fx-eq10-freq">8k</span></div>
+                        class="fx-eq10-freq">8k</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_8" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_8">Q1.4</span>
+                    </div>
                     <div class="fx-eq10-col"><input type="range" class="fx-eq10-slider" id="fxEq10_9" min="-18" max="18"
                         step="1" value="0" orient="vertical"><span class="fx-eq10-lbl" id="fxEq10Lbl_9">+0</span><span
-                        class="fx-eq10-freq">16k</span></div>
+                        class="fx-eq10-freq">16k</span>
+                      <input type="range" class="fx-eq10-q-slider" id="fxEq10Q_9" min="0.3" max="10" step="0.1"
+                        value="1.4" title="Q (Bandbreite)"><span class="fx-eq10-q-lbl" id="fxEq10QLbl_9">Q1.4</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1019,7 +1081,13 @@
                       id="fxDistEnabled"><span>Distortion / Sättigung</span></label><span class="fx-value-badge"
                     id="fxDistAmountLbl">40</span></div>
                 <div id="fxDistControls" class="fx-controls">
-                  <div class="fx-slider-row"><span class="fx-slider-min">Stärke</span><input type="range"
+                  <div class="fx-slider-row"><span class="fx-slider-min">Modus</span><select
+                      class="form-select form-select-sm fx-preset-select" id="fxDistMode" style="flex:1;max-width:150px">
+                      <option value="softClip" selected>Weich (Sättigung)</option>
+                      <option value="hardClip">Hart (Clipping)</option>
+                      <option value="bitcrush">Bitcrush (Lo-Fi)</option>
+                    </select></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Stärke</span><input type="range"
                       class="slider fx-slider" id="fxDistAmount" min="0" max="100" step="1" value="40"><span
                       class="fx-slider-max">100</span></div>
                   <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Qual.</span><select
@@ -1029,6 +1097,120 @@
                       <option value="2x">2×</option>
                       <option value="4x" selected>4×</option>
                     </select></div>
+                </div>
+              </div>
+
+              <div class="fx-divider"></div>
+              <!-- Ring Modulation (P3) -->
+              <div class="fx-group">
+                <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                      id="fxRingmodEnabled"><span>Ring Modulation</span></label><span class="fx-value-badge"
+                    id="fxRingmodFrequencyLbl">440 Hz</span></div>
+                <div id="fxRingmodControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Träger</span><input type="range"
+                      class="slider fx-slider" id="fxRingmodFrequency" min="20" max="5000" step="1" value="440"><span
+                      class="fx-slider-max">5k</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Mix</span><input type="range"
+                      class="slider fx-slider" id="fxRingmodMix" min="0" max="1" step="0.01" value="1"><span
+                      class="fx-slider-max">100%</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5.5 Modulation (P2): Tremolo, Chorus, Flanger -->
+          <div class="sm-section">
+            <button class="sm-section-toggle" data-target="smFxMod">
+              <span><i class="fa-solid fa-wave-square" aria-hidden="true"></i> Modulation (Tremolo / Chorus /
+                Flanger)</span>
+              <i class="fa-solid fa-chevron-down sm-chevron" aria-hidden="true"></i>
+            </button>
+            <div class="sm-section-body" id="smFxMod" style="display:none">
+              <!-- Tremolo -->
+              <div class="fx-group u-mt-2">
+                <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                      id="fxTremoloEnabled"><span>Tremolo</span></label><span class="fx-value-badge"
+                    id="fxTremoloRateLbl">5.0 Hz</span></div>
+                <div id="fxTremoloControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Rate</span><input type="range"
+                      class="slider fx-slider" id="fxTremoloRate" min="0.1" max="20" step="0.1" value="5"><span
+                      class="fx-slider-max">20 Hz</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Tiefe</span><input type="range"
+                      class="slider fx-slider" id="fxTremoloDepth" min="0" max="1" step="0.01" value="0.5"><span
+                      class="fx-value-badge" id="fxTremoloDepthLbl">50%</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Form</span><select
+                      class="form-select form-select-sm fx-preset-select" id="fxTremoloWaveform"
+                      style="flex:1;max-width:120px">
+                      <option value="sine" selected>Sinus</option>
+                      <option value="triangle">Dreieck</option>
+                      <option value="square">Rechteck</option>
+                    </select></div>
+                </div>
+              </div>
+              <div class="fx-divider"></div>
+              <!-- Chorus -->
+              <div class="fx-group">
+                <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                      id="fxChorusEnabled"><span>Chorus</span></label><span class="fx-value-badge"
+                    id="fxChorusMixLbl">30%</span></div>
+                <div id="fxChorusControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Delay</span><input type="range"
+                      class="slider fx-slider" id="fxChorusBaseDelay" min="5" max="40" step="0.5" value="15"><span
+                      class="fx-value-badge" id="fxChorusBaseDelayLbl">15 ms</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Tiefe</span><input type="range"
+                      class="slider fx-slider" id="fxChorusDepth" min="0" max="20" step="0.5" value="8"><span
+                      class="fx-value-badge" id="fxChorusDepthLbl">8 ms</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Rate</span><input type="range"
+                      class="slider fx-slider" id="fxChorusRate" min="0.01" max="10" step="0.01" value="0.8"><span
+                      class="fx-value-badge" id="fxChorusRateLbl">0.80 Hz</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Mix</span><input type="range"
+                      class="slider fx-slider" id="fxChorusMix" min="0" max="1" step="0.01" value="0.3"><span
+                      class="fx-slider-max">100%</span></div>
+                </div>
+              </div>
+              <div class="fx-divider"></div>
+              <!-- Flanger -->
+              <div class="fx-group">
+                <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                      id="fxFlangerEnabled"><span>Flanger</span></label><span class="fx-value-badge"
+                    id="fxFlangerMixLbl">50%</span></div>
+                <div id="fxFlangerControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Delay</span><input type="range"
+                      class="slider fx-slider" id="fxFlangerBaseDelay" min="0.5" max="5" step="0.1" value="2"><span
+                      class="fx-value-badge" id="fxFlangerBaseDelayLbl">2.0 ms</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Tiefe</span><input type="range"
+                      class="slider fx-slider" id="fxFlangerDepth" min="0" max="10" step="0.1" value="1.5"><span
+                      class="fx-value-badge" id="fxFlangerDepthLbl">1.5 ms</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Rate</span><input type="range"
+                      class="slider fx-slider" id="fxFlangerRate" min="0.01" max="5" step="0.01" value="0.2"><span
+                      class="fx-value-badge" id="fxFlangerRateLbl">0.20 Hz</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Feedb.</span><input type="range"
+                      class="slider fx-slider" id="fxFlangerFeedback" min="0" max="0.95" step="0.01" value="0.5"><span
+                      class="fx-value-badge" id="fxFlangerFeedbackLbl">50%</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Mix</span><input type="range"
+                      class="slider fx-slider" id="fxFlangerMix" min="0" max="1" step="0.01" value="0.5"><span
+                      class="fx-slider-max">100%</span></div>
+                </div>
+              </div>
+              <div class="fx-divider"></div>
+              <!-- Wahwah (P3) -->
+              <div class="fx-group">
+                <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                      id="fxWahwahEnabled"><span>Wahwah</span></label><span class="fx-value-badge"
+                    id="fxWahwahRateLbl">2.0 Hz</span></div>
+                <div id="fxWahwahControls" class="fx-controls">
+                  <div class="fx-slider-row"><span class="fx-slider-min">Basis</span><input type="range"
+                      class="slider fx-slider" id="fxWahwahFrequency" min="100" max="5000" step="10" value="800"><span
+                      class="fx-value-badge" id="fxWahwahFrequencyLbl">800 Hz</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Tiefe</span><input type="range"
+                      class="slider fx-slider" id="fxWahwahDepth" min="0" max="1" step="0.01" value="0.7"><span
+                      class="fx-value-badge" id="fxWahwahDepthLbl">70%</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Rate</span><input type="range"
+                      class="slider fx-slider" id="fxWahwahRate" min="0.1" max="10" step="0.1" value="2"><span
+                      class="fx-slider-max">10 Hz</span></div>
+                  <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Reson.</span><input type="range"
+                      class="slider fx-slider" id="fxWahwahResonance" min="1" max="20" step="0.5" value="5"><span
+                      class="fx-value-badge" id="fxWahwahResonanceLbl">Q5.0</span></div>
                 </div>
               </div>
             </div>
@@ -1535,6 +1717,13 @@
                   <button class="btn btn--sm" data-editor-action="removeSilence"
                     title="Entfernt Stille am Anfang und Ende">Stille entfernen</button>
                 </span>
+                <span class="u-flex u-gap-2" style="align-items:center"
+                  title="Kürzt INTERNE Stille-Abschnitte auf eine Zieldauer, statt sie komplett zu entfernen — nutzt dieselbe Schwelle wie oben">
+                  <label class="form-label u-mb-0" for="editorTruncateSec">Interne Stille kürzen auf (s)</label>
+                  <input type="number" id="editorTruncateSec" class="form-control"
+                    style="width:64px;font-size:var(--text-caption)" value="0.3" step="0.1" min="0">
+                  <button class="btn btn--sm" data-editor-action="truncateSilence">Anwenden</button>
+                </span>
               </div>
             </div>
 
@@ -1573,12 +1762,24 @@
                   <label class="form-label u-mb-0" for="editorFadeInSec">Fade-In (s)</label>
                   <input type="number" id="editorFadeInSec" class="form-control"
                     style="width:64px;font-size:var(--text-caption)" value="0.5" step=".1" min="0">
+                  <select id="editorFadeInCurve" class="form-select form-select-sm" title="Kurvenform"
+                    style="width:auto;font-size:var(--text-caption)">
+                    <option value="linear" selected>Linear</option>
+                    <option value="exponential">Exponentiell</option>
+                    <option value="sCurve">S-Kurve</option>
+                  </select>
                   <button class="btn btn--sm" data-editor-action="fadeIn">Rendern</button>
                 </span>
                 <span class="u-flex u-gap-2" style="align-items:center">
                   <label class="form-label u-mb-0" for="editorFadeOutSec">Fade-Out (s)</label>
                   <input type="number" id="editorFadeOutSec" class="form-control"
                     style="width:64px;font-size:var(--text-caption)" value="0.5" step=".1" min="0">
+                  <select id="editorFadeOutCurve" class="form-select form-select-sm" title="Kurvenform"
+                    style="width:auto;font-size:var(--text-caption)">
+                    <option value="linear" selected>Linear</option>
+                    <option value="exponential">Exponentiell</option>
+                    <option value="sCurve">S-Kurve</option>
+                  </select>
                   <button class="btn btn--sm" data-editor-action="fadeOut">Rendern</button>
                 </span>
               </div>
@@ -1622,6 +1823,85 @@
   </div>
 
 
+  <!-- ══════════════════ TON-GENERATOR (P3) ══════════════════════════════
+       Erzeugt einen Testton oder Sweep und schreibt ihn wie eine
+       importierte Datei in den Ziel-Slot (APP.loadingSlotIdx, gesetzt vom
+       "Generieren"-Button in der Slot-Zeile, s. ui.js). Kein eigener
+       Sound-Typ — der generierte Buffer durchläuft denselben Pfad wie ein
+       Datei-Upload (saveSlotAudio() + APP.editSlots[idx]). -->
+  <div class="modal fade" id="toneGeneratorModal" tabindex="-1" aria-labelledby="toneGeneratorModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="toneGeneratorModalTitle">
+            <i class="fa-solid fa-wave-square" aria-hidden="true"></i> Testton / Sweep generieren
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="sm-field--full u-mb-2">
+            <label class="form-label" for="toneWaveform">Wellenform</label>
+            <select class="form-select" id="toneWaveform">
+              <option value="sine" selected>Sinus</option>
+              <option value="square">Rechteck</option>
+              <option value="triangle">Dreieck</option>
+              <option value="sawtooth">Sägezahn</option>
+            </select>
+          </div>
+
+          <div class="sm-field--full u-mb-2">
+            <label class="form-label">
+              <input type="checkbox" id="toneSweepMode"> Sweep (Frequenz gleitet über die Dauer)
+            </label>
+          </div>
+
+          <div class="sm-field--full u-mb-2" id="toneFixedFreqRow">
+            <label class="form-label" for="toneFrequency">Frequenz (Hz)</label>
+            <input type="number" id="toneFrequency" class="form-control" value="440" min="20" max="20000" step="1">
+          </div>
+          <div class="u-flex u-gap-2 u-mb-2" id="toneSweepFreqRow" style="display:none">
+            <div class="sm-field--half">
+              <label class="form-label" for="toneStartFreq">Start-Frequenz (Hz)</label>
+              <input type="number" id="toneStartFreq" class="form-control" value="100" min="20" max="20000" step="1">
+            </div>
+            <div class="sm-field--half">
+              <label class="form-label" for="toneEndFreq">End-Frequenz (Hz)</label>
+              <input type="number" id="toneEndFreq" class="form-control" value="10000" min="20" max="20000" step="1">
+            </div>
+          </div>
+
+          <div class="u-flex u-gap-2 u-mb-2">
+            <div class="sm-field--half">
+              <label class="form-label" for="toneDuration">Dauer (s)</label>
+              <input type="number" id="toneDuration" class="form-control" value="2" min="0.1" max="60" step="0.1">
+            </div>
+            <div class="sm-field--half">
+              <label class="form-label" for="toneAmplitude">Amplitude (dBFS)</label>
+              <input type="number" id="toneAmplitude" class="form-control" value="-12" min="-60" max="0" step="1">
+            </div>
+          </div>
+
+          <p class="u-text-muted u-text-caption u-mb-0">
+            Logarithmischer Sweep, phasenkontinuierlich (keine Klicks beim Frequenzwechsel).
+          </p>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <button class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button class="btn btn--sm btn--accent" id="btnToneGenerate">
+            <i class="fa-solid fa-wave-square" aria-hidden="true"></i> Erzeugen &amp; einsetzen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
   <!-- ═══════════════════════════ TRIM MODAL ═══════════════════════════════════ -->
   <div class="modal fade" id="trimModal" tabindex="-1" aria-labelledby="trimModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -1656,6 +1936,18 @@
             <canvas id="trimCanvas"
               style="width:100%;height:100px;border-radius:var(--radius-subtle);cursor:crosshair;display:block;border:var(--border-whisper)"
               aria-label="Wellenform — Linksklick: Start, Rechtsklick: Ende, Rad: Zoom, Mitte-Btn: Pan"></canvas>
+          </div>
+
+          <!-- P3 Statisches Spektrogramm: reine Zusatz-Visualisierung des
+               GESAMTEN Clips (nicht zoom-synchron mit der Wellenform oben),
+               standardmäßig eingeklappt (Progressive Disclosure). -->
+          <div class="u-mb-2">
+            <label class="form-label u-text-muted" style="cursor:pointer">
+              <input type="checkbox" id="trimSpectrogramToggle"> Spektrogramm anzeigen
+            </label>
+            <canvas id="trimSpectrogramCanvas"
+              style="width:100%;height:80px;border-radius:var(--radius-subtle);display:none;border:var(--border-whisper);margin-top:var(--space-1)"
+              aria-label="Spektrogramm (logarithmische Frequenzachse, 20Hz bis Nyquist)"></canvas>
           </div>
 
           <!-- P2 Peak/RMS-Meter: läuft nur während der Vorschau-Wiedergabe
@@ -1721,6 +2013,13 @@
               </label>
               <input type="number" id="trimFadeIn" class="form-control" style="width:76px;font-size:var(--text-caption)"
                 min="0" step=".05" value="0">
+              <span id="trimFadeInClampHint" class="u-text-muted u-text-badge" style="display:none"></span>
+              <select id="trimFadeInCurve" class="form-select form-select-sm" title="Kurvenform"
+                style="width:auto;font-size:var(--text-caption)">
+                <option value="linear" selected>Linear</option>
+                <option value="exponential">Exponentiell</option>
+                <option value="sCurve">S-Kurve</option>
+              </select>
             </div>
             <div class="u-flex u-gap-2" style="align-items:center">
               <label class="form-label u-nowrap u-mb-0 u-text-muted" for="trimFadeOut">
@@ -1728,6 +2027,13 @@
               </label>
               <input type="number" id="trimFadeOut" class="form-control"
                 style="width:76px;font-size:var(--text-caption)" min="0" step=".05" value="0">
+              <span id="trimFadeOutClampHint" class="u-text-muted u-text-badge" style="display:none"></span>
+              <select id="trimFadeOutCurve" class="form-select form-select-sm" title="Kurvenform"
+                style="width:auto;font-size:var(--text-caption)">
+                <option value="linear" selected>Linear</option>
+                <option value="exponential">Exponentiell</option>
+                <option value="sCurve">S-Kurve</option>
+              </select>
             </div>
           </div>
 

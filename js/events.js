@@ -6,12 +6,12 @@
 import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
-import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer } from './audio.js';
+import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
 import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
-  openTrimModal, drawTrimWaveform, updateTrimDurLabel, normaliseOrders,
+  openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
   startPeakRmsMeter, stopPeakRmsMeter,
   syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex
 } from './ui.js';
@@ -29,10 +29,12 @@ import {
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
 import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack } from './music.js';
+import { generateToneBuffer } from './generators.js';
+import { audioBufferToWavBlob } from './export.js';
 import {
   editTrimApply, editNormalize, editReverse, editFadeIn, editFadeOut,
   editGainApply, editRemoveSilence, editNoiseGate, learnNoiseProfile, editNoiseReduce,
-  editLoudnessNormalize
+  editLoudnessNormalize, editTruncateSilence
 } from './editor.js';
 
 // ─── EFFECTS UI HELPERS ──────────────────────────────────────
@@ -61,6 +63,18 @@ function readEffectsFromUI() {
       Q:         0.7
     },
     pan:  num('fxPan', 0),
+    notch: {
+      enabled:   chk('fxNotchEnabled'),
+      frequency: num('fxNotchFreq', 50),
+      Q:         num('fxNotchQ', 10)
+    },
+    wahwah: {
+      enabled:   chk('fxWahwahEnabled'),
+      frequency: num('fxWahwahFrequency', 800),
+      depth:     num('fxWahwahDepth', 0.7),
+      rate:      num('fxWahwahRate', 2),
+      resonance: num('fxWahwahResonance', 5)
+    },
     reverb: {
       enabled:  chk('fxRevEnabled'),
       amount:   num('fxRevAmount', 0.35),
@@ -98,8 +112,35 @@ function readEffectsFromUI() {
     },
     distortion: {
       enabled:   chk('fxDistEnabled'),
+      mode:      sel('fxDistMode') || 'softClip',
       amount:    num('fxDistAmount', 40),
       oversample: sel('fxDistOversample') || '4x'
+    },
+    ringmod: {
+      enabled:   chk('fxRingmodEnabled'),
+      frequency: num('fxRingmodFrequency', 440),
+      mix:       num('fxRingmodMix', 1)
+    },
+    tremolo: {
+      enabled:  chk('fxTremoloEnabled'),
+      rate:     num('fxTremoloRate', 5),
+      depth:    num('fxTremoloDepth', 0.5),
+      waveform: sel('fxTremoloWaveform') || 'sine'
+    },
+    chorus: {
+      enabled:   chk('fxChorusEnabled'),
+      baseDelay: num('fxChorusBaseDelay', 15),
+      depth:     num('fxChorusDepth', 8),
+      rate:      num('fxChorusRate', 0.8),
+      mix:       num('fxChorusMix', 0.3)
+    },
+    flanger: {
+      enabled:   chk('fxFlangerEnabled'),
+      baseDelay: num('fxFlangerBaseDelay', 2),
+      depth:     num('fxFlangerDepth', 1.5),
+      rate:      num('fxFlangerRate', 0.2),
+      feedback:  num('fxFlangerFeedback', 0.5),
+      mix:       num('fxFlangerMix', 0.5)
     },
     // Phase 3
     pitchShift: {
@@ -108,7 +149,14 @@ function readEffectsFromUI() {
     },
     eq10: {
       enabled: chk('fxEq10Enabled'),
-      bands: Array.from({ length: 10 }, (_, i) => num('fxEq10_' + i, 0))
+      // P3: neues Objekt-Format {freq, gain, Q} statt reiner Gain-Zahl —
+      // EQ10_FREQS liefert die (unveränderlichen) Standard-Mittenfrequenzen,
+      // Q ist jetzt pro Band editierbar statt fest auf 1.4.
+      bands: EQ10_FREQS.map((freq, i) => ({
+        freq,
+        gain: num('fxEq10_' + i, 0),
+        Q:    num('fxEq10Q_' + i, 1.4)
+      }))
     },
     envelope: {
       enabled: chk('fxEnvEnabled'),
@@ -169,6 +217,16 @@ function writeEffectsToUI(fx) {
   set('fxPan', fx.pan ?? 0);
   lbl('fxPanLbl', ((fx.pan ?? 0) >= 0 ? '+' : '') + (fx.pan ?? 0).toFixed(2));
 
+  chk('fxNotchEnabled', fx.notch?.enabled);
+  set('fxNotchFreq',    fx.notch?.frequency ?? 50); lbl('fxNotchFreqLbl', Math.round(fx.notch?.frequency ?? 50), ' Hz');
+  set('fxNotchQ',       fx.notch?.Q ?? 10);         lbl('fxNotchQLbl', 'Q ' + (fx.notch?.Q ?? 10));
+
+  chk('fxWahwahEnabled', fx.wahwah?.enabled);
+  set('fxWahwahFrequency', fx.wahwah?.frequency ?? 800); lbl('fxWahwahFrequencyLbl', Math.round(fx.wahwah?.frequency ?? 800), ' Hz');
+  set('fxWahwahDepth',     fx.wahwah?.depth     ?? 0.7); lbl('fxWahwahDepthLbl', Math.round((fx.wahwah?.depth ?? 0.7) * 100), '%');
+  set('fxWahwahRate',      fx.wahwah?.rate      ?? 2);   lbl('fxWahwahRateLbl', (fx.wahwah?.rate ?? 2).toFixed(1), ' Hz');
+  set('fxWahwahResonance', fx.wahwah?.resonance ?? 5);   lbl('fxWahwahResonanceLbl', 'Q' + (fx.wahwah?.resonance ?? 5).toFixed(1));
+
   chk('fxRevEnabled',  fx.reverb?.enabled);
   set('fxRevAmount',   fx.reverb?.amount   ?? 0.35);
   lbl('fxRevAmountLbl', Math.round((fx.reverb?.amount ?? 0.35) * 100), '%');
@@ -202,8 +260,31 @@ function writeEffectsToUI(fx) {
   set('fxLimThreshold', fx.limiter?.threshold ?? -1); lbl('fxLimThresholdLbl', (fx.limiter?.threshold ?? -1), ' dB');
 
   chk('fxDistEnabled', fx.distortion?.enabled);
+  set('fxDistMode',    fx.distortion?.mode ?? 'softClip');
   set('fxDistAmount',  fx.distortion?.amount ?? 40); lbl('fxDistAmountLbl', Math.round(fx.distortion?.amount ?? 40));
   set('fxDistOversample', fx.distortion?.oversample ?? '4x');
+
+  chk('fxRingmodEnabled', fx.ringmod?.enabled);
+  set('fxRingmodFrequency', fx.ringmod?.frequency ?? 440); lbl('fxRingmodFrequencyLbl', Math.round(fx.ringmod?.frequency ?? 440), ' Hz');
+  set('fxRingmodMix',       fx.ringmod?.mix       ?? 1);   
+
+  chk('fxTremoloEnabled', fx.tremolo?.enabled);
+  set('fxTremoloRate',  fx.tremolo?.rate  ?? 5);   lbl('fxTremoloRateLbl', (fx.tremolo?.rate ?? 5).toFixed(1), ' Hz');
+  set('fxTremoloDepth', fx.tremolo?.depth ?? 0.5); lbl('fxTremoloDepthLbl', Math.round((fx.tremolo?.depth ?? 0.5) * 100), '%');
+  set('fxTremoloWaveform', fx.tremolo?.waveform ?? 'sine');
+
+  chk('fxChorusEnabled', fx.chorus?.enabled);
+  set('fxChorusBaseDelay', fx.chorus?.baseDelay ?? 15); lbl('fxChorusBaseDelayLbl', (fx.chorus?.baseDelay ?? 15), ' ms');
+  set('fxChorusDepth',     fx.chorus?.depth     ?? 8);  lbl('fxChorusDepthLbl',     (fx.chorus?.depth ?? 8), ' ms');
+  set('fxChorusRate',      fx.chorus?.rate      ?? 0.8);lbl('fxChorusRateLbl',      (fx.chorus?.rate ?? 0.8).toFixed(2), ' Hz');
+  set('fxChorusMix',       fx.chorus?.mix       ?? 0.3);lbl('fxChorusMixLbl',       Math.round((fx.chorus?.mix ?? 0.3) * 100), '%');
+
+  chk('fxFlangerEnabled', fx.flanger?.enabled);
+  set('fxFlangerBaseDelay', fx.flanger?.baseDelay ?? 2);   lbl('fxFlangerBaseDelayLbl', (fx.flanger?.baseDelay ?? 2).toFixed(1), ' ms');
+  set('fxFlangerDepth',     fx.flanger?.depth     ?? 1.5); lbl('fxFlangerDepthLbl',     (fx.flanger?.depth ?? 1.5).toFixed(1), ' ms');
+  set('fxFlangerRate',      fx.flanger?.rate      ?? 0.2); lbl('fxFlangerRateLbl',      (fx.flanger?.rate ?? 0.2).toFixed(2), ' Hz');
+  set('fxFlangerFeedback',  fx.flanger?.feedback  ?? 0.5); lbl('fxFlangerFeedbackLbl',  Math.round((fx.flanger?.feedback ?? 0.5) * 100), '%');
+  set('fxFlangerMix',       fx.flanger?.mix       ?? 0.5); lbl('fxFlangerMixLbl',       Math.round((fx.flanger?.mix ?? 0.5) * 100), '%');
 
   // Phase 3
   chk('fxPitchEnabled', fx.pitchShift?.enabled);
@@ -212,9 +293,14 @@ function writeEffectsToUI(fx) {
 
   chk('fxEq10Enabled', fx.eq10?.enabled);
   const bands = fx.eq10?.bands || new Array(10).fill(0);
-  bands.forEach((v, i) => {
-    const sid = 'fxEq10_' + i; const lid = 'fxEq10Lbl_' + i;
-    set(sid, v); lbl(lid, (v >= 0 ? '+' : '') + v.toFixed(0));
+  bands.forEach((b, i) => {
+    // P3: b kann das alte Format (reine Zahl) oder das neue
+    // ({freq, gain, Q}) sein — beim Anzeigen beide unterstützen.
+    const isObj = typeof b === 'object' && b !== null;
+    const gain  = isObj ? (b.gain ?? 0) : (b ?? 0);
+    const q     = isObj && b.Q ? b.Q : 1.4;
+    set('fxEq10_' + i, gain);  lbl('fxEq10Lbl_' + i, (gain >= 0 ? '+' : '') + gain.toFixed(0));
+    set('fxEq10Q_' + i, q);    lbl('fxEq10QLbl_' + i, 'Q' + q.toFixed(1));
   });
 
   chk('fxEnvEnabled',  fx.envelope?.enabled);
@@ -254,10 +340,11 @@ function writeEffectsToUI(fx) {
 function _markActiveAccordionSections(fx) {
   if (!fx) return;
   const sections = {
-    'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.pan !== 0,
+    'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.notch?.enabled || fx.pan !== 0,
     'smFxEQ':       fx.eq?.enabled || fx.eq10?.enabled,
     'smFxDyn':      fx.compressor?.enabled || fx.limiter?.enabled,
-    'smFxDist':     fx.distortion?.enabled,
+    'smFxDist':     fx.distortion?.enabled || fx.ringmod?.enabled,
+    'smFxMod':      fx.tremolo?.enabled || fx.chorus?.enabled || fx.flanger?.enabled || fx.wahwah?.enabled,
     'smFxReverb':   fx.reverb?.enabled || fx.irReverb?.enabled,
     'smFxDelay':    fx.delay?.enabled,
     'smFxSpatial':  fx.spatial?.enabled,
@@ -279,6 +366,7 @@ function _markActiveAccordionSections(fx) {
     smFxEQ:       'EQ',
     smFxDyn:      'Dynamik',
     smFxDist:     'Distortion',
+    smFxMod:      'Modulation',
     smFxReverb:   'Reverb',
     smFxDelay:    'Delay',
     smFxSpatial:  'Spatial',
@@ -300,7 +388,7 @@ function _markActiveAccordionSections(fx) {
  */
 function _syncPlaybackSettingsIndicator() {
   const gs = APP.globalSettings;
-  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false;
+  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !isDefault);
 }
 
@@ -317,12 +405,18 @@ function updateEffectSectionVisibility() {
   const pairs = [
     ['fxLpEnabled',   'fxLpControls'],
     ['fxHpEnabled',   'fxHpControls'],
+    ['fxNotchEnabled', 'fxNotchControls'],
+    ['fxWahwahEnabled', 'fxWahwahControls'],
     ['fxRevEnabled',  'fxRevControls'],
     ['fxDelEnabled',  'fxDelControls'],
     ['fxEqEnabled',   'fxEqControls'],
     ['fxCompEnabled', 'fxCompControls'],
     ['fxLimEnabled',  'fxLimControls'],
     ['fxDistEnabled', 'fxDistControls'],
+    ['fxRingmodEnabled', 'fxRingmodControls'],
+    ['fxTremoloEnabled', 'fxTremoloControls'],
+    ['fxChorusEnabled',  'fxChorusControls'],
+    ['fxFlangerEnabled', 'fxFlangerControls'],
     // Phase 3
     ['fxPitchEnabled',    'fxPitchControls'],
     ['fxEq10Enabled',     'fxEq10Controls'],
@@ -866,6 +960,19 @@ export function registerEvents() {
   document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; _syncPlaybackSettingsIndicator(); });
+
+  // P2 Auto Duck (Ambient): globale Wiedergabe-Einstellung, siehe
+  // audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+  document.getElementById('setAutoDuck')?.addEventListener('change', e => {
+    APP.globalSettings.autoDuck.enabled = e.target.checked;
+    _syncPlaybackSettingsIndicator();
+  });
+  document.getElementById('setAutoDuckAmount')?.addEventListener('input', function() {
+    APP.globalSettings.autoDuck.amount = parseFloat(this.value);
+    const lbl = document.getElementById('setAutoDuckAmountLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
+    _syncPlaybackSettingsIndicator();
+  });
   _syncPlaybackSettingsIndicator();
 
   // Verwalten / Speichern / Undo / Redo — leben gemeinsam im
@@ -941,6 +1048,74 @@ export function registerEvents() {
     r.readAsDataURL(f);
   });
   document.getElementById('btnBulk')?.addEventListener('click', () => document.getElementById('bulkFile').click());
+
+  // P3 Tone Generator: Sweep-Modus blendet Fest-/Start-End-Frequenzfelder um.
+  document.getElementById('toneSweepMode')?.addEventListener('change', function() {
+    const fixedRow = document.getElementById('toneFixedFreqRow');
+    const sweepRow = document.getElementById('toneSweepFreqRow');
+    if (fixedRow) fixedRow.style.display = this.checked ? 'none' : '';
+    if (sweepRow) sweepRow.style.display = this.checked ? 'flex' : 'none';
+  });
+
+  document.getElementById('btnToneGenerate')?.addEventListener('click', async () => {
+    const idx = APP.loadingSlotIdx;
+    if (idx === null || idx === undefined) { toast('Kein Slot ausgewählt', 'err'); return; }
+    const isSweep = !!document.getElementById('toneSweepMode')?.checked;
+    const opts = {
+      waveform:    document.getElementById('toneWaveform')?.value || 'sine',
+      durationSec: parseFloat(document.getElementById('toneDuration')?.value) || 2,
+      amplitudeDb: parseFloat(document.getElementById('toneAmplitude')?.value),
+    };
+    if (Number.isNaN(opts.amplitudeDb)) opts.amplitudeDb = -12;
+    let name;
+    if (isSweep) {
+      opts.startFrequency = parseFloat(document.getElementById('toneStartFreq')?.value) || 100;
+      opts.endFrequency   = parseFloat(document.getElementById('toneEndFreq')?.value)   || 10000;
+      name = `Sweep ${opts.startFrequency}–${opts.endFrequency}Hz`;
+    } else {
+      opts.frequency = parseFloat(document.getElementById('toneFrequency')?.value) || 440;
+      name = `Ton ${opts.frequency}Hz`;
+    }
+
+    const btn = document.getElementById('btnToneGenerate');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    try {
+      const ctx  = actx();
+      const buf  = generateToneBuffer(ctx, opts);
+      const blob = audioBufferToWavBlob(buf);
+      const b64  = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload  = e => resolve(e.target.result.split(',')[1]);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+
+      // Gleicher Ziel-Slot-Schreibpfad wie beim Datei-Upload (#slotFile
+      // oben) — der generierte Ton wird wie eine importierte Datei
+      // behandelt, kein Sonderfall im restlichen Code nötig.
+      if (_fxEditContext.kind === 'ambient') {
+        const fileId = APP.editSlots[idx]?._fileId || uid();
+        await idbSet(audioKey(fileId, 0), b64);
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _fileId: fileId };
+      } else {
+        const stableId = APP.editId || APP._pendingSoundId || uid();
+        if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+        await saveSlotAudio(stableId, idx, b64, null);
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null };
+      }
+      APP.audioBuffers[`_ed_${idx}`] = buf;
+      renderSlotList();
+      bootstrap.Modal.getInstance(document.getElementById('toneGeneratorModal'))?.hide();
+      toast(`${name} erzeugt und eingesetzt ✓`, 'ok');
+    } catch (err) {
+      console.error('[events] Tone-Generator fehlgeschlagen:', err);
+      toast('Erzeugen fehlgeschlagen: ' + err.message, 'err');
+    } finally {
+      btn.disabled = false; btn.innerHTML = origHtml;
+    }
+  });
+
   document.getElementById('bulkFile')?.addEventListener('change', function() {
     const files = [...this.files]; if (!files.length) return;
     let pending = files.length;
@@ -1083,6 +1258,36 @@ export function registerEvents() {
     if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
   });
 
+  // Notch (P2)
+  document.getElementById('fxNotchEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxNotchFreq')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxNotchFreqLbl');
+    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
+  });
+  document.getElementById('fxNotchQ')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxNotchQLbl');
+    if (lbl) lbl.textContent = 'Q ' + this.value;
+  });
+
+  // Wahwah (P3)
+  document.getElementById('fxWahwahEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxWahwahFrequency')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxWahwahFrequencyLbl');
+    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
+  });
+  document.getElementById('fxWahwahDepth')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxWahwahDepthLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
+  });
+  document.getElementById('fxWahwahRate')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxWahwahRateLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' Hz';
+  });
+  document.getElementById('fxWahwahResonance')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxWahwahResonanceLbl');
+    if (lbl) lbl.textContent = 'Q' + parseFloat(this.value).toFixed(1);
+  });
+
   // Reverb sliders
   document.getElementById('fxRevAmount')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxRevAmountLbl');
@@ -1166,9 +1371,70 @@ export function registerEvents() {
 
   // Distortion
   document.getElementById('fxDistEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxDistMode')?.addEventListener('change', () => updateEffectSectionVisibility());
   document.getElementById('fxDistAmount')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxDistAmountLbl');
     if (lbl) lbl.textContent = Math.round(this.value);
+  });
+
+  // Ring Modulation (P3)
+  document.getElementById('fxRingmodEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxRingmodFrequency')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxRingmodFrequencyLbl');
+    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
+  });
+
+  // Tremolo (P2)
+  document.getElementById('fxTremoloEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxTremoloRate')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxTremoloRateLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' Hz';
+  });
+  document.getElementById('fxTremoloDepth')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxTremoloDepthLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
+  });
+
+  // Chorus (P2)
+  document.getElementById('fxChorusEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxChorusBaseDelay')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxChorusBaseDelayLbl');
+    if (lbl) lbl.textContent = Math.round(this.value) + ' ms';
+  });
+  document.getElementById('fxChorusDepth')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxChorusDepthLbl');
+    if (lbl) lbl.textContent = Math.round(this.value) + ' ms';
+  });
+  document.getElementById('fxChorusRate')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxChorusRateLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + ' Hz';
+  });
+  document.getElementById('fxChorusMix')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxChorusMixLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
+  });
+
+  // Flanger (P2)
+  document.getElementById('fxFlangerEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
+  document.getElementById('fxFlangerBaseDelay')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxFlangerBaseDelayLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' ms';
+  });
+  document.getElementById('fxFlangerDepth')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxFlangerDepthLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' ms';
+  });
+  document.getElementById('fxFlangerRate')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxFlangerRateLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + ' Hz';
+  });
+  document.getElementById('fxFlangerFeedback')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxFlangerFeedbackLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
+  });
+  document.getElementById('fxFlangerMix')?.addEventListener('input', function() {
+    const lbl = document.getElementById('fxFlangerMixLbl');
+    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
   });
 
   // WAV Export Button
@@ -1201,11 +1467,20 @@ export function registerEvents() {
       const lbl = document.getElementById('fxEq10Lbl_' + i);
       if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(0);
     });
+    // P3: Q-Regler pro Band
+    document.getElementById('fxEq10Q_' + i)?.addEventListener('input', function() {
+      const v = parseFloat(this.value);
+      const lbl = document.getElementById('fxEq10QLbl_' + i);
+      if (lbl) lbl.textContent = 'Q' + v.toFixed(1);
+    });
   }
   document.getElementById('btnEq10Reset')?.addEventListener('click', () => {
     for (let i = 0; i < 10; i++) {
       const sl = document.getElementById('fxEq10_' + i); if (sl) sl.value = 0;
       const lb = document.getElementById('fxEq10Lbl_' + i); if (lb) lb.textContent = '+0';
+      // P3: Q-Werte auf Standard (1.4) zurücksetzen
+      const qsl = document.getElementById('fxEq10Q_' + i); if (qsl) qsl.value = 1.4;
+      const qlb = document.getElementById('fxEq10QLbl_' + i); if (qlb) qlb.textContent = 'Q1.4';
     }
   });
 
@@ -1446,12 +1721,24 @@ export function registerEvents() {
 
   document.getElementById('trimStart')?.addEventListener('input', () => { updateTrimDurLabel(); drawTrimWaveform(); });
   document.getElementById('trimEnd')?.addEventListener('input',   () => { updateTrimDurLabel(); drawTrimWaveform(); });
+  // P3: Fade-Felder lösen ebenfalls updateTrimDurLabel() aus, damit der
+  // Clamp-Hinweis (s. ui.js) sofort auf Eingaben reagiert.
+  document.getElementById('trimFadeIn')?.addEventListener('input',  updateTrimDurLabel);
+  document.getElementById('trimFadeOut')?.addEventListener('input', updateTrimDurLabel);
   // Aufräumen beim Schließen: laufende Vorschau + Meter-Loop nicht über
   // das offene Modal hinaus weiterlaufen lassen (sonst Audio- bzw.
   // rAF-Leak, wenn der Nutzer während der Vorschau auf "Schließen" klickt).
   document.getElementById('trimModal')?.addEventListener('hidden.bs.modal', () => {
     if (APP.trim.previewSrc) { try { APP.trim.previewSrc.stop(); } catch (e) {} APP.trim.previewSrc = null; }
     stopPeakRmsMeter();
+  });
+
+  // P3 Statisches Spektrogramm
+  document.getElementById('trimSpectrogramToggle')?.addEventListener('change', function() {
+    const cv = document.getElementById('trimSpectrogramCanvas');
+    if (!cv) return;
+    cv.style.display = this.checked ? 'block' : 'none';
+    if (this.checked) drawTrimSpectrogram();
   });
 
   document.getElementById('btnTrimReset')?.addEventListener('click', () => {
@@ -1498,6 +1785,9 @@ export function registerEvents() {
     APP.editSlots[APP.trim.slotIdx].trimEnd   = Math.min(APP.trim.buf.duration, te);
     APP.editSlots[APP.trim.slotIdx].fadeIn    = fi;
     APP.editSlots[APP.trim.slotIdx].fadeOut   = fo;
+    // P3 Fade-Kurven
+    APP.editSlots[APP.trim.slotIdx].fadeInCurve  = document.getElementById('trimFadeInCurve')?.value  || 'linear';
+    APP.editSlots[APP.trim.slotIdx].fadeOutCurve = document.getElementById('trimFadeOutCurve')?.value || 'linear';
     bootstrap.Modal.getInstance(document.getElementById('trimModal')).hide();
     renderSlotList(); toast('Trim übernommen ✓', 'ok');
   });
@@ -1618,10 +1908,11 @@ export function registerEvents() {
         case 'normalize':     await editNormalize(soundId, slotIdx, num('editorNormalizeDb', 0)); break;
         case 'loudness':      await editLoudnessNormalize(soundId, slotIdx, { targetRmsDb: num('editorLoudnessDb', -18) }); break;
         case 'reverse':       await editReverse(soundId, slotIdx); break;
-        case 'fadeIn':        await editFadeIn(soundId, slotIdx, num('editorFadeInSec', 0.5)); break;
-        case 'fadeOut':       await editFadeOut(soundId, slotIdx, num('editorFadeOutSec', 0.5)); break;
+        case 'fadeIn':        await editFadeIn(soundId, slotIdx, num('editorFadeInSec', 0.5), document.getElementById('editorFadeInCurve')?.value || 'linear'); break;
+        case 'fadeOut':       await editFadeOut(soundId, slotIdx, num('editorFadeOutSec', 0.5), document.getElementById('editorFadeOutCurve')?.value || 'linear'); break;
         case 'gain':          await editGainApply(soundId, slotIdx, num('editorGainDb', 0)); break;
         case 'removeSilence': await editRemoveSilence(soundId, slotIdx, num('editorSilenceDb', -60)); break;
+        case 'truncateSilence': await editTruncateSilence(soundId, slotIdx, { thresholdDb: num('editorSilenceDb', -60), targetSilenceDurationSec: num('editorTruncateSec', 0.3) }); break;
         case 'noiseGate':     await editNoiseGate(soundId, slotIdx, num('editorNoiseGateDb', -40)); break;
         case 'learnNoise':    await learnNoiseProfile(soundId, slotIdx); break;
         case 'noiseReduce':   await editNoiseReduce(soundId, slotIdx, num('editorNoiseReduceAmount', 0.6)); break;

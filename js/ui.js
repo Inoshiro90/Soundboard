@@ -15,6 +15,8 @@ import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } fro
 import { mkPH }                            from './storage.js';
 import { toast }                           from './notifications.js';
 import { getPeak, getRms, detectClipping } from './analysis.js';
+import { clampFadeDurations } from './renderPipeline.js';
+import { fft, hannWindow } from './dsp/fft.js';
 
 // Lucide "pencil" icon (Nutzer-Vorgabe) — als Konstante, damit Profile-
 // und Ambient-Tabs (ui.js/ambient.js) exakt dasselbe Icon verwenden.
@@ -351,10 +353,16 @@ export function applyProfileSettings() {
   const so = document.getElementById('setOverlap');    if (so) so.checked = APP.globalSettings.overlap;
   const sr = document.getElementById('setStopReplay'); if (sr) sr.checked = APP.globalSettings.stopReplay;
   const sm = document.getElementById('setMultiClick'); if (sm) sm.checked = APP.globalSettings.multiClick;
+  // P2 Auto Duck
+  const ad = document.getElementById('setAutoDuck'); if (ad) ad.checked = !!APP.globalSettings.autoDuck?.enabled;
+  const adAmt = document.getElementById('setAutoDuckAmount');
+  if (adAmt) adAmt.value = APP.globalSettings.autoDuck?.amount ?? 0.7;
+  const adAmtLbl = document.getElementById('setAutoDuckAmountLbl');
+  if (adAmtLbl) adAmtLbl.textContent = Math.round((APP.globalSettings.autoDuck?.amount ?? 0.7) * 100) + '%';
   // Keep the "Wiedergabe" popover trigger's active-dot in sync whenever
   // settings are (re)applied — e.g. after import/reset, not just on toggle.
   const gs = APP.globalSettings;
-  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false;
+  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !playbackIsDefault);
 }
 
@@ -990,6 +998,9 @@ export function renderSlotList() {
       <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
         <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
       </button>
+      <button class="slot-btn slot-btn--load js-gen-btn" title="Testton/Sweep generieren" aria-label="Ton generieren">
+        <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
+      </button>
       ${sl && sl.data ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
       ${APP.editSlots.length > 1 ? `<button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>` : ''}
     `;
@@ -998,6 +1009,11 @@ export function renderSlotList() {
       APP.loadingSlotIdx = i;
       const sf = document.getElementById('slotFile');
       if (sf) { sf.value = ''; sf.click(); }
+    });
+    row.querySelector('.js-gen-btn').addEventListener('click', () => {
+      APP.loadingSlotIdx = i;
+      const modalEl = document.getElementById('toneGeneratorModal');
+      if (modalEl) new bootstrap.Modal(modalEl).show();
     });
     const rmBtn = row.querySelector('.js-rm-btn');
     if (rmBtn) rmBtn.addEventListener('click', () => { APP.editSlots.splice(i, 1); renderSlotList(); });
@@ -1101,6 +1117,16 @@ export function openTrimModal(slotIdx) {
   const buf = APP.audioBuffers[`_ed_${slotIdx}`];
   if (!buf)            { toast('Audio lädt…'); return; }
 
+  // P3 Spektrogramm: bei jedem Öffnen zurücksetzen (eingeklappt) — die
+  // vorherige Anzeige bezog sich sonst kurzzeitig noch auf den ALTEN
+  // Slot-Buffer, bis der Toggle erneut angeklickt wird. Der Cache selbst
+  // (_trimSpectrogramCache) erkennt den Buffer-Wechsel ohnehin automatisch
+  // und berechnet bei Bedarf neu (s. drawTrimSpectrogram()).
+  const specToggle = document.getElementById('trimSpectrogramToggle');
+  const specCanvas = document.getElementById('trimSpectrogramCanvas');
+  if (specToggle) specToggle.checked = false;
+  if (specCanvas) specCanvas.style.display = 'none';
+
   APP.trim.slotIdx      = slotIdx;
   APP.trim.buf          = buf;
   APP.trim.previewSrc   = null;
@@ -1128,6 +1154,8 @@ export function openTrimModal(slotIdx) {
   setVal('trimEnd',     (sl.trimEnd != null ? sl.trimEnd : dur).toFixed(3));
   setVal('trimFadeIn',  (sl.fadeIn  || 0).toFixed(2));
   setVal('trimFadeOut', (sl.fadeOut || 0).toFixed(2));
+  setVal('trimFadeInCurve',  sl.fadeInCurve  || 'linear');
+  setVal('trimFadeOutCurve', sl.fadeOutCurve || 'linear');
   setVal('trimZoom',    1);
 
   const teEl = document.getElementById('trimEnd');
@@ -1540,12 +1568,123 @@ function _renderPeakRmsMeter(peakDb, rmsDb, peakHoldDb) {
   }
 }
 
+// ─── STATISCHES SPEKTROGRAMM (P3) ────────────────────────────────
+// Reine Zusatz-Visualisierung des GESAMTEN Clips (keine Bearbeitung,
+// keine Zoom-Synchronisation mit der Wellenform — bewusst als feste
+// Übersicht gehalten, siehe Plan-Wortlaut "Übersicht des GESAMTEN
+// Clips"). Einmal pro geöffnetem Trim-Modal berechnet (bei openTrimModal),
+// NICHT bei jedem Redraw — FFT-Berechnung ist teurer als die reine
+// Min/Max-Wellenform-Darstellung.
+// Bewusste Abweichung vom Plan: kein Web Worker für Clips > 30s — analog
+// zur Rauschunterdrückung (dsp/noiseReduction.js) sind Soundboard-Clips
+// typischerweise kurz (Sekunden), ein Worker wäre hier unverhältnismäßiger
+// Mehraufwand für einen Randfall, der in der Praxis kaum vorkommt.
+
+let _trimSpectrogramCache = null; // { frames, fftSize, hopSize, sr } — zum zuletzt in APP.trim.buf geöffneten Buffer
+
+function _computeSpectrogramFrames(buf, { fftSize = 1024, hopSize = 256 } = {}) {
+  const data = buf.getChannelData(0); // Mono-Ansicht reicht für eine Übersichtsvisualisierung
+  const window = hannWindow(fftSize);
+  const half = fftSize / 2;
+  const frames = [];
+  for (let pos = 0; pos + fftSize <= data.length; pos += hopSize) {
+    const re = new Float64Array(fftSize), im = new Float64Array(fftSize);
+    for (let i = 0; i < fftSize; i++) re[i] = data[pos + i] * window[i];
+    fft(re, im);
+    const magsDb = new Float32Array(half);
+    for (let b = 0; b < half; b++) {
+      const mag = Math.hypot(re[b], im[b]) / (fftSize / 2); // grobe Normierung auf ~0..1-Bereich
+      magsDb[b] = mag > 0 ? 20 * Math.log10(mag) : -100;
+    }
+    frames.push(magsDb);
+  }
+  return { frames, fftSize, hopSize, sr: buf.sampleRate };
+}
+
+/** dB (-80..0, darunter geclampt) -> Farbe (dunkelblau→orange→gelb/weiß). */
+function _dbToSpectrogramColor(db) {
+  const t = Math.max(0, Math.min(1, (db + 80) / 80));
+  let r, g, b;
+  if (t < 0.6) {
+    const u = t / 0.6;
+    r = u * 200; g = u * 60; b = 40 - u * 20;
+  } else {
+    const u = (t - 0.6) / 0.4;
+    r = 200 + u * 55; g = 60 + u * 195; b = 20 + u * 180;
+  }
+  return [Math.round(r), Math.round(g), Math.round(b)];
+}
+
+/** Berechnet (falls nötig) und zeichnet das Spektrogramm für APP.trim.buf in #trimSpectrogramCanvas. */
+export function drawTrimSpectrogram() {
+  const canvas = document.getElementById('trimSpectrogramCanvas');
+  const buf = APP.trim.buf;
+  if (!canvas || !buf) return;
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1); // Mobile: Obergrenze 2x gegen Speicherverbrauch
+  const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+  if (cssW === 0 || cssH === 0) return;
+  const W = Math.round(cssW * dpr), H = Math.round(cssH * dpr);
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const ctx = canvas.getContext('2d');
+
+  if (!_trimSpectrogramCache || _trimSpectrogramCache._srcBuf !== buf) {
+    _trimSpectrogramCache = _computeSpectrogramFrames(buf);
+    _trimSpectrogramCache._srcBuf = buf;
+  }
+  const { frames, fftSize, sr } = _trimSpectrogramCache;
+  if (!frames.length) { ctx.clearRect(0, 0, W, H); return; }
+
+  // Direkt in Device-Pixel-Auflösung (W×H) rechnen — vermeidet ein
+  // nachträgliches Hoch-/Herunterskalieren zwischen CSS- und Geräte-
+  // Pixeln, putImageData ignoriert ohnehin jede Canvas-Transform-Matrix.
+  const imgData = ctx.createImageData(W, H);
+  const nyquist = sr / 2;
+  const minFreq = 20;
+  const numBins = fftSize / 2;
+  for (let x = 0; x < W; x++) {
+    const frameIdx = Math.min(frames.length - 1, Math.floor((x / W) * frames.length));
+    const frame = frames[frameIdx];
+    for (let y = 0; y < H; y++) {
+      const frac = 1 - y / H; // 0 (unten, minFreq) .. 1 (oben, Nyquist) — logarithmische Frequenzachse
+      const freq = minFreq * Math.pow(nyquist / minFreq, frac);
+      const bin  = Math.max(0, Math.min(numBins - 1, Math.round(freq * fftSize / sr)));
+      const [r, g, b] = _dbToSpectrogramColor(frame[bin]);
+      const idx = (y * W + x) * 4;
+      imgData.data[idx] = r; imgData.data[idx + 1] = g; imgData.data[idx + 2] = b; imgData.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
 export function updateTrimDurLabel() {
   const dur = APP.trim.buf?.duration || 0;
   const ts  = parseFloat(document.getElementById('trimStart')?.value) || 0;
   const te  = parseFloat(document.getElementById('trimEnd')?.value)   || dur;
+  const selDur = Math.max(0, te - ts);
   const el  = document.getElementById('trimDurLabel');
-  if (el) el.textContent = `Dauer: ${Math.max(0, te - ts).toFixed(2)}s`;
+  if (el) el.textContent = `Dauer: ${selDur.toFixed(2)}s`;
+
+  // P3 (Audit-Problem 13): zeigt live an, ob/wie stark die eingegebenen
+  // Fade-Dauern relativ zur AKTUELLEN (Trim-)Clip-Länge geclampt würden —
+  // ohne diese Rückmeldung könnte der Nutzer einen Wert eintragen, der
+  // beim tatsächlichen Abspielen (renderPipeline.js clampFadeDurations())
+  // stillschweigend gekürzt wird.
+  const fiRaw = parseFloat(document.getElementById('trimFadeIn')?.value)  || 0;
+  const foRaw = parseFloat(document.getElementById('trimFadeOut')?.value) || 0;
+  const { fadeIn: fiClamped, fadeOut: foClamped } = clampFadeDurations(fiRaw, foRaw, selDur);
+  const fiHint = document.getElementById('trimFadeInClampHint');
+  const foHint = document.getElementById('trimFadeOutClampHint');
+  if (fiHint) {
+    const clamped = fiClamped < fiRaw - 0.001;
+    fiHint.textContent = clamped ? `→ wirkt als ${fiClamped.toFixed(2)}s` : '';
+    fiHint.style.display = clamped ? '' : 'none';
+  }
+  if (foHint) {
+    const clamped = foClamped < foRaw - 0.001;
+    foHint.textContent = clamped ? `→ wirkt als ${foClamped.toFixed(2)}s` : '';
+    foHint.style.display = clamped ? '' : 'none';
+  }
 }
 
 // ─── MACRO STEPS RENDER ───────────────────────────────────────

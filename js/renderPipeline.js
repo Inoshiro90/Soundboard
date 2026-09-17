@@ -53,31 +53,84 @@ function _applyEnvelopeCurve(ctx, gainNode, env, dur) {
 }
 
 /**
+ * P3: Plant eine einzelne Fade-Rampe mit wählbarer Kurvenform auf einem
+ * Gain-Node. 'linear' (Standard/Bestandsverhalten), 'exponential' (Web
+ * Audio erlaubt keine exakte 0 bei exponentialRampToValueAtTime — daher
+ * minimale Untergrenze 0.0001, Unterschied liegt unterhalb der
+ * Hörschwelle) oder 'sCurve' (Sigmoid, per setValueCurveAtTime aus 50
+ * Stützstellen berechnet).
+ */
+function _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
+  if (duration <= 0) { gainNode.gain.setValueAtTime(endVal, t0); return; }
+  switch (curve) {
+    case 'exponential': {
+      const s = Math.max(startVal, 0.0001), e = Math.max(endVal, 0.0001);
+      gainNode.gain.setValueAtTime(s, t0);
+      gainNode.gain.exponentialRampToValueAtTime(e, t0 + duration);
+      break;
+    }
+    case 'sCurve': {
+      const steps = 50;
+      const arr = new Float32Array(steps);
+      for (let i = 0; i < steps; i++) {
+        const x = i / (steps - 1);
+        const sig = 1 / (1 + Math.exp(-10 * (x - 0.5))); // Sigmoid, an [0,1] normiert
+        arr[i] = startVal + (endVal - startVal) * sig;
+      }
+      gainNode.gain.setValueCurveAtTime(arr, t0, duration);
+      break;
+    }
+    case 'linear':
+    default:
+      gainNode.gain.setValueAtTime(startVal, t0);
+      gainNode.gain.linearRampToValueAtTime(endVal, t0 + duration);
+  }
+}
+
+/**
+ * BUGFIX (Audit-Problem 13): begrenzt Fade-Dauern auf sinnvolle Anteile
+ * der Clip-Länge — vorher konnte bei sehr kurzen Clips ein zu lang
+ * gewählter Fade den gesamten Clip "auffressen" bzw. beide Fades
+ * zusammen mehr als 100% der Dauer beanspruchen (Überlappung/Stille statt
+ * hörbarem Sound). Regel: je Fade max. 40% der Clip-Dauer, beide
+ * zusammen max. 90% (10% Sicherheitsmarge für einen hörbaren
+ * Vollausschlag-Moment in der Mitte). Ersetzt den bisherigen Ad-hoc-
+ * Clamp (`Math.min(fi, dur*0.5)`, ohne Berücksichtigung von fadeOut).
+ */
+export function clampFadeDurations(fadeIn, fadeOut, dur) {
+  let fi = Math.max(0, Math.min(fadeIn,  dur * 0.4));
+  let fo = Math.max(0, Math.min(fadeOut, dur * 0.4));
+  if (fi + fo > dur * 0.9) {
+    const scale = (dur * 0.9) / (fi + fo);
+    fi *= scale; fo *= scale;
+  }
+  return { fadeIn: fi, fadeOut: fo };
+}
+
+/**
  * Legacy-Fades (Sound-weites `s.fade`, Slot-`fadeIn`/`fadeOut`) auf einen
- * Gain-Node anwenden. Kurvenamplitude ebenfalls 0..1 (siehe oben).
- * Mutual-Exclusivity-Regel unverändert ggü. Bestandscode übernommen:
- * eine aktive Envelope ersetzt die Legacy-Fades vollständig (kein
- * gleichzeitiger Einsatz) — das war bereits vor dieser Pipeline so und
- * wird hier nicht produktseitig geändert, nur strukturell sauberer
- * umgesetzt (siehe _applyEnvelopeCurve-Doku).
+ * Gain-Node anwenden. Kurvenamplitude 0..1 (s. _applyEnvelopeCurve-Doku).
+ * Mutual-Exclusivity-Regel unverändert ggü. Bestandscode: eine aktive
+ * Envelope ersetzt die Legacy-Fades vollständig; `s.fade` (fixe 0.8s-
+ * Ausblendung am Ende) bleibt exklusiv ggü. slot.fadeOut, slot.fadeIn
+ * kann mit beidem koexistieren (identisch zum Verhalten vor P3).
  */
 function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
   const t0 = ctx.currentTime;
   if (s.fade && !s.loop) {
-    const fs = Math.max(0, dur - 0.8);
-    gainNode.gain.setValueAtTime(1, t0 + fs);
-    gainNode.gain.linearRampToValueAtTime(0, t0 + dur);
+    const fo = Math.min(0.8, dur * 0.4); // Audit-13-Clamping gilt auch hier
+    const fs = Math.max(0, dur - fo);
+    _scheduleFadeCurve(gainNode, 'linear', 1, 0, t0 + fs, fo);
   }
-  const fi = slot.fadeIn  || 0;
-  const fo = slot.fadeOut || 0;
+  const { fadeIn: fi, fadeOut: fo } = clampFadeDurations(slot.fadeIn || 0, slot.fadeOut || 0, dur);
+  const fiCurve = slot.fadeInCurve  || 'linear';
+  const foCurve = slot.fadeOutCurve || 'linear';
   if (fi > 0 && !s.loop) {
-    gainNode.gain.setValueAtTime(0, t0);
-    gainNode.gain.linearRampToValueAtTime(1, t0 + Math.min(fi, dur * 0.5));
+    _scheduleFadeCurve(gainNode, fiCurve, 0, 1, t0, fi);
   }
   if (fo > 0 && !s.loop && !s.fade) {
     const foStart = Math.max(t0, t0 + dur - fo);
-    gainNode.gain.setValueAtTime(1, foStart);
-    gainNode.gain.linearRampToValueAtTime(0, t0 + dur);
+    _scheduleFadeCurve(gainNode, foCurve, 1, 0, foStart, fo);
   }
 }
 

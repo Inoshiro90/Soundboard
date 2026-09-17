@@ -1935,6 +1935,40 @@ i[data-lucide] {
   white-space: nowrap;
 }
 
+/* P3: Q-Regler pro Band — kompakter horizontaler Slider unter der
+   Frequenz-Beschriftung, bewusst deutlich kleiner/unauffälliger als der
+   Gain-Hauptregler (Sekundärparameter, siehe Plan: "als Sekundärregler
+   unter jedem Gain-Slider"). */
+.fx-eq10-q-slider {
+  width: 44px;
+  height: 12px;
+  margin-top: 2px;
+  cursor: ew-resize;
+}
+.fx-eq10-q-slider::-webkit-slider-runnable-track { height: 2px; background: var(--text-muted); opacity: 0.35; border-radius: var(--radius-pill); }
+.fx-eq10-q-slider::-moz-range-track             { height: 2px; background: var(--text-muted); opacity: 0.35; border-radius: var(--radius-pill); }
+.fx-eq10-q-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 9px; height: 9px;
+  margin-top: -3.5px;
+  border-radius: var(--radius-circle);
+  background: var(--text-muted);
+  cursor: ew-resize;
+}
+.fx-eq10-q-slider::-moz-range-thumb {
+  width: 9px; height: 9px;
+  border-radius: var(--radius-circle);
+  background: var(--text-muted);
+  cursor: ew-resize;
+  border: none;
+}
+.fx-eq10-q-lbl {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1;
+}
+
 /* Envelope canvas */
 #envCanvas {
   background: var(--bg-warm);

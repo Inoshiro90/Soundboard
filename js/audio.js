@@ -161,6 +161,7 @@ export function defaultEffects() {
     lowpass:  { enabled: false, frequency: 20000, Q: 0.7 },
     highpass: { enabled: false, frequency: 20,    Q: 0.7 },
     notch:    { enabled: false, frequency: 50, Q: 10 },
+    wahwah:   { enabled: false, frequency: 800, depth: 0.7, rate: 2, resonance: 5 },
     pan: 0,
     reverb:   { enabled: false, amount: 0.35, duration: 2.2, decay: 2.0 },
     delay:    { enabled: false, time: 0.22, feedback: 0.35, wet: 0.35 },
@@ -176,6 +177,7 @@ export function defaultEffects() {
     // switch-default in _buildDistortionCurve() weiterhin auf softClip
     // zurück — kein Migrationsschritt für bestehende Presets nötig.
     distortion: { enabled: false, mode: 'softClip', amount: 40, oversample: '4x' },
+    ringmod:    { enabled: false, frequency: 440, mix: 1 },
     pitchShift: { enabled: false, semitones: 0 },
     irReverb:   { enabled: false, impulse: null, wet: 0.35 },
     envelope:   { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 },
@@ -190,16 +192,28 @@ export function defaultEffects() {
 
 // ─── NODE BUILDERS ───────────────────────────────────────────
 
-const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+export const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
+/**
+ * P3: bands[i] kann sowohl das alte Format (reine Zahl = Gain, fester
+ * Q=1.4) als auch das neue Format ({freq, gain, Q}) sein — volle
+ * Rückwärtskompatibilität mit alten Presets/gespeicherten Sounds, die
+ * noch das Flat-Array-Format nutzen (u.a. alle 17 mitgelieferten
+ * FX-Presets).
+ */
 function _buildEQ10(ctx, p) {
   const bands = p.bands || new Array(10).fill(0);
-  const nodes = EQ10_FREQS.map((freq, i) => {
+  const nodes = EQ10_FREQS.map((defaultFreq, i) => {
     const n = ctx.createBiquadFilter();
     n.type  = i === 0 ? 'lowshelf' : i === 9 ? 'highshelf' : 'peaking';
+    const b = bands[i];
+    const isObj = typeof b === 'object' && b !== null;
+    const gain = isObj ? (b.gain ?? 0) : (b ?? 0);
+    const freq = isObj && b.freq ? b.freq : defaultFreq;
+    const q    = isObj && b.Q    ? b.Q    : 1.4;
     n.frequency.value = freq;
-    if (n.type === 'peaking') n.Q.value = 1.4;
-    n.gain.value = Math.max(-18, Math.min(18, bands[i] ?? 0));
+    n.Q.value = Math.max(0.3, Math.min(10, q));
+    n.gain.value = Math.max(-18, Math.min(18, gain));
     return n;
   });
   for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
@@ -339,6 +353,56 @@ function _buildModulatedDelay(ctx, p, { withFeedback, maxDelay = 0.05 }) {
 function _buildChorus(ctx, p)  { return _buildModulatedDelay(ctx, p, { withFeedback: false, maxDelay: 0.08 }); }
 function _buildFlanger(ctx, p) { return _buildModulatedDelay(ctx, p, { withFeedback: true,  maxDelay: 0.04 }); }
 
+/**
+ * P3: Wahwah — LFO-modulierter Bandpass, klassischer "Wah"-Sweep-Klang.
+ * depthHz proportional zur Basisfrequenz skaliert (siehe Plan-Formel),
+ * damit "depth" bei jeder Basisfrequenz einen vergleichbar hörbaren
+ * Sweep-Bereich ergibt (ein fixer Hz-Wert würde bei niedrigem baseFreq
+ * unverhältnismäßig groß wirken).
+ */
+function _buildWahwah(ctx, p) {
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  const baseFreq = Math.max(100, Math.min(5000, p.frequency ?? 800));
+  const depthHz  = Math.max(0, Math.min(1, p.depth ?? 0.7)) * baseFreq * 3;
+  filter.frequency.value = baseFreq;
+  filter.Q.value = Math.max(1, Math.min(20, p.resonance ?? 5));
+
+  const lfo = ctx.createOscillator(); lfo.type = 'sine';
+  lfo.frequency.value = Math.max(0.1, Math.min(10, p.rate ?? 2));
+  const lfoGain = ctx.createGain(); lfoGain.gain.value = depthHz;
+  lfo.connect(lfoGain).connect(filter.frequency);
+  lfo.start();
+
+  return { input: filter, output: filter };
+}
+
+/**
+ * P3: Ring Modulation — Träger-Oszillator moduliert direkt den Gain
+ * des Eingangssignals (Web-Audio-Parameter-Modulation als pragmatische
+ * Näherung an echte Signal-Multiplikation, siehe Plan-Hinweis: bei
+ * Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer
+ * Multiplikation Input×Träger — technisch keine exakte Ring-Modulation
+ * wie mit einem dedizierten AudioWorklet, klanglich aber der
+ * charakteristische metallische/oktavierte Effekt).
+ */
+function _buildRingMod(ctx, p) {
+  const carrier = ctx.createOscillator();
+  carrier.type = 'sine';
+  carrier.frequency.value = Math.max(20, Math.min(5000, p.frequency ?? 440));
+  const ringGain = ctx.createGain(); ringGain.gain.value = 0; // Träger moduliert direkt den Gain
+  carrier.connect(ringGain.gain);
+  carrier.start();
+
+  const wet = ctx.createGain(); wet.gain.value = Math.max(0, Math.min(1, p.mix ?? 1));
+  const dry = ctx.createGain(); dry.gain.value = 1 - wet.gain.value;
+  const input = ctx.createGain(); const output = ctx.createGain();
+  input.connect(dry).connect(output);
+  input.connect(ringGain).connect(wet).connect(output);
+
+  return { input, output };
+}
+
 function _buildReverb(ctx, p) {
   const wet = Math.max(0, Math.min(1, p.amount ?? 0.35));
   const inp  = ctx.createGain(); const dry = ctx.createGain();
@@ -454,6 +518,7 @@ export function buildEffectChain(ctx, effects) {
     segs.push({ input: n, output: n });
   }
   if (effects.notch?.enabled)      segs.push(_buildNotch(ctx, effects.notch));
+  if (effects.wahwah?.enabled)     segs.push(_buildWahwah(ctx, effects.wahwah));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));
 
@@ -466,6 +531,7 @@ export function buildEffectChain(ctx, effects) {
     s.oversample = ['none','2x','4x'].includes(effects.distortion.oversample) ? effects.distortion.oversample : '4x';
     segs.push({ input: s, output: s });
   }
+  if (effects.ringmod?.enabled)    segs.push(_buildRingMod(ctx, effects.ringmod));
 
   // Chorus/Flanger: Modulationseffekte, bewusst vor Reverb/Delay platziert
   // (typische Effektketten-Reihenfolge: Filter → Verzerrung → Modulation →

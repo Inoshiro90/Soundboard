@@ -243,31 +243,38 @@ export async function editReverse(soundId, slotIdx) {
 }
 
 /**
- * Fade In — render linear ramp into audio file permanently.
+ * Fade In — render permanently into audio file.
+ * P3: wählbare Kurvenform (linear/exponential/sCurve) + Clamping nach
+ * Audit-Problem 13 (max. 40% der Clip-Dauer, s. renderPipeline.js
+ * _clampFadeDurations — hier dupliziert, da editor.js bewusst nicht von
+ * renderPipeline.js abhängt, um den Offline-Render-Pfad unabhängig vom
+ * Live-Graph-Aufbau zu halten).
  */
-export async function editFadeIn(soundId, slotIdx, durationSec) {
+export async function editFadeIn(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
   if (!sound) return;
   const buf = APP.audioBuffers[bk(soundId, slotIdx)];
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr = buf.sampleRate;
+  const clampedDur = Math.max(0, Math.min(durationSec, buf.duration * 0.4));
   const offCtx = new OfflineAudioContext(buf.numberOfChannels, buf.length, sr);
   const src  = offCtx.createBufferSource(); src.buffer = buf;
   const gain = offCtx.createGain();
-  gain.gain.setValueAtTime(0, 0);
-  gain.gain.linearRampToValueAtTime(1, Math.min(durationSec, buf.duration * 0.9));
+  _scheduleFadeCurve(gain, curve, 0, 1, 0, clampedDur);
   src.connect(gain); gain.connect(offCtx.destination); src.start();
   const newBuf = await offCtx.startRendering();
 
-  await persistEdit(sound, slotIdx, newBuf, `Fade-In ${durationSec.toFixed(1)}s`);
-  toast('Fade-In gerendert ✓', 'ok');
+  await persistEdit(sound, slotIdx, newBuf, `Fade-In ${clampedDur.toFixed(1)}s (${curve})`);
+  const clampNote = clampedDur < durationSec ? ` (auf ${clampedDur.toFixed(1)}s begrenzt, max. 40% der Clip-Dauer)` : '';
+  toast(`Fade-In gerendert ✓${clampNote}`, 'ok');
 }
 
 /**
- * Fade Out — render linear ramp into audio file permanently.
+ * Fade Out — render permanently into audio file.
+ * P3: wählbare Kurvenform + Clamping, s. editFadeIn().
  */
-export async function editFadeOut(soundId, slotIdx, durationSec) {
+export async function editFadeOut(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
   if (!sound) return;
   const buf = APP.audioBuffers[bk(soundId, slotIdx)];
@@ -275,18 +282,51 @@ export async function editFadeOut(soundId, slotIdx, durationSec) {
 
   const sr  = buf.sampleRate;
   const dur = buf.duration;
+  const clampedDur = Math.max(0, Math.min(durationSec, dur * 0.4));
   const offCtx = new OfflineAudioContext(buf.numberOfChannels, buf.length, sr);
   const src  = offCtx.createBufferSource(); src.buffer = buf;
   const gain = offCtx.createGain();
-  const foStart = Math.max(0, dur - durationSec);
-  gain.gain.setValueAtTime(1, 0);
-  gain.gain.setValueAtTime(1, foStart);
-  gain.gain.linearRampToValueAtTime(0, dur);
+  const foStart = Math.max(0, dur - clampedDur);
+  gain.gain.setValueAtTime(1, 0); // vor dem Fade-Beginn konstant bei voller Lautstärke
+  _scheduleFadeCurve(gain, curve, 1, 0, foStart, clampedDur);
   src.connect(gain); gain.connect(offCtx.destination); src.start();
   const newBuf = await offCtx.startRendering();
 
-  await persistEdit(sound, slotIdx, newBuf, `Fade-Out ${durationSec.toFixed(1)}s`);
-  toast('Fade-Out gerendert ✓', 'ok');
+  await persistEdit(sound, slotIdx, newBuf, `Fade-Out ${clampedDur.toFixed(1)}s (${curve})`);
+  const clampNote = clampedDur < durationSec ? ` (auf ${clampedDur.toFixed(1)}s begrenzt, max. 40% der Clip-Dauer)` : '';
+  toast(`Fade-Out gerendert ✓${clampNote}`, 'ok');
+}
+
+/**
+ * P3: identische Kurvenformen-Logik wie renderPipeline.js
+ * _scheduleFadeCurve() — bewusst dupliziert statt importiert (siehe
+ * editFadeIn()-Kommentar zur Entkopplung von editor.js/renderPipeline.js).
+ */
+function _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
+  if (duration <= 0) { gainNode.gain.setValueAtTime(endVal, t0); return; }
+  switch (curve) {
+    case 'exponential': {
+      const s = Math.max(startVal, 0.0001), e = Math.max(endVal, 0.0001);
+      gainNode.gain.setValueAtTime(s, t0);
+      gainNode.gain.exponentialRampToValueAtTime(e, t0 + duration);
+      break;
+    }
+    case 'sCurve': {
+      const steps = 50;
+      const arr = new Float32Array(steps);
+      for (let i = 0; i < steps; i++) {
+        const x = i / (steps - 1);
+        const sig = 1 / (1 + Math.exp(-10 * (x - 0.5)));
+        arr[i] = startVal + (endVal - startVal) * sig;
+      }
+      gainNode.gain.setValueCurveAtTime(arr, t0, duration);
+      break;
+    }
+    case 'linear':
+    default:
+      gainNode.gain.setValueAtTime(startVal, t0);
+      gainNode.gain.linearRampToValueAtTime(endVal, t0 + duration);
+  }
 }
 
 /**
