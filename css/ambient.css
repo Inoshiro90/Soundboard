@@ -30,7 +30,7 @@
   background: var(--bg-warm);
   border: var(--border-whisper);
   border-radius: var(--radius-pill);
-  padding: 3px;
+  /* padding: 3px; */
 }
 .mode-toggle__btn {
   display: flex;

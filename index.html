@@ -70,10 +70,12 @@
         </button>
         <button class="mode-toggle__btn" id="btnModeAmbient" title="Ambientszenen" aria-label="Ambientszenen anzeigen"
           aria-pressed="false">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path
-              d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="lucide lucide-waves-horizontal">
+            <path d="M2 12q2.5 2 5 0t5 0 5 0 5 0" />
+            <path d="M2 19q2.5 2 5 0t5 0 5 0 5 0" />
+            <path d="M2 5q2.5 2 5 0t5 0 5 0 5 0" />
           </svg>
         </button>
         <button class="mode-toggle__btn" id="btnModeMusic" title="Musikspuren" aria-label="Musikspuren anzeigen"
@@ -858,7 +860,7 @@
           <!-- 2. Filters -->
           <div class="sm-section">
             <button class="sm-section-toggle" data-target="smFxFilters">
-              <span>🎚 Filter (Lowpass / Highpass)</span>
+              <span><i class="fa-solid fa-arrows-v" aria-hidden="true"></i> Filter (Lowpass / Highpass)</span>
               <i class="fa-solid fa-chevron-down sm-chevron" aria-hidden="true"></i>
             </button>
             <div class="sm-section-body" id="smFxFilters" style="display:none">
@@ -1082,7 +1084,8 @@
                     id="fxDistAmountLbl">40</span></div>
                 <div id="fxDistControls" class="fx-controls">
                   <div class="fx-slider-row"><span class="fx-slider-min">Modus</span><select
-                      class="form-select form-select-sm fx-preset-select" id="fxDistMode" style="flex:1;max-width:150px">
+                      class="form-select form-select-sm fx-preset-select" id="fxDistMode"
+                      style="flex:1;max-width:150px">
                       <option value="softClip" selected>Weich (Sättigung)</option>
                       <option value="hardClip">Hart (Clipping)</option>
                       <option value="bitcrush">Bitcrush (Lo-Fi)</option>
@@ -1656,7 +1659,8 @@
           </div>
         </div>
         <div class="modal-footer u-flex-between">
-          <span class="u-text-muted u-text-badge">Trim/Fade-Felder oben wirken erst nach dem Speichern des Sounds.</span>
+          <span class="u-text-muted u-text-badge">Trim/Fade-Felder oben wirken erst nach dem Speichern des
+            Sounds.</span>
           <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
             <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
           </button>
@@ -1744,7 +1748,8 @@
                     style="width:70px;font-size:var(--text-caption)" value="0" step="1">
                   <button class="btn btn--sm" data-editor-action="gain">Anwenden</button>
                 </span>
-                <span class="u-flex u-gap-2" style="align-items:center" title="RMS-Lautstärke-Normalisierung (keine LUFS-Messung) mit automatischem Peak-Schutz">
+                <span class="u-flex u-gap-2" style="align-items:center"
+                  title="RMS-Lautstärke-Normalisierung (keine LUFS-Messung) mit automatischem Peak-Schutz">
                   <label class="form-label u-mb-0" for="editorLoudnessDb">Ziel-Lautstärke (RMS dBFS)</label>
                   <input type="number" id="editorLoudnessDb" class="form-control"
                     style="width:70px;font-size:var(--text-caption)" value="-18" step="1" min="-40" max="-6">
@@ -1958,11 +1963,14 @@
             <div id="trimMeterTrack"
               style="position:relative;height:10px;border-radius:var(--radius-subtle);background:var(--bg-warm);border:var(--border-whisper);overflow:hidden">
               <div id="trimMeterRmsBar"
-                style="position:absolute;inset:0;width:0%;background:var(--color-accent);opacity:0.55;transition:width 60ms linear"></div>
+                style="position:absolute;inset:0;width:0%;background:var(--color-accent);opacity:0.55;transition:width 60ms linear">
+              </div>
               <div id="trimMeterPeakBar"
-                style="position:absolute;inset:0;width:0%;background:var(--color-accent);opacity:0.9;transition:width 60ms linear"></div>
+                style="position:absolute;inset:0;width:0%;background:var(--color-accent);opacity:0.9;transition:width 60ms linear">
+              </div>
               <div id="trimMeterPeakHold"
-                style="position:absolute;top:0;bottom:0;left:0%;width:2px;background:var(--color-orange);opacity:0"></div>
+                style="position:absolute;top:0;bottom:0;left:0%;width:2px;background:var(--color-orange);opacity:0">
+              </div>
             </div>
             <p id="trimMeterLbl" class="u-text-muted u-text-caption u-mb-0 u-mt-1">Peak –∞ dB · RMS –∞ dB</p>
           </div>

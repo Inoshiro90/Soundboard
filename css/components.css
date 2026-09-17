@@ -724,6 +724,7 @@
 	color: var(--text-muted);
 	text-transform: uppercase;
 	margin-bottom: var(--space-1);
+	margin-top: var(--space-1);
 	display: block;
 }
 .form-control,
@@ -1638,6 +1639,7 @@ i[data-lucide] {
   color: var(--text-secondary);
   white-space: nowrap;
   min-width: 52px;
+  margin: var(--space-2)
 }
 
 .fx-preset-select {
@@ -1672,6 +1674,7 @@ i[data-lucide] {
   color: var(--text-primary);
   user-select: none;
   min-height: var(--h-btn);
+  margin-left: var(--space-3);
 }
 
 .fx-check-label input[type="checkbox"] {
@@ -2251,3 +2254,7 @@ i[data-lucide] {
 /* ── 3D Spatial (Phase 4) ─────── */
 #fxSpatialX, #fxSpatialY, #fxSpatialZ { accent-color: #a855f7; }
 #fxSpatialRolloff { accent-color: #e07b00; }
+
+.js-gen-btn{
+	display: none;
+}

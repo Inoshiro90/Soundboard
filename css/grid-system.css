@@ -126,6 +126,8 @@
   --w-8col:  calc(var(--grid-row-h) * 8  + var(--grid-gutter) * 7);
   --w-9col:  calc(var(--grid-row-h) * 9  + var(--grid-gutter) * 8);
   --w-10col: calc(var(--grid-row-h) * 10 + var(--grid-gutter) * 9);
+  --w-11col: calc(var(--grid-row-h) * 11 + var(--grid-gutter) * 10);
+  --w-12col: calc(var(--grid-row-h) * 12 + var(--grid-gutter) * 11);
 }
 
 /* ─── 3. MODAL-BREITEN JE DIALOG (siehe Analyse Abschnitt 5) ───

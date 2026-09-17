@@ -109,7 +109,7 @@ export function makeSoundTile(s) {
 
   const hasAudio    = (s.slots || []).some(sl => sl && sl.data);
   const hkHtml      = s.hotkey ? `<div class="tile__hotkey">${s.hotkey}</div>` : '';
-  const accentStyle = s.color && s.color !== 'none' ? `border-top: 2px solid ${s.color};` : '';
+  const accentStyle = s.color && s.color !== 'none' ? `border: 2px solid ${s.color};` : '';
 
   wrap.innerHTML = `
     <div class="tile${!hasAudio ? ' tile--no-audio' : ''}${s.loop ? ' tile--loop' : ''}"
@@ -160,7 +160,7 @@ export function makeMacroTile(m) {
   wrap.draggable  = true;
 
   const hkHtml      = m.hotkey ? `<div class="tile__hotkey">${m.hotkey}</div>` : '';
-  const accentStyle = m.color && m.color !== 'none' ? `border-top: 2px solid ${m.color};` : '';
+  const accentStyle = m.color && m.color !== 'none' ? `border: 2px solid ${m.color};` : '';
 
   wrap.innerHTML = `
     <div class="tile tile--macro"
