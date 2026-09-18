@@ -18,7 +18,7 @@ import {
   openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
   startPeakRmsMeter, stopPeakRmsMeter,
   syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex,
-  renderPresetDropdown
+  renderPresetDropdown, markTrimSaved
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
@@ -29,6 +29,7 @@ import {
   _saveRaw
 } from './storage.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey, normalizeSlotAudioStorage } from './db.js';
+import { createModalDraftGuard } from './modalGuards.js';
 import {
   renderAmbientPanel, resetAmbient, renderAmbientProfileTabs,
   switchAmbientProfile, saveAmbientProfile, deleteAmbientProfile,
@@ -611,6 +612,58 @@ function updateEffectSectionVisibility() {
 let _fxEditContext = { kind: 'sound', id: null };
 let _ambVariantMode = 'random';
 
+// ─── SOUND-EDITOR DRAFT GUARD (Unsaved-Changes-Schutz, Abschnitt 2-5) ────
+// Bewacht #soundModal zentral über EIN hide.bs.modal-Listener (s. modalGuards.js)
+// statt über separate Handler pro Schließweg (Abbruch/X/Backdrop/Escape).
+// _soundDraftBaseline hält den Stand direkt nach dem Öffnen (nach dem
+// vollständigen Befüllen aller Felder) fest; ein Abweichen davon beim
+// Schließen löst die Rückfrage aus. Wird in registerEvents() einmalig
+// instanziiert (siehe dort).
+let _soundDraftGuard    = null;
+let _soundDraftBaseline = null;
+
+// ─── AUDIO-ROLLBACK FÜR DIE EDITIERSITZUNG (Abschnitt 8) ─────────────────
+// slotFile/bulkFile/Tone-Generator schreiben neue Audiodaten bereits WÄHREND
+// der Bearbeitung direkt unter ihrem endgültigen IndexedDB-Key (saveSlotAudio()/
+// idbSet()) — nicht erst beim Speichern. Damit "Änderungen verwerfen" dadurch
+// nicht unbemerkt bereits gespeicherte Audiodaten stehen lässt, wird pro
+// Editiersitzung der jeweils ERSTE bisherige Wert jedes betroffenen Keys
+// gesichert (Map: Key -> alter Wert, oder `null` falls der Key vorher nicht
+// existierte). Mehrfaches Ändern desselben Slots in einer Sitzung überschreibt
+// diese Sicherung NICHT (Map.has-Check in _backupAudioKeyOnce). Beim
+// Verwerfen wird daraus der Vorzustand wiederhergestellt (vorhandene Werte
+// zurückgeschrieben, vorher nicht existente Keys gelöscht); beim Speichern
+// wird die Tabelle einfach verworfen, die neuen Daten bleiben.
+let _audioRollback = null;
+
+function _resetAudioRollback() {
+  _audioRollback = new Map();
+}
+
+async function _backupAudioKeyOnce(key) {
+  if (!_audioRollback || _audioRollback.has(key)) return;
+  let prev = null;
+  try { prev = await idbGet(key); } catch (e) { console.warn('[events] Rollback-Backup fehlgeschlagen für', key, e); }
+  _audioRollback.set(key, prev);
+}
+
+async function _discardAudioRollback() {
+  if (!_audioRollback) return;
+  const entries = [..._audioRollback.entries()];
+  _audioRollback = null;
+  for (const [key, prev] of entries) {
+    try {
+      if (prev == null) await idbDelete(key);
+      else               await idbSet(key, prev);
+    } catch (e) { console.warn('[events] Audio-Rollback fehlgeschlagen für', key, e); }
+  }
+}
+
+function _commitAudioRollback() {
+  // Neue Daten bleiben unangetastet — nur die Sicherungstabelle wird verworfen.
+  _audioRollback = null;
+}
+
 /**
  * Marks the macro modal's "Erweiterte Einstellungen" accordion header when
  * it holds a non-default value (Abspiel-Modus ≠ Parallel) — same idea as
@@ -646,6 +699,88 @@ function _syncAppearancePreview() {
 function _setModalContext(kind) {
   document.querySelectorAll('.sm-sound-only').forEach(el => { el.style.display = kind === 'sound' ? '' : 'none'; });
   document.querySelectorAll('.sm-ambient-only').forEach(el => { el.style.display = kind === 'ambient' ? '' : 'none'; });
+}
+
+function _readSelectedColor(containerId) {
+  const sel = document.querySelector(`#${containerId} .color-swatch.is-selected`);
+  return sel ? sel.dataset.color : 'none';
+}
+
+/**
+ * Baut einen vergleichbaren, deterministischen Schnappschuss des kompletten
+ * Sound-/Ambient-Editor-Drafts (Abschnitt 4): Stammdaten + ALLE Effektfelder
+ * aus readEffectsFromUI() + die vollständige Slot-Liste inkl. einer
+ * Audio-Revisionskennung (_tempId, s. Abschnitt 4 zu Audio-Austausch, der
+ * sich nicht am Sentinel slot.data allein erkennen lässt). Wird beim Öffnen
+ * als Baseline gespeichert und beim Schließen erneut gebildet — nur ein
+ * tatsächlicher Unterschied zwischen beiden gilt als "dirty" (Abschnitt 5):
+ * ändert der Benutzer einen Wert und stellt ihn exakt zurück, ist der
+ * Editor danach wieder als unverändert erkannt.
+ */
+function _snapshotSoundDraft() {
+  const g   = id => document.getElementById(id);
+  const val = id => g(id)?.value ?? '';
+  const chk = id => !!g(id)?.checked;
+
+  const snap = {
+    kind: _fxEditContext.kind,
+    name: val('eName'),
+    vol:  val('eVol'),
+    effects: readEffectsFromUI(),
+    slots: (APP.editSlots || []).map(sl => ({
+      tempId:       sl?._tempId ?? null,
+      hasData:      !!(sl && sl.data),
+      name:         sl?.name || '',
+      trimStart:    sl?.trimStart || 0,
+      trimEnd:      sl?.trimEnd ?? null,
+      fadeIn:       sl?.fadeIn || 0,
+      fadeOut:      sl?.fadeOut || 0,
+      fadeInCurve:  sl?.fadeInCurve  || 'linear',
+      fadeOutCurve: sl?.fadeOutCurve || 'linear'
+    }))
+  };
+
+  if (_fxEditContext.kind === 'ambient') {
+    Object.assign(snap, {
+      ambLoop:         chk('ambLoop'),
+      ambIntervalMode: chk('ambIntervalMode'),
+      ambIntervalMin:  val('ambIntervalMin'),
+      ambIntervalMax:  val('ambIntervalMax'),
+      ambFadeIn:       val('ambFadeIn'),
+      ambFadeOut:      val('ambFadeOut'),
+      variantMode:     _ambVariantMode
+    });
+  } else {
+    Object.assign(snap, {
+      loop: chk('eLoop'), fade: chk('eFade'), random: chk('eRnd'),
+      hotkey: val('eHotkey'), category: val('eCat'), icon: val('eIcon'),
+      tileW: val('eTileW'), tileH: val('eTileH'),
+      color:     _readSelectedColor('clrOpts'),
+      tileColor: _readSelectedColor('eTileClrOpts')
+    });
+  }
+  return JSON.stringify(snap);
+}
+
+/** Markiert den aktuellen Zustand als Ausgangspunkt einer neuen Editiersitzung. */
+function _armSoundDraftGuard() {
+  _soundDraftBaseline = _snapshotSoundDraft();
+  _soundDraftGuard?.arm();
+}
+
+/**
+ * Vor jedem absichtlichen, NICHT rückfragepflichtigen Schließen von
+ * #soundModal aufzurufen — erfolgreiches Speichern, Löschen des bearbeiteten
+ * Sounds (hat bereits seine eigene Bestätigung), oder ein Fehlerfall ohne
+ * änderbaren Draft (z.B. der bearbeitete Ambient-Track wurde währenddessen
+ * anderweitig gelöscht). Deaktiviert den Guard für dieses eine hide.bs.modal
+ * (Abschnitt 13) und verwirft die Audio-Rollback-Sicherung, weil die neu
+ * geschriebenen Audiodaten in diesem Fall bleiben sollen.
+ */
+function _releaseSoundDraftGuard() {
+  _soundDraftGuard?.disarm();
+  _soundDraftBaseline = null;
+  _commitAudioRollback();
 }
 
 /**
@@ -691,6 +826,9 @@ export function openSoundModal(id, placeholderId = null) {
   Object.keys(APP.audioBuffers).forEach(k => {
     if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
   });
+  // Abschnitt 8/15: frische Audio-Rollback-Sicherung für diese Editiersitzung —
+  // eine evtl. Sicherung der vorherigen Sitzung darf hier keinesfalls erben.
+  _resetAudioRollback();
 
   const s = id ? CItems().find(x => x.id === id) : null;
 
@@ -725,8 +863,8 @@ export function openSoundModal(id, placeholderId = null) {
   // verschieben (siehe normalizeSlotAudioStorage in db.js). Rein internes
   // Editor-Feld, wird vor dem Persistieren wieder entfernt.
   APP.editSlots = s
-    ? (s.slots || []).map((sl, i) => ({ ...sl, _idbSlot: isIdbRef(sl.data) ? i : null }))
-    : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }];
+    ? (s.slots || []).map((sl, i) => ({ ...sl, _idbSlot: isIdbRef(sl.data) ? i : null, _tempId: uid() }))
+    : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _tempId: uid() }];
   renderSlotList();
   _preloadEditBuffers();
   buildIconGrid('iconGrid',  s ? s.icon  : '');
@@ -743,6 +881,10 @@ export function openSoundModal(id, placeholderId = null) {
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
   }, { once: true });
 
+  // Abschnitt 4/15: Baseline für den Dirty-Vergleich erst JETZT einfrieren —
+  // alle Felder (inkl. Effekte/Slots) sind zu diesem Zeitpunkt vollständig befüllt.
+  _armSoundDraftGuard();
+
   new bootstrap.Modal(document.getElementById('soundModal')).show();
 }
 
@@ -757,6 +899,8 @@ function openAmbientEffectsModal(trackId) {
   Object.keys(APP.audioBuffers).forEach(k => {
     if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
   });
+  // Abschnitt 8/15: frische Audio-Rollback-Sicherung für diese Editiersitzung.
+  _resetAudioRollback();
 
   _setModalContext('ambient');
   document.getElementById('sMTitle').textContent = 'AMBIENT BEARBEITEN';
@@ -782,9 +926,9 @@ function openAmbientEffectsModal(trackId) {
   if (delBtn) delBtn.style.display = 'none'; // deletion is handled from the ambient row itself
 
   APP.editSlots = (t.files || []).map(f => ({
-    data: f.data, name: f.fileName || 'Datei', trimStart: f.trimStart || 0, trimEnd: f.trimEnd ?? null, _fileId: f.id
+    data: f.data, name: f.fileName || 'Datei', trimStart: f.trimStart || 0, trimEnd: f.trimEnd ?? null, _fileId: f.id, _tempId: uid()
   }));
-  if (!APP.editSlots.length) APP.editSlots = [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null }];
+  if (!APP.editSlots.length) APP.editSlots = [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null, _tempId: uid() }];
   renderSlotList();
   _preloadEditBuffers();
 
@@ -794,6 +938,9 @@ function openAmbientEffectsModal(trackId) {
     const bar = document.querySelector('#soundModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
   }, { once: true });
+
+  // Abschnitt 4/15: Baseline für den Dirty-Vergleich erst jetzt einfrieren.
+  _armSoundDraftGuard();
 
   new bootstrap.Modal(document.getElementById('soundModal')).show();
 }
@@ -984,6 +1131,20 @@ function handleHotkeyRecord(e) {
 
 export function registerEvents() {
   registerPresetEvents();
+
+  // Abschnitt 2/19: EIN zentraler Schließschutz für #soundModal über
+  // hide.bs.modal (fängt Abbruch/X/Backdrop/Escape und programmatische
+  // .hide()-Aufrufe gleichermaßen ab — s. modalGuards.js). Wird hier genau
+  // einmal instanziiert (registerEvents() läuft nur einmal beim Start,
+  // s. main.js), damit kein mehrfach registrierter Listener entsteht;
+  // openSoundModal()/openAmbientEffectsModal() rufen bei jedem Öffnen nur
+  // noch _armSoundDraftGuard() auf, um die Sitzung neu zu "scharf" zu stellen.
+  _soundDraftGuard = createModalDraftGuard({
+    modalId: 'soundModal',
+    isDirty: () => _soundDraftBaseline !== null && _snapshotSoundDraft() !== _soundDraftBaseline,
+    message: 'Es gibt ungespeicherte Änderungen. Wenn du die Dialogbox jetzt schließt, gehen diese Änderungen verloren. Dialogbox wirklich schließen?',
+    onDiscard: () => _discardAudioRollback(),
+  });
 
   // Theme toggle
   document.getElementById('btnTheme')?.addEventListener('click', () => {
@@ -1190,7 +1351,7 @@ export function registerEvents() {
 
 
   document.getElementById('btnAddSlot')?.addEventListener('click', () => {
-    APP.editSlots.push({ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null });
+    APP.editSlots.push({ data: null, name: 'Leer', trimStart: 0, trimEnd: null, _fileId: null, _tempId: uid() });
     renderSlotList();
   });
   document.getElementById('slotFile')?.addEventListener('change', function() {
@@ -1201,14 +1362,18 @@ export function registerEvents() {
       const idx = APP.loadingSlotIdx;
       if (_fxEditContext.kind === 'ambient') {
         const fileId = APP.editSlots[idx]?._fileId || uid();
+        // Abschnitt 8: vor dem Überschreiben den bisherigen Wert dieses Keys
+        // für diese Sitzung sichern (nur beim ersten Mal, s. _backupAudioKeyOnce).
+        await _backupAudioKeyOnce(audioKey(fileId, 0));
         await idbSet(audioKey(fileId, 0), b64);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
       } else {
         // Use the pre-generated stable ID so IDB key matches the eventual sound ID.
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+        await _backupAudioKeyOnce(audioKey(stableId, idx));
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idx };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() };
       }
       try {
         const bin = atob(b64); const arr = new Uint8Array(bin.length);
@@ -1272,13 +1437,15 @@ export function registerEvents() {
       // behandelt, kein Sonderfall im restlichen Code nötig.
       if (_fxEditContext.kind === 'ambient') {
         const fileId = APP.editSlots[idx]?._fileId || uid();
+        await _backupAudioKeyOnce(audioKey(fileId, 0));
         await idbSet(audioKey(fileId, 0), b64);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _fileId: fileId };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
       } else {
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+        await _backupAudioKeyOnce(audioKey(stableId, idx));
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _idbSlot: idx };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() };
       }
       APP.audioBuffers[`_ed_${idx}`] = buf;
       renderSlotList();
@@ -1326,7 +1493,7 @@ export function registerEvents() {
       // gerade importiert" für die UI.
       const emptyIdx = APP.editSlots.findIndex(sl => !sl.data);
       const slotIdx  = emptyIdx >= 0 ? emptyIdx : APP.editSlots.length;
-      const placeholder = { data: '__pending__', name: f.name, trimStart: 0, trimEnd: null, _loading: true };
+      const placeholder = { data: '__pending__', name: f.name, trimStart: 0, trimEnd: null, _loading: true, _tempId: uid() };
       if (emptyIdx >= 0) APP.editSlots[emptyIdx] = placeholder;
       else               APP.editSlots.push(placeholder);
       targets.push({ file: f, slotIdx, slotObj: placeholder });
@@ -1345,12 +1512,14 @@ export function registerEvents() {
           let idbSlot = slotIdx;
           if (_fxEditContext.kind === 'ambient') {
             const fileId = slotObj._fileId || uid();
+            await _backupAudioKeyOnce(audioKey(fileId, 0));
             await idbSet(audioKey(fileId, 0), b64);
             Object.assign(slotObj, { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId });
             delete slotObj._loading;
           } else {
             const stableId = APP.editId || APP._pendingSoundId || uid();
             if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+            await _backupAudioKeyOnce(audioKey(stableId, slotIdx));
             await saveSlotAudio(stableId, slotIdx, b64, null);
             console.debug(`[BULK] file="${f.name}" -> slot=${slotIdx} -> idbKey=${audioKey(stableId, slotIdx)}`);
             Object.assign(slotObj, { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idbSlot });
@@ -1797,7 +1966,7 @@ export function registerEvents() {
     if (_fxEditContext.kind === 'ambient') {
       const g = id => document.getElementById(id);
       const t = findAmbientTrack(_fxEditContext.id);
-      if (!t) { bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide(); return; }
+      if (!t) { _releaseSoundDraftGuard(); bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide(); return; }
 
       const name = g('eName').value.trim() || 'Ambient';
       const vol  = parseFloat(g('eVol').value);
@@ -1836,6 +2005,10 @@ export function registerEvents() {
 
       persistAmbientNow();
       renderAmbientPanel();
+      // Abschnitt 13: erfolgreich gespeichert — Guard für DIESES eine
+      // programmgesteuerte Schließen deaktivieren, sonst würde die
+      // Verwerfen-Rückfrage direkt nach dem Speichern nochmal erscheinen.
+      _releaseSoundDraftGuard();
       bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
       toast('Gespeichert ✓', 'ok');
       return;
@@ -1928,6 +2101,9 @@ export function registerEvents() {
         if (edBuf) APP.audioBuffers[bk(id, i)] = edBuf;
       });
     }
+    // Abschnitt 13: erfolgreich gespeichert — Guard für dieses programmgesteuerte
+    // Schließen deaktivieren, damit danach keine Verwerfen-Rückfrage erscheint.
+    _releaseSoundDraftGuard();
     bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
     renderGrid(); toast('Gespeichert ✓', 'ok');
   });
@@ -1938,6 +2114,10 @@ export function registerEvents() {
     stopItem(APP.editId);
     const items = CItems(); const idx = items.findIndex(x => x.id === APP.editId);
     if (idx >= 0) { const order = items[idx].order; items.splice(idx, 1, { type: 'placeholder', id: uid(), order, locked: false }); }
+    // Der ganze Sound wird gelöscht (bereits oben eigens bestätigt) — die
+    // separate Unsaved-Changes-Rückfrage beim anschließenden Schließen des
+    // Dialogs wäre hier nur verwirrend und wird deshalb unterdrückt.
+    _releaseSoundDraftGuard();
     bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
     renderGrid(); toast('Gelöscht');
   });
@@ -2053,6 +2233,10 @@ export function registerEvents() {
     // P3 Fade-Kurven
     APP.editSlots[APP.trim.slotIdx].fadeInCurve  = document.getElementById('trimFadeInCurve')?.value  || 'linear';
     APP.editSlots[APP.trim.slotIdx].fadeOutCurve = document.getElementById('trimFadeOutCurve')?.value || 'linear';
+    // Abschnitt 13 (für den Trim-Dialog): Werte wurden bewusst übernommen —
+    // Guard für dieses eine programmgesteuerte Schließen deaktivieren, damit
+    // keine Verwerfen-Rückfrage erscheint.
+    markTrimSaved();
     bootstrap.Modal.getInstance(document.getElementById('trimModal')).hide();
     renderSlotList(); toast('Trim übernommen ✓', 'ok');
   });

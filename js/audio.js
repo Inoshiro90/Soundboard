@@ -857,6 +857,11 @@ export function playItem(id, callStack = []) {
 
 export async function playSound(s, opts = {}) {
   const slots = s.slots || [];
+  // Abschnitt 11: ein Sound kann jetzt gültig ganz ohne Audioslot existieren
+  // (letzter Slot im Editor entfernt) — ohne diese Prüfung würde `% slots.length`
+  // hier zu `% 0` (NaN) führen, statt der bereits an anderer Stelle etablierten
+  // "Keine Audio-Dateien geladen"-Meldung (siehe btnPreviewSound).
+  if (!slots.length) { toast('Keine Audio-Dateien geladen', 'err'); return; }
   let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
   if (!s.random) s.curSlot = (idx + 1) % slots.length;
   return playSelectedSlot(s, idx, opts);
@@ -933,6 +938,10 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 export function playSoundAndWait(s) {
   return new Promise(async resolve => {
     const slots = s.slots || [];
+    // Wie playSound() oben: ein Sound ganz ohne Audioslot ist seit Abschnitt 11
+    // ein gültiger Zustand — hier einfach überspringen (gleiches Verhalten wie
+    // ein leerer Einzel-Slot weiter unten: resolve() ohne Wiedergabe).
+    if (!slots.length) { resolve(); return; }
     let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
     if (!s.random) s.curSlot = (idx + 1) % slots.length;
     const slot = slots[idx]; if (!slot?.data) { resolve(); return; }

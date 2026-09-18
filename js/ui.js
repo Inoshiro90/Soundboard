@@ -18,6 +18,7 @@ import { getPeak, getRms, detectClipping } from './analysis.js';
 import { clampFadeDurations } from './renderPipeline.js';
 import { fft, hannWindow } from './dsp/fft.js';
 import { getAllPresets, PRESET_CATEGORIES } from './presets.js';
+import { createModalDraftGuard } from './modalGuards.js';
 
 // Lucide "pencil" icon (Nutzer-Vorgabe) — als Konstante, damit Profile-
 // und Ambient-Tabs (ui.js/ambient.js) exakt dasselbe Icon verwenden.
@@ -1102,7 +1103,7 @@ export function renderSlotList() {
         <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
       </button>
       ${hasUsableData ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
-      ${APP.editSlots.length > 1 ? `<button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>` : ''}
+      <button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     `;
 
     row.querySelector('.js-load-btn').addEventListener('click', () => {
@@ -1117,6 +1118,16 @@ export function renderSlotList() {
     });
     const rmBtn = row.querySelector('.js-rm-btn');
     if (rmBtn) rmBtn.addEventListener('click', () => {
+      // Abschnitt 10+11: Entfernen muss IMMER bestätigt werden — auch für
+      // den letzten verbleibenden Slot, dessen Entfernen jetzt ausdrücklich
+      // erlaubt ist (ein Sound ganz ohne Audioslot ist ein gültiger
+      // Editor-Zustand). Bei Abbruch: keinerlei Mutation, Slot/Buffer/UI
+      // bleiben exakt wie zuvor.
+      const isLastSlot = APP.editSlots.length === 1;
+      const msg = isLastSlot
+        ? 'Diesen Audioslot wirklich entfernen? Danach hat der Sound keine Audiospur mehr.'
+        : 'Diesen Audioslot wirklich entfernen?';
+      if (!confirm(msg)) return;
       const prevSlots = APP.editSlots.slice();
       APP.editSlots.splice(i, 1);
       _resyncEdBuffers(prevSlots);
@@ -1217,6 +1228,48 @@ function previewSlot(i) {
 }
 
 // ─── TRIM MODAL ───────────────────────────────────────────────
+// Abschnitt 7: #trimModal führt Start/Ende/Fades zunächst nur lokal im
+// Dialog (erst btnTrimSave übernimmt sie in APP.editSlots) — bekommt daher
+// einen eigenen, kleinen Dirty-Schutz über dieselbe zentrale Guard-Utility
+// wie #soundModal (keine zweite, abweichende Implementierung).
+let _trimGuard    = null;
+let _trimBaseline = null;
+
+function _snapshotTrimDraft() {
+  const val = id => document.getElementById(id)?.value ?? '';
+  return JSON.stringify({
+    start:      val('trimStart'),
+    end:        val('trimEnd'),
+    fadeIn:     val('trimFadeIn'),
+    fadeOut:    val('trimFadeOut'),
+    fadeInCurve:  val('trimFadeInCurve'),
+    fadeOutCurve: val('trimFadeOutCurve'),
+  });
+}
+
+function _ensureTrimGuard() {
+  if (_trimGuard) return;
+  _trimGuard = createModalDraftGuard({
+    modalId: 'trimModal',
+    isDirty: () => _trimBaseline !== null && _snapshotTrimDraft() !== _trimBaseline,
+    message: 'Es gibt ungespeicherte Änderungen am Zuschnitt. Wenn du den Dialog jetzt schließt, gehen diese Änderungen verloren. Dialog wirklich schließen?',
+    // Nichts rückgängig zu machen: Start/Ende/Fades wurden noch nicht nach
+    // APP.editSlots übernommen (das passiert erst in btnTrimSave), das
+    // einfache Schließen verwirft sie also automatisch mit.
+    onDiscard: () => {},
+  });
+}
+
+/**
+ * Von events.js' btnTrimSave-Handler VOR dem programmgesteuerten `.hide()`
+ * aufzurufen — verhindert, dass das erfolgreiche Übernehmen der Trimwerte
+ * selbst nochmal die Verwerfen-Rückfrage auslöst (Abschnitt 13, hier für
+ * den Trim-Dialog).
+ */
+export function markTrimSaved() {
+  _trimGuard?.disarm();
+  _trimBaseline = null;
+}
 
 export function openTrimModal(slotIdx) {
   const sl  = APP.editSlots[slotIdx];
@@ -1271,6 +1324,10 @@ export function openTrimModal(slotIdx) {
   if (tsEl) tsEl.max = dur;
   const zoomLbl = document.getElementById('trimZoomLbl');
   if (zoomLbl) zoomLbl.textContent = '1×';
+
+  _ensureTrimGuard();
+  _trimBaseline = _snapshotTrimDraft();
+  _trimGuard.arm();
 
   updateTrimDurLabel();
   const modal = new bootstrap.Modal(document.getElementById('trimModal'));
