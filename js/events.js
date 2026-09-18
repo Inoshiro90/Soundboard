@@ -7,19 +7,26 @@ import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import {
+  getPresetById, applyPresetEffects, createUserPreset, updateUserPreset,
+  deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
+} from './presets.js';
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
 import {
   renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
   startPeakRmsMeter, stopPeakRmsMeter,
-  syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex
+  syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex,
+  renderPresetDropdown
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
   exportProfile, exportAmbientProfile, exportMusicProfile,
   exportSoundItem, exportAmbientTrack, exportMusicTrack,
-  mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT
+  exportPreset, exportUserPresets,
+  mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT,
+  _saveRaw
 } from './storage.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey } from './db.js';
 import {
@@ -390,6 +397,165 @@ function _syncPlaybackSettingsIndicator() {
   const gs = APP.globalSettings;
   const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !isDefault);
+}
+
+// ─── EIGENE AUDIO-EFFEKT-PRESETS (Kap. 7-14, 20, 25) ─────────
+// UI-Logik für Preset-Verwaltung im Audio-Effekte-Dialog. Nutzt bewusst
+// dieselben Formularsteuerelemente (readEffectsFromUI/writeEffectsToUI),
+// dieselben Toasts (toast()) und dasselbe Import/Export-Muster
+// (importData()/kind-Feld) wie der Rest der Anwendung — keine parallele
+// Infrastruktur (Kap. 28).
+
+let _fxPresetMetaMode   = 'create'; // 'create' | 'edit'
+let _fxPresetMetaEditId = null;
+
+/** Blendet Bearbeiten/Duplizieren/Löschen/Export je nach aktueller
+ *  Preset-Auswahl im Dropdown ein/aus (Kap. 8: Built-ins dürfen nicht
+ *  bearbeitet/gelöscht werden, aber dupliziert/exportiert). */
+function updateFxPresetActionButtons() {
+  const val = document.getElementById('fxPreset')?.value || '';
+  const editBtn = document.getElementById('btnFxPresetEdit');
+  const dupBtn  = document.getElementById('btnFxPresetDuplicate');
+  const delBtn  = document.getElementById('btnFxPresetDelete');
+  const expBtn  = document.getElementById('btnFxPresetExport');
+  const isUser  = !!val && isUserPreset(val);
+  if (editBtn) editBtn.style.display = isUser ? '' : 'none';
+  if (delBtn)  delBtn.style.display  = isUser ? '' : 'none';
+  if (dupBtn)  dupBtn.style.display  = val ? '' : 'none';
+  if (expBtn)  expBtn.style.display  = val ? '' : 'none';
+}
+
+function _openFxPresetMetaModal(mode, prefill) {
+  _fxPresetMetaMode   = mode;
+  _fxPresetMetaEditId = mode === 'edit' ? prefill.id : null;
+  const titleEl = document.getElementById('fxPresetMetaModalTitle');
+  if (titleEl) titleEl.textContent = mode === 'edit' ? 'Preset bearbeiten' : 'Preset speichern';
+  const nameEl = document.getElementById('fxPresetNameInput');
+  const catEl  = document.getElementById('fxPresetCategoryInput');
+  const descEl = document.getElementById('fxPresetDescInput');
+  if (nameEl) nameEl.value = prefill?.name || '';
+  if (catEl)  catEl.value  = prefill?.category && PRESET_CATEGORIES[prefill.category] ? prefill.category : 'supernatural';
+  if (descEl) descEl.value = prefill?.description || '';
+  new bootstrap.Modal(document.getElementById('fxPresetMetaModal')).show();
+  setTimeout(() => nameEl?.focus(), 200);
+}
+
+/** Liest die aktuell im Formular eingestellten Effektwerte als reines
+ *  Preset-Effekte-Objekt (ohne die Sound-Laufzeitfelder enabled/preset). */
+function _currentEffectsForPreset() {
+  const fx = readEffectsFromUI();
+  const { enabled, preset, ...effects } = fx;
+  return effects;
+}
+
+/**
+ * Registriert alle Event-Handler rund um eigene Presets. Wird von
+ * registerEvents() aufgerufen.
+ */
+function registerPresetEvents() {
+  renderPresetDropdown();
+  updateFxPresetActionButtons();
+
+  document.getElementById('fxPreset')?.addEventListener('change', updateFxPresetActionButtons);
+  document.getElementById('btnOpenFxModal')?.addEventListener('click', updateFxPresetActionButtons);
+
+  // "Als eigenes Preset speichern" — übernimmt die aktuell im Formular
+  // eingestellten Effektwerte (Kap. 7: vorhandenes Preset auswählen →
+  // verändern → als eigenes Preset speichern funktioniert dadurch von
+  // selbst, ohne eigene Zwischenschritte).
+  document.getElementById('btnFxPresetSaveAs')?.addEventListener('click', () => {
+    const curVal = document.getElementById('fxPreset')?.value;
+    const cur    = curVal ? getPresetById(curVal) : null;
+    _openFxPresetMetaModal('create', cur ? { name: cur.name + ' (Kopie)', category: cur.category, description: cur.description } : null);
+  });
+
+  // Bearbeiten: nur für eigene Presets sichtbar (siehe updateFxPresetActionButtons).
+  // Übernimmt beim Speichern sowohl die Metadaten als auch die aktuell im
+  // Formular stehenden Effektwerte unter derselben ID (Kap. 11: voller
+  // Preset-Zustand wird beim Öffnen bereits über das Dropdown/writeEffectsToUI
+  // vollständig wiederhergestellt, siehe fxPreset change-Handler oben).
+  document.getElementById('btnFxPresetEdit')?.addEventListener('click', () => {
+    const val = document.getElementById('fxPreset')?.value;
+    if (!val || !isUserPreset(val)) return;
+    const p = getPresetById(val);
+    _openFxPresetMetaModal('edit', p);
+  });
+
+  document.getElementById('btnFxPresetMetaSave')?.addEventListener('click', () => {
+    const name        = document.getElementById('fxPresetNameInput')?.value || '';
+    const category     = document.getElementById('fxPresetCategoryInput')?.value || 'supernatural';
+    const description   = document.getElementById('fxPresetDescInput')?.value || '';
+    const effects        = _currentEffectsForPreset();
+    let result;
+    if (_fxPresetMetaMode === 'edit' && _fxPresetMetaEditId) {
+      result = updateUserPreset(_fxPresetMetaEditId, { name, category, description, effects });
+    } else {
+      result = createUserPreset({ name, category, description, effects });
+    }
+    if (!result) { toast('Preset konnte nicht gespeichert werden', 'err'); return; }
+    _saveRaw();
+    renderPresetDropdown();
+    const sel = document.getElementById('fxPreset');
+    if (sel) sel.value = result.id;
+    updateFxPresetActionButtons();
+    bootstrap.Modal.getInstance(document.getElementById('fxPresetMetaModal'))?.hide();
+    toast(_fxPresetMetaMode === 'edit' ? 'Preset geändert ✓' : 'Preset gespeichert ✓', 'ok');
+  });
+
+  // Duplizieren: sofort, ohne Zwischendialog (Kap. 20) — funktioniert
+  // sowohl für Built-ins als auch für eigene Presets; das Original bleibt
+  // in jedem Fall unverändert (duplicatePreset() erzeugt immer ein neues
+  // User-Preset).
+  document.getElementById('btnFxPresetDuplicate')?.addEventListener('click', () => {
+    const val = document.getElementById('fxPreset')?.value;
+    if (!val) return;
+    const dup = duplicatePreset(val);
+    if (!dup) { toast('Preset konnte nicht dupliziert werden', 'err'); return; }
+    _saveRaw();
+    renderPresetDropdown();
+    const sel = document.getElementById('fxPreset');
+    if (sel) sel.value = dup.id;
+    sel?.dispatchEvent(new Event('change'));
+    toast('Preset dupliziert ✓', 'ok');
+  });
+
+  document.getElementById('btnFxPresetDelete')?.addEventListener('click', () => {
+    const val = document.getElementById('fxPreset')?.value;
+    if (!val || !isUserPreset(val)) return;
+    const p = getPresetById(val);
+    if (!confirm(`Eigenes Preset "${p?.name || val}" wirklich löschen?`)) return;
+    deleteUserPreset(val);
+    _saveRaw();
+    renderPresetDropdown();
+    const sel = document.getElementById('fxPreset');
+    if (sel) { sel.value = ''; sel.dispatchEvent(new Event('change')); }
+    toast('Preset gelöscht', 'ok');
+  });
+
+  document.getElementById('btnFxPresetExport')?.addEventListener('click', () => {
+    const val = document.getElementById('fxPreset')?.value;
+    if (!val) return;
+    exportPreset(val);
+  });
+
+  document.getElementById('btnFxPresetExportAll')?.addEventListener('click', () => {
+    exportUserPresets();
+  });
+
+  document.getElementById('btnFxPresetImportTrigger')?.addEventListener('click', () => {
+    document.getElementById('fxPresetImportInput')?.click();
+  });
+  document.getElementById('fxPresetImportInput')?.addEventListener('change', function() {
+    const f = this.files[0]; if (!f) return;
+    importData(f, {
+      onSuccess: () => {
+        renderPresetDropdown();
+        updateFxPresetActionButtons();
+        toast('Preset(s) importiert ✓', 'ok');
+      }
+    });
+    this.value = '';
+  });
 }
 
 /**
@@ -809,6 +975,8 @@ function handleHotkeyRecord(e) {
 // ─── REGISTER ALL LISTENERS ───────────────────────────────────
 
 export function registerEvents() {
+  registerPresetEvents();
+
   // Theme toggle
   document.getElementById('btnTheme')?.addEventListener('click', () => {
     const html    = document.documentElement;
@@ -1213,30 +1381,32 @@ export function registerEvents() {
   document.getElementById('clrOpts')?.addEventListener('click', _syncAppearancePreview);
 
   // Preset dropdown
+  // BUGFIX (Kap. 6): die alte Merge-Logik hier übertrug beim Anwenden eines
+  // Presets nur einen fest codierten Teil der Effektfelder (lowpass/
+  // highpass/pan/reverb/delay/eq/compressor/limiter/distortion) — obwohl
+  // die Preset-Objekte selbst (EFFECT_PRESETS in audio.js) bereits u.a.
+  // pitchShift/irReverb/envelope/spatial/noiseGate mitliefern UND die
+  // Audio-Engine zusätzlich notch/wahwah/chorus/flanger/tremolo/ringmod
+  // beherrscht. Diese Felder wurden beim Anwenden eines Presets bisher
+  // stillschweigend ignoriert. applyPresetEffects() (presets.js) ist
+  // generisch über ALLE von der Engine unterstützten Effektmodule und
+  // behebt das — außerdem einheitlich für Built-in- UND User-Presets
+  // nutzbar (Kap. 17: keine Preset-spezifischen Sonderfälle mehr nötig).
   document.getElementById('fxPreset')?.addEventListener('change', function() {
     const val = this.value;
     if (!val) {
       // "Kein Preset" gewählt — Effekte auf Standardwerte zurücksetzen
       writeEffectsToUI(defaultEffects());
+      updateFxPresetActionButtons();
       return;
     }
-    const preset = EFFECT_PRESETS[val];
-    if (!preset) return;
-    const def = defaultEffects();
-    const merged = {
-      enabled:    true,
-      preset:     val,
-      lowpass:    { ...def.lowpass,    ...preset.lowpass },
-      highpass:   { ...def.highpass,   ...preset.highpass },
-      pan:        preset.pan ?? 0,
-      reverb:     { ...def.reverb,     ...preset.reverb },
-      delay:      { ...def.delay,      ...preset.delay },
-      eq:         { ...def.eq,         ...(preset.eq         || {}) },
-      compressor: { ...def.compressor, ...(preset.compressor || {}) },
-      limiter:    { ...def.limiter,    ...(preset.limiter    || {}) },
-      distortion: { ...def.distortion, ...(preset.distortion || {}) }
-    };
+    const preset = getPresetById(val);
+    if (!preset) { updateFxPresetActionButtons(); return; }
+    const merged = applyPresetEffects(preset.effects);
+    merged.enabled = true;
+    merged.preset  = val;
     writeEffectsToUI(merged);
+    updateFxPresetActionButtons();
   });
 
   // Lowpass slider

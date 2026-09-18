@@ -72,7 +72,12 @@ export const APP = {
     shuffle:         false,
     crossfade:       2,     // Sekunden, 0 = harter Wechsel
     autoplay:        true   // automatischer Wechsel zum nächsten Track bei Ende
-  }
+  },
+  // Benutzerdefinierte Audio-Effekt-Presets (siehe js/presets.js). Getrennt
+  // von den eingebauten Presets (audio.js EFFECT_PRESETS), damit Built-ins
+  // nie versehentlich überschrieben/gelöscht werden können. Jeder Eintrag:
+  // { id, name, category, description, effects, version, createdAt, updatedAt }.
+  userPresets: []
 };
 
 export function CAP()      { return APP.ambient.profiles.find(p => p.id === APP.ambient.activeProfileId) || APP.ambient.profiles[0]; }

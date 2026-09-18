@@ -830,31 +830,42 @@
             <label class="fx-label" for="fxPreset">Preset</label>
             <select class="form-select form-select-sm fx-preset-select" id="fxPreset">
               <option value="">— Kein Preset —</option>
-              <optgroup label="Phase 1">
-                <option value="cave">🏔️ Höhle</option>
-                <option value="behind_wall">🧱 Hinter Wand</option>
-                <option value="tunnel">🚇 Tunnel</option>
-                <option value="bathroom">🚿 Badezimmer</option>
-                <option value="metal_room">🔩 Metallraum</option>
-                <option value="phone">📞 Telefon</option>
-                <option value="underwater">🌊 Unterwasser</option>
-              </optgroup>
-              <optgroup label="Phase 2">
-                <option value="radio">📻 Radio</option>
-                <option value="lofi">🎞️ Lo-Fi</option>
-                <option value="megaphone">📣 Megafon</option>
-                <option value="monster">👹 Monster</option>
-                <option value="dark_cave">🕳️ Dunkle Höhle</option>
-                <option value="huge_hall">🏛️ Riesiger Saal</option>
-                <option value="vintage_tape">📼 Vintage Tape</option>
-                <option value="tight_room">📦 Kleiner Raum</option>
-                <option value="dreamy_echo">✨ Traumhaftes Echo</option>
-                <option value="broken_speaker">💥 Kaputte Box</option>
-              </optgroup>
+              <!-- Built-in- und eigene Presets werden dynamisch von
+                   renderPresetDropdown() (js/ui.js) eingefügt, gruppiert
+                   nach akustischer Kategorie statt Entwicklungsphase. -->
             </select>
             <button class="btn btn--sm btn--ghost" id="btnFxReset" title="Alle Effekte zurücksetzen">
               <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
             </button>
+          </div>
+
+          <!-- Eigene Presets: erstellen/bearbeiten/duplizieren/löschen/
+               exportieren/importieren. Wiederverwendet vorhandene Buttons/
+               Icons/Toasts statt eines neuen UI-Systems (Kap. 10, 28). -->
+          <div class="u-flex u-gap-2 u-wrap" id="fxPresetActions" style="padding:2px 0 10px;align-items:center">
+            <button class="btn btn--sm" id="btnFxPresetSaveAs" title="Aktuelle Effekteinstellungen als eigenes Preset speichern">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Als Preset speichern
+            </button>
+            <button class="btn btn--sm" id="btnFxPresetEdit" title="Eigenes Preset bearbeiten" style="display:none">
+              <i class="fa-solid fa-pen" aria-hidden="true"></i> Bearbeiten
+            </button>
+            <button class="btn btn--sm" id="btnFxPresetDuplicate" title="Preset duplizieren" style="display:none">
+              <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplizieren
+            </button>
+            <button class="btn btn--sm btn--danger" id="btnFxPresetDelete" title="Eigenes Preset löschen" style="display:none">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+            </button>
+            <span style="flex:1"></span>
+            <button class="btn btn--sm" id="btnFxPresetExport" title="Ausgewähltes Preset als JSON exportieren" style="display:none">
+              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
+            </button>
+            <button class="btn btn--sm" id="btnFxPresetExportAll" title="Alle eigenen Presets als eine JSON-Datei exportieren">
+              <i class="fa-solid fa-file-zipper" aria-hidden="true"></i> Alle exportieren
+            </button>
+            <button class="btn btn--sm" id="btnFxPresetImportTrigger" title="Preset(s) aus JSON-Datei importieren">
+              <i class="fa-solid fa-file-import" aria-hidden="true"></i> Import
+            </button>
+            <input type="file" id="fxPresetImportInput" accept="application/json,.json" style="display:none">
           </div>
 
           <!-- 2. Filters -->
@@ -1426,6 +1437,58 @@
             <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ AUDIO-EFFEKT-PRESET: SPEICHERN / BEARBEITEN ═══════════════════════
+       Wiederverwendet dasselbe Klein-Modal-Muster wie z.B. #profModal
+       (Kap. 10). Effektwerte selbst werden NICHT hier editiert — dafür
+       dient bereits das komplette #soundFxModal-Formular; dieses Modal
+       fragt nur Name/Kategorie/Beschreibung ab und übernimmt beim
+       Speichern die aktuell im Formular stehenden Effektwerte
+       (siehe events.js btnFxPresetMetaSave). -->
+  <div class="modal fade" id="fxPresetMetaModal" tabindex="-1" aria-labelledby="fxPresetMetaModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="fxPresetMetaModalTitle">Preset speichern</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+
+        <div class="modal-body">
+          <label class="form-label" for="fxPresetNameInput">Name</label>
+          <input class="form-control" id="fxPresetNameInput" placeholder="z.B. Kristallhöhle" maxlength="60">
+
+          <label class="form-label u-mt-3" for="fxPresetCategoryInput">Kategorie</label>
+          <select class="form-select form-select-sm" id="fxPresetCategoryInput">
+            <option value="room">🏛️ Akustische Räume &amp; Dimensionen</option>
+            <option value="barrier">🧱 Physische Abschirmung &amp; Dämpfung</option>
+            <option value="transmission">📡 Technische Signalübertragung &amp; Lo-Fi</option>
+            <option value="somatic">🫁 Somatische &amp; Psychologische Zustände</option>
+            <option value="supernatural">🔮 Übernatürliche &amp; Magische Phänomene</option>
+            <option value="creature">🐾 Kreaturen-Morphs</option>
+          </select>
+
+          <label class="form-label u-mt-3" for="fxPresetDescInput">Beschreibung (optional)</label>
+          <textarea class="form-control" id="fxPresetDescInput" rows="2" maxlength="300"
+            placeholder="Kurze Beschreibung des akustischen Effekts"></textarea>
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <span class="u-text-muted u-text-badge">Übernimmt die aktuell eingestellten Effektwerte.</span>
+          <div class="u-flex u-gap-2">
+            <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
+            <button class="btn btn--accent" id="btnFxPresetMetaSave">Speichern</button>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>

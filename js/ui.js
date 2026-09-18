@@ -17,6 +17,7 @@ import { toast }                           from './notifications.js';
 import { getPeak, getRms, detectClipping } from './analysis.js';
 import { clampFadeDurations } from './renderPipeline.js';
 import { fft, hannWindow } from './dsp/fft.js';
+import { getAllPresets, PRESET_CATEGORIES } from './presets.js';
 
 // Lucide "pencil" icon (Nutzer-Vorgabe) — als Konstante, damit Profile-
 // und Ambient-Tabs (ui.js/ambient.js) exakt dasselbe Icon verwenden.
@@ -315,6 +316,70 @@ export function updateStatus() {
   // wenn tatsächlich Tracks in der aktiven Playlist vorhanden sind.
   if (scnt) scnt.textContent = `${sounds} S · ${macros} M` + (music > 0 ? ` · ${music} Musik` : '');
   if (sdot) sdot.classList.toggle('is-active', n > 0);
+}
+
+// ─── AUDIO-EFFEKT-PRESET-DROPDOWN ─────────────────────────────
+// Ersetzt die früher statisch in index.html hinterlegten <optgroup>-Blöcke
+// ("Phase 1"/"Phase 2", technisch nach Entwicklungsphase gruppiert). Baut
+// die Optionsliste jetzt dynamisch nach akustischer Kategorie (Kap. 9) auf
+// und hängt eine eigene Gruppe für benutzerdefinierte Presets an — dadurch
+// erscheinen neu erstellte/importierte User-Presets sofort im Dropdown,
+// ohne dass HTML angefasst werden muss (Kap. 17: generisch, keine
+// Sonderfälle je Preset-ID).
+export function renderPresetDropdown() {
+  const sel = document.getElementById('fxPreset');
+  if (!sel) return;
+  const prevValue = sel.value;
+
+  // WICHTIG: sel.options ist eine FLACHE Liste aller <option>-Elemente,
+  // auch derer innerhalb von <optgroup>s. sel.remove(1) entfernt daher nur
+  // das <option> selbst — die dadurch leer werdende <optgroup> bleibt als
+  // leere Hülle im DOM zurück. Bei jedem Re-Render (nach Preset erstellen/
+  // duplizieren/bearbeiten/löschen/importieren) sammelten sich so pro
+  // Kategorie immer mehr leere <optgroup>-Einträge an. Stattdessen direkt
+  // alle Kind-Elemente außer der ersten Option ("— Kein Preset —") aus dem
+  // <select> entfernen — das räumt auch verwaiste <optgroup>s zuverlässig weg.
+  while (sel.lastElementChild && sel.lastElementChild !== sel.firstElementChild) {
+    sel.removeChild(sel.lastElementChild);
+  }
+
+  const all = getAllPresets();
+  const builtins = all.filter(p => p.builtin);
+  const users    = all.filter(p => !p.builtin);
+
+  const categoryOrder = Object.keys(PRESET_CATEGORIES).sort(
+    (a, b) => (PRESET_CATEGORIES[a].order || 0) - (PRESET_CATEGORIES[b].order || 0)
+  );
+
+  categoryOrder.forEach(catKey => {
+    const inCat = builtins.filter(p => p.category === catKey);
+    if (!inCat.length) return;
+    const group = document.createElement('optgroup');
+    group.label = `${PRESET_CATEGORIES[catKey].icon} ${PRESET_CATEGORIES[catKey].label}`;
+    inCat.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id; opt.textContent = p.name;
+      if (p.description) opt.title = p.description;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  });
+
+  if (users.length) {
+    const group = document.createElement('optgroup');
+    group.label = '⭐ Eigene Presets';
+    users.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id; opt.textContent = p.name;
+      if (p.description) opt.title = p.description;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  }
+
+  // Auswahl beibehalten, falls das Preset noch existiert (z.B. nach dem
+  // Bearbeiten eines eigenen Presets); sonst zurück auf "Kein Preset".
+  sel.value = [...sel.options].some(o => o.value === prevValue) ? prevValue : '';
 }
 
 // ─── CATEGORIES ───────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { getOrDecodeBuffer } from './audioCache.js';
 import { openDB, idbSet, idbGet, idbDelete, migrateAudioToIdb, audioKey,
          IDB_SENTINEL, isIdbRef, isBase64Data } from './db.js';
 import { hasAudioContext, actx } from './audio.js';
+import { getPresetById, validatePresetShape, importSinglePresetData, importPresetCollectionData, migratePresetCategories } from './presets.js';
 
 // ─── EFFECTS MIGRATION ───────────────────────────────────────
 
@@ -331,6 +332,9 @@ export function _saveRaw() {
         autoplay:        APP.music.autoplay
       },
       viewMode:        APP.viewMode,
+      // Eigene Audio-Effekt-Presets (js/presets.js) — reine Metadaten +
+      // Effektparameter, kein Audio, daher unproblematisch für localStorage.
+      userPresets:     APP.userPresets || [],
       _idbMigrated:    true
     }));
   } catch(e) { console.error('[storage] save error:', e); }
@@ -355,6 +359,13 @@ export async function load() {
     APP.ambient          = _normalizeAmbient(d.ambient);
     APP.music            = _normalizeMusic(d.music);
     APP.viewMode         = ['sound', 'ambient', 'music'].includes(d.viewMode) ? d.viewMode : 'sound';
+    // Rückwärtskompatibel: ältere gespeicherte Zustände haben kein
+    // userPresets-Feld — Default leeres Array (Kap. 15/16).
+    APP.userPresets      = Array.isArray(d.userPresets) ? d.userPresets : [];
+    // Kap. 16: Kategorie-Schema kann sich zwischen Versionen ändern
+    // (z.B. altes 3er- auf neues 6er-Schema) — vorhandene User-Presets
+    // migrieren, statt sie unsichtbar werden zu lassen.
+    if (migratePresetCategories()) _saveRaw();
     if (!APP.profiles.length) {
       initDefaults();
     } else {
@@ -579,6 +590,28 @@ export async function exportAmbientTrack(trackId) {
   toast('Ambient-Sound exportiert ✓', 'ok');
 }
 
+// ─── AUDIO-EFFEKT-PRESETS EXPORTIEREN (Kap. 12, 14) ───────────
+// Gleiches Muster wie die übrigen Einzel-Exporte oben: kind + version +
+// _downloadJson(). Einzelpreset ('fx_preset') und Preset-Sammlung
+// ('fx_preset_collection') sind bewusst zwei unterschiedliche, jeweils
+// klar versionierte kinds (Kap. 14) statt eines vermischten Formats.
+
+export async function exportPreset(presetId) {
+  const p = getPresetById(presetId);
+  if (!p) { toast('Preset nicht gefunden', 'err'); return; }
+  const data = { id: p.id, name: p.name, category: p.category, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) };
+  _downloadJson({ kind: 'fx_preset', version: 1, preset: data }, `preset_${_slug(p.name)}.json`);
+  toast('Preset exportiert ✓', 'ok');
+}
+
+export async function exportUserPresets() {
+  const list = APP.userPresets || [];
+  if (!list.length) { toast('Keine eigenen Presets vorhanden', 'err'); return; }
+  const presets = list.map(p => ({ id: p.id, name: p.name, category: p.category, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) }));
+  _downloadJson({ kind: 'fx_preset_collection', version: 1, presets }, 'presets_sammlung.json');
+  toast(`${list.length} Preset(s) exportiert ✓`, 'ok');
+}
+
 export async function exportMusicTrack(trackId) {
   let track = null;
   for (const p of APP.music.profiles) {
@@ -756,6 +789,19 @@ export async function importData(file, { onSuccess }) {
           case 'sound_item':         await _importSoundItemBundle(d.item); break;
           case 'ambient_track':      await _importAmbientTrackBundle(d.track); break;
           case 'music_track':        await _importMusicTrackBundle(d.track); break;
+          case 'fx_preset': {
+            // Kap. 13: fehlende Pflichtfelder (kein effects-Objekt) -> Import
+            // abbrechen und verständlich melden, statt fehlerhaft zu importieren.
+            if (!validatePresetShape(d.preset)) { toast('Ungültiges Preset: Pflichtfelder fehlen', 'err'); return; }
+            importSinglePresetData(d.preset);
+            break;
+          }
+          case 'fx_preset_collection': {
+            if (!Array.isArray(d.presets) || !d.presets.length) { toast('Keine gültigen Presets in der Datei gefunden', 'err'); return; }
+            const imported = importPresetCollectionData(d.presets);
+            if (!imported.length) { toast('Keine gültigen Presets in der Datei gefunden', 'err'); return; }
+            break;
+          }
           default: toast('Unbekannter Import-Typ', 'err'); return;
         }
         await runIdbMigrationIfNeeded();
@@ -772,6 +818,13 @@ export async function importData(file, { onSuccess }) {
       // muss weiterhin problemlos importierbar sein — _normalizeMusic()
       // liefert dafür eine valide Default-Struktur.
       APP.music            = _normalizeMusic(d.music);
+      // Kap. 16 Rückwärtskompatibilität: alte Vollexporte kennen noch kein
+      // userPresets-Feld — bestehende eigene Presets bleiben dabei erhalten
+      // (nicht überschreiben, falls die importierte Datei welche enthält;
+      // sonst unverändert lassen statt zu leeren).
+      if (Array.isArray(d.userPresets)) APP.userPresets = d.userPresets;
+      else if (!Array.isArray(APP.userPresets)) APP.userPresets = [];
+      migratePresetCategories();
       migrateEffects();
       await runIdbMigrationIfNeeded();
       onSuccess();
