@@ -1806,168 +1806,265 @@ i[data-lucide] {
    PHASE 3: 10-Band EQ / Envelope / Analyzer / IR-Reverb
    ────────────────────────────────────────────────────────── */
 
-/* 10-Band EQ Grid */
-.fx-eq10-grid {
-  display: flex;
-  gap: 4px;
-  align-items: flex-end;
-  height: 88px;
-  padding: 4px 0 2px;
-  /* Die vergrößerte Slider-Hit-Area (Kap. 20) kann auf sehr schmalen
-     Viewports die Summe aller 10 Bänder breiter als der Container
-     machen — dann lieber horizontal scrollen statt Overflow/Clipping. */
-  overflow-x: auto;
+/* ──────────────────────────────────────────────────────────
+   10-Band EQ — vollständig überarbeitete Regler-Architektur
+   ──────────────────────────────────────────────────────────
+   Analyse der bisherigen Lösung (drei konkrete Ursachen der auf
+   Mobile gemeldeten Probleme, s. Screenshots):
+
+   1. Der Thumb wurde relativ zum Track über eine berechnete NEGATIVE
+      MARGIN zentriert (abhängig von zwei sich ändernden Variablen:
+      --eq10-thick und der festen 60px-Länge). Jede Abweichung
+      zwischen der tatsächlichen und der angenommenen Thumb-Dicke
+      ließ den Thumb sichtbar gegenüber dem Track versetzt wirken.
+      NEU: der <input> sitzt in einem position:relative-Wrapper und
+      wird darin per position:absolute + translate(-50%,-50%) +
+      rotate(-90deg) zentriert — geometrisch exakt, unabhängig von
+      Thumb-/Trackgröße, ganz ohne Margin-Rechnung.
+
+   2. Die gesamte Komponente (Gain-Wert + Regler + Frequenz + Q-Regler
+      + Q-Wert) war in eine feste height:88px gepresst — daraus kam
+      der "gequetschte" Eindruck, nicht aus der Reglergröße an sich.
+      NEU: die Höhe ergibt sich aus dem Inhalt (Flex-Spalte + gap),
+      mit spürbar mehr Luft.
+
+   3. Der Q-Regler hatte -webkit-appearance:none nur auf seinem
+      ::-webkit-slider-thumb, nicht auf dem <input> selbst — auf
+      Chrome/Android reicht das nicht aus, um die native Slider-Skin
+      (gefüllter Track + große "Pille" als Thumb) zu unterdrücken;
+      genau dieser native Thumb ist auf den mitgelieferten Screenshots
+      sichtbar (deutlich größer als der eigentlich konfigurierte
+      9×9px-Thumb). NEU: -webkit-appearance/appearance:none sitzt auf
+      JEDEM <input> selbst, nicht nur auf dem Thumb-Pseudoelement.
+
+   Der native Track bleibt weiterhin transparent (Styling von
+   ::-webkit-slider-runnable-track/::-moz-range-track auf einem
+   rotierten Input ist über Geräte hinweg nachweislich unzuverlässig,
+   s. Projekt-Historie) — die sichtbare Linie kommt von einem eigenen,
+   vom nativen Track unabhängigen Element mit derselben Länge wie der
+   Wrapper (eine einzige Quelle der Wahrheit statt eines zweiten,
+   separat gepflegten Fixmaßes).
+
+   Die reale Touch-/Pointer-Fläche kommt vom ROTIERTEN <input> selbst
+   (dessen gerenderte, gedrehte Fläche unabhängig von der sichtbaren
+   Trackbreite ist) — nicht vom sichtbaren Thumb. Dadurch bleibt der
+   Thumb kompakt, während die tatsächliche Bedienfläche die
+   WCAG-2.5.8-Zielgröße (≥24×24px) komfortabel erfüllt. */
+
+:root {
+  --eq10-track-len: 104px; /* Länge/Höhe des Gain-Reglers */
+  --eq10-col-min-w: 40px;  /* Mindestbreite je Band — über der WCAG-Zielgröße */
+  --eq10-thumb: 15px;
+  --eq10-track-w: 4px;
+  --eq10-hit-thick: 30px;  /* reale Trefferdicke des rotierten Gain-Inputs */
 }
 
-.fx-eq10-col {
+.fx-eq10-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0 var(--space-2);
+  /* Kap. 10: reicht die Breite für 10 Bänder mit ausreichender
+     Bedienfläche nicht aus, wird kontrolliert horizontal gescrollt,
+     statt die Bänder unter die WCAG-Zielgröße zu stauchen. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.eq10-band {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
-  gap: 2px;
-  position: relative;
+  flex: 1 1 0;
+  min-width: var(--eq10-col-min-w);
+  gap: var(--space-1);
 }
 
-/* BUGFIX: ::-webkit-slider-runnable-track/::-moz-range-track auf einem
-   um 90° gedrehten <input> zu stylen ist über Browser/Geräte hinweg
-   unzuverlässig (der Track blieb auf manchen Geräten unsichtbar,
-   obwohl der Thumb korrekt gerendert wurde). Robustere Lösung: die
-   sichtbare Linie wird unabhängig vom nativen Track als eigenes
-   Element gezeichnet (dieses ::before auf dem Spalten-Wrapper),
-   exakt über die reservierte 60px-Höhe des Sliders zentriert. Der
-   native Track bleibt komplett transparent (siehe unten) — nur der
-   Thumb kommt noch vom <input> selbst. */
-.fx-eq10-col::before {
+.eq10-band__gain-value {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  /* s. --eq10-value-color in base.css: WCAG-AA-konformer Blauton statt
+     --color-accent direkt (Kontrastbegründung dort). */
+  color: var(--eq10-value-color);
+  line-height: 1;
+}
+
+.eq10-gain-wrap {
+  position: relative;
+  width: 100%;
+  height: var(--eq10-track-len);
+  display: flex;
+}
+
+/* Sichtbarer Track — bewusst schlank, dieselbe Länge wie der Wrapper.
+   var(--text-secondary) statt var(--text-muted): Letzteres erreicht
+   selbst bei voller Deckkraft nur ~2.4:1 (Light) bzw. ~2.9:1 (Dark)
+   gegen --bg-warm — unter dem WCAG-1.4.11-Richtwert von 3:1 für
+   UI-Komponenten. --text-secondary @ 70% Deckkraft erreicht
+   rechnerisch ~3.1:1 (Light) bzw. ~3.4:1 (Dark). */
+.eq10-gain-wrap::before {
   content: '';
   position: absolute;
   top: 0;
   left: 50%;
-  width: 4px;
-  height: 60px;
+  width: var(--eq10-track-w);
+  height: 100%;
   transform: translateX(-50%);
-  /* var(--border-color) ist im Darkmode nur rgba(255,255,255,0.09) —
-     auf einer 4px-Linie praktisch unsichtbar. var(--text-muted) bietet
-     ausreichend Kontrast in beiden Themes. */
-  background: var(--text-muted);
-  opacity: 0.35;
+  background: var(--text-secondary);
+  opacity: 0.7;
   border-radius: var(--radius-pill);
   pointer-events: none;
-  z-index: 0;
 }
 
-/* Spez. Kap. 20: 10-Band-EQ sind Sonderfälle — die optische
-   Darstellung bleibt ein schmaler ~18px-Slider, aber die reale
-   Interaktionsbreite (Hit Area) muss mindestens 1/2 Rasterspalte
-   betragen.
+/* 0-dB-Mittelmarkierung: voll deckender Querstrich exakt in der Mitte
+   des Tracks (~6:1 Kontrast in beiden Themes), damit der neutrale
+   Punkt eindeutig auffindbar bleibt, ohne den Regler zu überladen. */
+.eq10-gain-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 11px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+  background: var(--text-secondary);
+  pointer-events: none;
+}
 
-   BUGFIX: Die vorherige Lösung nutzte das veraltete, nicht-
-   standardisierte -webkit-appearance:slider-vertical zusammen mit
-   einer vergrößerten Elementbreite. Auf Chrome/Android hat das dazu
-   geführt, dass der native, doppellinige Slider-Rahmen durchschlug
-   und der eigene (blaue) Thumb sichtbar daneben/asymmetrisch saß —
-   sichtbar als "nach rechts verschobener" Regler. Einheitliche,
-   robustere Lösung für ALLE Browser: ein normaler horizontaler
-   Slider (dieselbe erprobte Track-/Thumb-Technik wie .slider) wird
-   per transform:rotate(-90deg) gedreht. Die Margin-Kompensation
-   gleicht die Differenz zwischen der (unrotierten) Layout-Box und
-   der sichtbaren, gedrehten Erscheinung aus. */
-.fx-eq10-slider {
-  --eq10-thick: max(18px, calc(var(--grid-row-h) * 0.5));
+.eq10-band__gain {
   -webkit-appearance: none;
   appearance: none;
-  transform: rotate(-90deg);
-  width: 60px;
-  height: var(--eq10-thick);
-  margin: calc((60px - var(--eq10-thick)) / 2) calc((60px - var(--eq10-thick)) / -2);
-  flex-shrink: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--eq10-track-len);
+  height: var(--eq10-hit-thick);
+  transform: translate(-50%, -50%) rotate(-90deg);
+  margin: 0;
   background: transparent;
   outline: none;
   cursor: ns-resize;
-  position: relative;
-  z-index: 1;
+  /* Kap. 11: vertikales Ziehen des Reglers darf den horizontal
+     scrollbaren .fx-eq10-grid-Container nicht mitscrollen lassen. */
+  touch-action: none;
 }
-.fx-eq10-slider::-webkit-slider-runnable-track {
-  height: 4px;
+.eq10-band__gain::-webkit-slider-runnable-track {
+  height: var(--eq10-hit-thick);
   background: transparent;
 }
-.fx-eq10-slider::-moz-range-track {
-  height: 4px;
+.eq10-band__gain::-moz-range-track {
+  height: var(--eq10-hit-thick);
   background: transparent;
 }
-.fx-eq10-slider::-webkit-slider-thumb {
+.eq10-band__gain::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px; /* (4px Track - 14px Thumb) / 2 — zentriert den Thumb auf dem Track */
+  width: var(--eq10-thumb);
+  height: var(--eq10-thumb);
+  margin-top: calc((var(--eq10-hit-thick) - var(--eq10-thumb)) / 2);
   border-radius: var(--radius-circle);
   background: var(--color-accent);
-  cursor: ns-resize;
   border: 2px solid var(--bg-surface);
   box-shadow: var(--shadow-card);
+  cursor: ns-resize;
 }
-.fx-eq10-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+.eq10-band__gain::-moz-range-thumb {
+  width: var(--eq10-thumb);
+  height: var(--eq10-thumb);
   border-radius: var(--radius-circle);
   background: var(--color-accent);
-  cursor: ns-resize;
   border: 2px solid var(--bg-surface);
   box-shadow: var(--shadow-card);
+  cursor: ns-resize;
 }
-.fx-eq10-slider:focus-visible::-webkit-slider-thumb {
-  box-shadow: var(--shadow-focus);
-}
-.fx-eq10-slider:focus-visible::-moz-range-thumb {
-  box-shadow: var(--shadow-focus);
-}
-
-.fx-eq10-lbl {
-  font-size: 0.6rem;
-  font-family: var(--font-mono);
-  color: var(--color-accent);
-  text-align: center;
-  min-width: 18px;
-  line-height: 1;
+.eq10-band__gain:focus-visible::-webkit-slider-thumb { box-shadow: var(--shadow-focus); }
+.eq10-band__gain:focus-visible::-moz-range-thumb     { box-shadow: var(--shadow-focus); }
+@media (prefers-reduced-motion: no-preference) {
+  .eq10-band__gain::-webkit-slider-thumb { transition: box-shadow var(--dur-fast) var(--ease); }
+  .eq10-band__gain::-moz-range-thumb     { transition: box-shadow var(--dur-fast) var(--ease); }
 }
 
-.fx-eq10-freq {
-  font-size: 0.58rem;
-  color: var(--text-muted);
+.eq10-band__freq {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
   text-align: center;
   line-height: 1;
   white-space: nowrap;
 }
 
-/* P3: Q-Regler pro Band — kompakter horizontaler Slider unter der
-   Frequenz-Beschriftung, bewusst deutlich kleiner/unauffälliger als der
-   Gain-Hauptregler (Sekundärparameter, siehe Plan: "als Sekundärregler
-   unter jedem Gain-Slider"). */
-.fx-eq10-q-slider {
-  width: 44px;
-  height: 12px;
-  margin-top: 2px;
-  cursor: ew-resize;
+.eq10-band__divider {
+  width: 55%;
+  height: 1px;
+  background: var(--border-color);
+  margin: 2px 0 1px;
 }
-.fx-eq10-q-slider::-webkit-slider-runnable-track { height: 2px; background: var(--text-muted); opacity: 0.35; border-radius: var(--radius-pill); }
-.fx-eq10-q-slider::-moz-range-track             { height: 2px; background: var(--text-muted); opacity: 0.35; border-radius: var(--radius-pill); }
-.fx-eq10-q-slider::-webkit-slider-thumb {
+
+/* Q-Regler — bewusst sekundär: schmalerer Track, kleinerer Thumb und
+   gedämpftere Farbe (var(--text-secondary) statt --color-accent) als
+   der Gain-Regler, aber mit derselben WCAG-Mindesthöhe (24px) als
+   reale Hit-Area. */
+.eq10-q-wrap {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+.eq10-band__q {
   -webkit-appearance: none;
-  width: 9px; height: 9px;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  outline: none;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.eq10-band__q::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--text-secondary);
+  opacity: 0.55;
+  border-radius: var(--radius-pill);
+}
+.eq10-band__q::-moz-range-track {
+  height: 3px;
+  background: var(--text-secondary);
+  opacity: 0.55;
+  border-radius: var(--radius-pill);
+}
+.eq10-band__q::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
   margin-top: -3.5px;
   border-radius: var(--radius-circle);
-  background: var(--text-muted);
+  background: var(--text-secondary);
   cursor: ew-resize;
 }
-.fx-eq10-q-slider::-moz-range-thumb {
-  width: 9px; height: 9px;
+.eq10-band__q::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
   border-radius: var(--radius-circle);
-  background: var(--text-muted);
-  cursor: ew-resize;
+  background: var(--text-secondary);
   border: none;
+  cursor: ew-resize;
 }
-.fx-eq10-q-lbl {
-  font-size: 0.55rem;
-  color: var(--text-muted);
+.eq10-band__q:focus-visible::-webkit-slider-thumb { box-shadow: var(--shadow-focus); }
+.eq10-band__q:focus-visible::-moz-range-thumb     { box-shadow: var(--shadow-focus); }
+@media (prefers-reduced-motion: no-preference) {
+  .eq10-band__q::-webkit-slider-thumb { transition: box-shadow var(--dur-fast) var(--ease); }
+  .eq10-band__q::-moz-range-thumb     { transition: box-shadow var(--dur-fast) var(--ease); }
+}
+
+.eq10-band__q-value {
+  font-size: 0.68rem;
+  /* var(--text-muted) erreicht nur ~2.4:1/2.9:1 gegen --bg-warm — zu
+     wenig für Fließtext (WCAG AA 4.5:1). --text-secondary erreicht
+     ~6:1/5.5:1 und bleibt trotzdem sichtbar dezenter als der
+     Gain-Wert (kein Akzentblau). */
+  color: var(--text-secondary);
   text-align: center;
   line-height: 1;
 }

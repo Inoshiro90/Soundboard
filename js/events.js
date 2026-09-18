@@ -309,6 +309,11 @@ function writeEffectsToUI(fx) {
     const q     = isObj && b.Q ? b.Q : 1.4;
     set('fxEq10_' + i, gain);  lbl('fxEq10Lbl_' + i, (gain >= 0 ? '+' : '') + gain.toFixed(0));
     set('fxEq10Q_' + i, q);    lbl('fxEq10QLbl_' + i, 'Q' + q.toFixed(1));
+    // A11y: aria-valuetext ergänzt den nativen (einheitenlosen) Wert um
+    // "dB"/"Q", damit Screenreader z.B. "0 dB" statt nur "0" ansagen
+    // (Kap. 7/26). Native aria-valuenow/-min/-max bleiben unangetastet.
+    document.getElementById('fxEq10_' + i)?.setAttribute('aria-valuetext', (gain >= 0 ? '+' : '') + gain.toFixed(0) + ' dB');
+    document.getElementById('fxEq10Q_' + i)?.setAttribute('aria-valuetext', 'Q ' + q.toFixed(1));
   });
 
   chk('fxEnvEnabled',  fx.envelope?.enabled);
@@ -1874,20 +1879,25 @@ export function registerEvents() {
       const v = parseFloat(this.value);
       const lbl = document.getElementById('fxEq10Lbl_' + i);
       if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(0);
+      // A11y: Wert inkl. Einheit für Screenreader nachziehen (s. writeEffectsToUI).
+      this.setAttribute('aria-valuetext', (v >= 0 ? '+' : '') + v.toFixed(0) + ' dB');
     });
     // P3: Q-Regler pro Band
     document.getElementById('fxEq10Q_' + i)?.addEventListener('input', function() {
       const v = parseFloat(this.value);
       const lbl = document.getElementById('fxEq10QLbl_' + i);
       if (lbl) lbl.textContent = 'Q' + v.toFixed(1);
+      this.setAttribute('aria-valuetext', 'Q ' + v.toFixed(1));
     });
   }
   document.getElementById('btnEq10Reset')?.addEventListener('click', () => {
     for (let i = 0; i < 10; i++) {
-      const sl = document.getElementById('fxEq10_' + i); if (sl) sl.value = 0;
+      const sl = document.getElementById('fxEq10_' + i);
+      if (sl) { sl.value = 0; sl.setAttribute('aria-valuetext', '+0 dB'); }
       const lb = document.getElementById('fxEq10Lbl_' + i); if (lb) lb.textContent = '+0';
       // P3: Q-Werte auf Standard (1.4) zurücksetzen
-      const qsl = document.getElementById('fxEq10Q_' + i); if (qsl) qsl.value = 1.4;
+      const qsl = document.getElementById('fxEq10Q_' + i);
+      if (qsl) { qsl.value = 1.4; qsl.setAttribute('aria-valuetext', 'Q 1.4'); }
       const qlb = document.getElementById('fxEq10QLbl_' + i); if (qlb) qlb.textContent = 'Q1.4';
     }
   });

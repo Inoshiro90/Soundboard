@@ -16,7 +16,8 @@
    überschrieben hat (Spez. Kap. 9/39/41: keine zweite,
    unabhängige Größenlogik / spätere Overrides korrigieren). Alle
    <input type="range"> im Projekt tragen bereits die Klasse
-   .slider (bzw. .fx-eq10-slider für die vertikalen EQ-Regler) —
+   .slider (bzw. .eq10-band__gain/.eq10-band__q für die 10-Band-EQ-
+   Regler, s. components.css) —
    ein zusätzliches, elementbasiertes Regelwerk ist daher weder
    nötig noch zulässig. Nur die Dark-Mode-Farbkorrektur bleibt
    (rein visuell, keine Dimensionierung), siehe Abschnitt 7 unten.

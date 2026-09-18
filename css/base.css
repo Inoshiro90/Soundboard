@@ -33,6 +33,14 @@
   --badge-bg:   #f2f9ff;
   --badge-text: #097fe8;
 
+  /* 10-Band-EQ Gain-Wert: dunklerer Blauton als --color-accent, weil
+     --color-accent im Light-Theme auf --bg-warm nur ~4.2:1 erreicht —
+     bei der kleinen Schriftgröße des Gain-Werts (0.75rem) unter der
+     WCAG-AA-Anforderung von 4.5:1 für Fließtext. Im Dark-Theme erreicht
+     --color-accent selbst bereits >5:1, dort wird es unverändert
+     übernommen (s. Dark-Mode-Overrides unten). */
+  --eq10-value-color: #005bab;
+
   /* Semantic Aliases */
   --bg-page:    #ffffff;
   --bg-surface: #ffffff;
@@ -146,6 +154,9 @@
 
   --badge-bg:   rgba(77,157,224,0.12);
   --badge-text: #4d9de0;
+  /* Dark-Theme: --color-accent selbst hat hier bereits ausreichend
+     Kontrast (>5:1 auf --bg-warm), keine separate dunklere Variante nötig. */
+  --eq10-value-color: #4d9de0;
 
   --warm-gray-500: #9b9a97;
   --warm-gray-300: #6b6b69;
@@ -182,6 +193,7 @@
     --color-accent-focus:  #4d9de0;
     --badge-bg:   rgba(77,157,224,0.12);
     --badge-text: #4d9de0;
+    --eq10-value-color: #4d9de0;
     --warm-gray-500: #9b9a97;
     --warm-gray-300: #6b6b69;
     --shadow-card: rgba(0,0,0,0.25) 0px 4px 18px 0px, rgba(0,0,0,0.20) 0px 2px 7px 0px;
