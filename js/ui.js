@@ -1033,6 +1033,40 @@ export function buildColorOpts(containerId, current) {
 
 // ─── SLOT LIST ────────────────────────────────────────────────
 
+/**
+ * Bugfix (Abschnitt 4+9, Testfall H): APP.audioBuffers['_ed_N'] ist
+ * positionsbezogen (N = Index in APP.editSlots), wurde aber bei einem
+ * Drag-and-Drop-Reorder oder beim Entfernen eines Slots bisher NICHT
+ * mitverschoben — nur das APP.editSlots-Array selbst wurde umsortiert.
+ * Folge: nach einem Reorder zeigte z.B. _ed_0 weiterhin auf den Buffer,
+ * der VOR dem Reorder an Position 0 lag — Slot-Vorschau (previewSlot),
+ * Trim-Dialog (openTrimModal) und vor allem der beim Speichern in den
+ * Haupt-Cache kopierte Buffer (bk(soundId, i)) bezogen sich dadurch auf
+ * die FALSCHE Audiodatei für diese Position.
+ *
+ * Fix: unmittelbar vor jeder Array-Mutation, die die Zuordnung
+ * Index→Slot-Objekt verändert (Reorder, Entfernen), wird der aktuelle
+ * _ed_N-Stand anhand der ALTEN Reihenfolge (prevSlots) auf die
+ * Objekt-IDENTITÄT der Slots gemapped. Nach der Mutation wird _ed_N aus
+ * diesem Mapping anhand der NEUEN Reihenfolge neu aufgebaut. Da die
+ * Zuordnung über Objekt-Referenzen (nicht Indizes) läuft, ist das
+ * Ergebnis unabhängig davon, wie die Slots konkret umsortiert wurden.
+ */
+function _resyncEdBuffers(prevSlots) {
+  const bufByObj = new Map();
+  prevSlots.forEach((sl, i) => {
+    const buf = APP.audioBuffers[`_ed_${i}`];
+    if (buf) bufByObj.set(sl, buf);
+  });
+  Object.keys(APP.audioBuffers).forEach(k => {
+    if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
+  });
+  APP.editSlots.forEach((sl, i) => {
+    const buf = bufByObj.get(sl);
+    if (buf) APP.audioBuffers[`_ed_${i}`] = buf;
+  });
+}
+
 export function renderSlotList() {
   const list = document.getElementById('slotList');
   if (!list) return;
@@ -1046,7 +1080,8 @@ export function renderSlotList() {
     row.draggable = true;
     row.dataset.si = i;
 
-    const previewHtml = sl && sl.data
+    const hasUsableData = sl && sl.data && !sl._loading;
+    const previewHtml = hasUsableData
       ? `<button class="slot-btn slot-btn--preview js-prev-btn" title="Vorschau abspielen" aria-label="Slot vorschau">
            <i class="fa-solid fa-play" aria-hidden="true"></i>
          </button>` : '';
@@ -1058,7 +1093,7 @@ export function renderSlotList() {
     row.innerHTML = `
       <div class="slot-drag-handle" title="Ziehen" aria-hidden="true"><span></span><span></span><span></span></div>
       <span class="slot-num">${i + 1}.</span>
-      <span class="slot-name${sl && sl.data ? '' : ' slot-name--empty'}">${sl && sl.data ? (sl.name || 'Datei ' + (i + 1)) : '– leer –'}</span>
+      <span class="slot-name${sl && sl.data ? '' : ' slot-name--empty'}">${sl?._loading ? (sl.name || 'Datei ' + (i + 1)) + ' (lädt…)' : (sl && sl.data ? (sl.name || 'Datei ' + (i + 1)) : '– leer –')}</span>
       ${previewHtml}
       <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
         <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
@@ -1066,7 +1101,7 @@ export function renderSlotList() {
       <button class="slot-btn slot-btn--load js-gen-btn" title="Testton/Sweep generieren" aria-label="Ton generieren">
         <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
       </button>
-      ${sl && sl.data ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
+      ${hasUsableData ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
       ${APP.editSlots.length > 1 ? `<button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>` : ''}
     `;
 
@@ -1081,7 +1116,12 @@ export function renderSlotList() {
       if (modalEl) new bootstrap.Modal(modalEl).show();
     });
     const rmBtn = row.querySelector('.js-rm-btn');
-    if (rmBtn) rmBtn.addEventListener('click', () => { APP.editSlots.splice(i, 1); renderSlotList(); });
+    if (rmBtn) rmBtn.addEventListener('click', () => {
+      const prevSlots = APP.editSlots.slice();
+      APP.editSlots.splice(i, 1);
+      _resyncEdBuffers(prevSlots);
+      renderSlotList();
+    });
     const editBtn = row.querySelector('.js-slot-edit-btn');
     if (editBtn) editBtn.addEventListener('click', () => openSlotEditModal(i));
     const prevBtn = row.querySelector('.js-prev-btn');
@@ -1099,8 +1139,10 @@ export function renderSlotList() {
     row.addEventListener('drop', e => {
       e.preventDefault();
       if (slotDragSrc === null || slotDragSrc === i) return;
+      const prevSlots = APP.editSlots.slice();
       const moved = APP.editSlots.splice(slotDragSrc, 1)[0];
       APP.editSlots.splice(i, 0, moved);
+      _resyncEdBuffers(prevSlots);
       renderSlotList();
     });
 

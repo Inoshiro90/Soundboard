@@ -191,3 +191,80 @@ export async function setSlotAudio(soundId, slotIdx, base64, slot) {
 export async function deleteSlotAudio(soundId, slotIdx) {
   await idbDelete(audioKey(soundId, slotIdx));
 }
+
+// ─── SLOT-REORDER NORMALIZATION (Bugfix: Slot-Reordering + IDB) ────
+//
+// IDB speichert Audio positionsbezogen ("soundId:slotIndex"). Die
+// Sound-Editor-Arbeitskopie (APP.editSlots) kann aber per Drag-and-Drop
+// umsortiert werden, OHNE dass sich dabei die physische IDB-Position
+// der zugehörigen Audiodaten mitbewegt. Ohne diese Funktion bliebe nach
+// einem Reorder + Speichern die Audiodatei unter dem ALTEN numerischen
+// Index liegen, während die Slot-Metadaten (Name etc.) bereits die NEUE
+// Reihenfolge zeigen → Slot X würde nach einem Reload plötzlich Slot Ys
+// Audio abspielen.
+//
+// Jedes Slot-Objekt trägt während der Bearbeitung ein internes Feld
+// `_idbSlot`: den Index, unter dem seine Audiodaten AKTUELL physisch in
+// IDB liegen (gesetzt beim Laden aus einem bestehenden Sound bzw. beim
+// Schreiben neuer/ersetzter Audiodaten). Da `_idbSlot` eine Eigenschaft
+// des Objekts ist (nicht des Arrays), wandert es bei einem Drag-and-Drop
+// automatisch mit dem Slot mit — dadurch lässt sich beim Speichern immer
+// eindeutig bestimmen, ob und wohin Audiodaten in IDB verschoben werden
+// müssen. `_idbSlot` wird vor dem Persistieren aus dem Slot entfernt
+// (siehe events.js) und ist NICHT Teil des gespeicherten Datenmodells —
+// das bestehende "soundId:slotIndex"-Schema bleibt unverändert.
+//
+// Ablauf (sicher auch bei Vertauschungen/Rotationen mehrerer Slots):
+//   Phase 1: ALLE benötigten Quell-Audiodaten zuerst lesen (bevor
+//            irgendetwas geschrieben wird) — verhindert, dass ein noch
+//            benötigter alter Eintrag durch einen anderen Move
+//            überschrieben wird, bevor er gelesen wurde.
+//   Phase 2: Alle Zielpositionen schreiben.
+//   Phase 3: Verwaiste alte Positionen (die keinem finalen Slot mehr
+//            entsprechen) aufräumen, begrenzt auf den bekannten
+//            ehemaligen Wertebereich (kein unbegrenzter DB-Scan nötig).
+//
+/**
+ * @param {string} soundId
+ * @param {Array}  slots            — finale Slot-Reihenfolge (APP.editSlots-artig),
+ *                                    jedes Element optional mit `_idbSlot`.
+ * @param {number} [previousSlotCount=0] — Anzahl Slots, die der Sound VOR
+ *                                    dieser Bearbeitung persistiert hatte
+ *                                    (0 bei einem neuen Sound), für die
+ *                                    Aufräum-Grenze in Phase 3.
+ */
+export async function normalizeSlotAudioStorage(soundId, slots, previousSlotCount = 0) {
+  const finalCount = slots.length;
+
+  // Phase 1 + 2: nur Slots verschieben, deren Audio aktuell NICHT bereits
+  // an ihrer finalen Position liegt.
+  const moves = [];
+  slots.forEach((sl, to) => {
+    const from = sl?._idbSlot;
+    if (from === undefined || from === null) return; // keine persistierten Audiodaten für diesen Slot
+    if (from !== to) moves.push({ from, to });
+  });
+
+  if (moves.length) {
+    const cache = new Map();
+    for (const { from } of moves) {
+      if (!cache.has(from)) cache.set(from, await idbGet(audioKey(soundId, from)));
+    }
+    for (const { from, to } of moves) {
+      const data = cache.get(from);
+      if (data != null) await idbSet(audioKey(soundId, to), data);
+    }
+  }
+
+  // Phase 3: verwaiste alte Positionen aufräumen (z.B. entfernte Slots,
+  // oder Positionen, die durch einen Move freigezogen wurden und von
+  // keinem finalen Slot mehr referenziert werden).
+  let maxOld = previousSlotCount;
+  slots.forEach(sl => {
+    const from = sl?._idbSlot;
+    if (typeof from === 'number' && from + 1 > maxOld) maxOld = from + 1;
+  });
+  for (let k = finalCount; k < maxOld; k++) {
+    await idbDelete(audioKey(soundId, k));
+  }
+}

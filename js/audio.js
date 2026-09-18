@@ -859,17 +859,36 @@ export async function playSound(s, opts = {}) {
   const slots = s.slots || [];
   let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
   if (!s.random) s.curSlot = (idx + 1) % slots.length;
+  return playSelectedSlot(s, idx, opts);
+}
 
-  const slot = slots[idx];
+/**
+ * Bugfix (Ursache 3 / Testfälle C, D, J): Spielt EXPLIZIT den übergebenen
+ * Slot-Index ab, unabhängig davon, was `s.curSlot` inzwischen ist.
+ *
+ * Vorher rief playSound() bei einem Cache-Miss nach dem Lazy-Decode
+ * erneut `playSound(s, opts)` auf — das wählt den Slot aber NEU (über
+ * s.curSlot/Zufall), der zuvor bereits für nicht-Zufall-Wiedergabe auf
+ * idx+1 weitergeschaltet worden war. Der lazy-geladene Slot idx wurde
+ * dadurch nie tatsächlich abgespielt, sondern ein anderer (evtl. wieder
+ * ungeladener) Slot — sichtbar als endloses "Audio lädt…" oder als
+ * Wiedergabe des falschen Slots. playSelectedSlot() behält die
+ * Slot-Identität über den kompletten Lazy-Load hinweg bei, indem der
+ * Retry nach dem Decode erneut GENAU denselben `idx` anfordert.
+ */
+export async function playSelectedSlot(s, idx, opts = {}) {
+  const slots = s.slots || [];
+  const slot  = slots[idx];
   if (!slot || !slot.data) { toast('Slot ' + (idx + 1) + ' leer'); return; }
 
-  const buf = APP.audioBuffers[bk(s.id, idx)];
+  let buf = APP.audioBuffers[bk(s.id, idx)];
   if (!buf) {
-    // Lazy-load then retry
+    // Lazy-load, dann GENAU diesen Slot (idx) weiterverwenden — nie
+    // erneut über playSound()/curSlot neu bestimmen lassen.
     toast('Audio lädt…');
-    const ctx = _ctx; if (!ctx) { toast('Bitte zuerst einen Sound starten', 'err'); return; }
-    decodeAudioSmart(s.id, idx, slot.data).then(decoded => { if (decoded) playSound(s, opts); });
-    return;
+    actx(); // stellt sicher, dass der AudioContext existiert (User-Gesture)
+    buf = await decodeAudioSmart(s.id, idx, slot.data);
+    if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); return; }
   }
 
   const gs       = APP.globalSettings;
@@ -917,7 +936,15 @@ export function playSoundAndWait(s) {
     let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
     if (!s.random) s.curSlot = (idx + 1) % slots.length;
     const slot = slots[idx]; if (!slot?.data) { resolve(); return; }
-    const buf  = APP.audioBuffers[bk(s.id, idx)]; if (!buf) { resolve(); return; }
+    // Bugfix (Konsistenz aller Playback-Wege, Abschnitt 6): auch die
+    // sequenzielle Makro-Wiedergabe muss denselben Lazy-Load-Pfad wie
+    // normales Playback nutzen, statt bei einem Cache-Miss den Slot
+    // stillschweigend zu überspringen (führte zu "fehlenden" Sounds in
+    // Makros direkt nach einem Bulk-Import, bevor der Cache warmgelaufen war).
+    actx();
+    let buf = APP.audioBuffers[bk(s.id, idx)];
+    if (!buf) buf = await decodeAudioSmart(s.id, idx, slot.data);
+    if (!buf) { resolve(); return; }
     const gs = APP.globalSettings; const ctx = actx();
 
     // allowLoop:false — Bestandsverhalten bewusst beibehalten: sequenzielle
@@ -948,7 +975,14 @@ export function playSoundAndWait(s) {
   });
 }
 
-/** Preview: uses full effect chain (BUGFIX). */
+/**
+ * Preview: uses full effect chain (BUGFIX).
+ *
+ * Bugfix (Ursache 3 / Testfall J): spielt jetzt explizit `slotIdx` über
+ * playSelectedSlot() ab, statt am Ende playSound(s) aufzurufen — das
+ * hätte den zuvor geladenen/gewählten Slot verworfen und stattdessen
+ * s.curSlot bzw. einen Zufalls-Slot abgespielt.
+ */
 export async function previewSound(s, slotIdx) {
   slotIdx = slotIdx ?? 0;
   const slot = s.slots?.[slotIdx]; if (!slot?.data) return;
@@ -959,7 +993,7 @@ export async function previewSound(s, slotIdx) {
 
   // Temporarily stop any existing preview for this sound
   stopItem(s.id);
-  playSound(s, { isPreview: true });
+  await playSelectedSlot(s, slotIdx, { isPreview: true });
 }
 
 export function stopItem(id) {

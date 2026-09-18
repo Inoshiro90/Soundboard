@@ -28,7 +28,7 @@ import {
   mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT,
   _saveRaw
 } from './storage.js';
-import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey } from './db.js';
+import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey, normalizeSlotAudioStorage } from './db.js';
 import {
   renderAmbientPanel, resetAmbient, renderAmbientProfileTabs,
   switchAmbientProfile, saveAmbientProfile, deleteAmbientProfile,
@@ -718,7 +718,15 @@ export function openSoundModal(id, placeholderId = null) {
   const expBtn = document.getElementById('btnExportSound');
   if (expBtn) expBtn.style.display = id ? '' : 'none';
 
-  APP.editSlots = s ? (s.slots || []).map(sl => ({ ...sl })) : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }];
+  // _idbSlot: merkt sich, an welcher Position die Audiodaten dieses Slots
+  // GERADE physisch in IndexedDB liegen (= ihre Position im bestehenden
+  // Sound). Wird beim Speichern (btnSaveSound) genutzt, um Audiodaten bei
+  // einem zwischenzeitlichen Reorder korrekt an die neue Position zu
+  // verschieben (siehe normalizeSlotAudioStorage in db.js). Rein internes
+  // Editor-Feld, wird vor dem Persistieren wieder entfernt.
+  APP.editSlots = s
+    ? (s.slots || []).map((sl, i) => ({ ...sl, _idbSlot: isIdbRef(sl.data) ? i : null }))
+    : [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }];
   renderSlotList();
   _preloadEditBuffers();
   buildIconGrid('iconGrid',  s ? s.icon  : '');
@@ -1200,7 +1208,7 @@ export function registerEvents() {
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idx };
       }
       try {
         const bin = atob(b64); const arr = new Uint8Array(bin.length);
@@ -1270,7 +1278,7 @@ export function registerEvents() {
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null };
+        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _idbSlot: idx };
       }
       APP.audioBuffers[`_ed_${idx}`] = buf;
       renderSlotList();
@@ -1286,39 +1294,100 @@ export function registerEvents() {
 
   document.getElementById('bulkFile')?.addEventListener('change', function() {
     const files = [...this.files]; if (!files.length) return;
-    let pending = files.length;
+
+    // ── BUGFIX Bulk-Import Race Condition (Ursache 1) ───────────────
+    // Vorher wurden die Ziel-Slot-Indizes (emptyIdx/slotIdx) SYNCHRON
+    // innerhalb jedes einzelnen FileReader.onload-Callbacks bestimmt —
+    // also asynchron, nachdem das Lesen der Datei fertig war. Da mehrere
+    // FileReader nahezu gleichzeitig fertig werden können, lasen mehrere
+    // Callbacks denselben "nächsten leeren Slot"/dieselbe Array-Länge,
+    // BEVOR einer von ihnen APP.editSlots tatsächlich verändert hatte.
+    // Ergebnis: mehrere Dateien landeten im selben Slot-Index (sowohl im
+    // Array als auch unter demselben IndexedDB-Key), andere Dateien
+    // bekamen gar keinen eigenen Slot.
+    //
+    // Fix: alle Ziel-Indizes werden JETZT synchron, VOR jedem await und
+    // VOR jedem FileReader-Start, eindeutig reserviert. Dazu wird sofort
+    // ein Platzhalter-Slot-Objekt an die jeweils reservierte Position
+    // geschrieben (entweder ein existierender leerer Slot wird belegt,
+    // oder das Array wird sofort um einen neuen Platzhalter erweitert).
+    // Jede Datei bekommt dadurch bereits vor jeglicher Asynchronität
+    // ihren garantiert eigenen, festen Index — unabhängig davon, in
+    // welcher Reihenfolge FileReader/IndexedDB/decodeAudioData später
+    // fertig werden.
+    const targets = [];
     files.forEach(f => {
+      // WICHTIG: `!sl.data` bestimmt "leer". Der Platzhalter braucht daher
+      // einen WAHRHEITSWERTIGEN Sentinel (nicht null!) — sonst würde die
+      // NÄCHSTE Datei in derselben Schleife denselben, gerade erst
+      // reservierten Slot erneut als "leer" erkennen und ihn ebenfalls
+      // beanspruchen (exakt dieselbe Race Condition, nur eine Ebene
+      // höher). '_loading: true' markiert ihn zusätzlich als "wird
+      // gerade importiert" für die UI.
+      const emptyIdx = APP.editSlots.findIndex(sl => !sl.data);
+      const slotIdx  = emptyIdx >= 0 ? emptyIdx : APP.editSlots.length;
+      const placeholder = { data: '__pending__', name: f.name, trimStart: 0, trimEnd: null, _loading: true };
+      if (emptyIdx >= 0) APP.editSlots[emptyIdx] = placeholder;
+      else               APP.editSlots.push(placeholder);
+      targets.push({ file: f, slotIdx, slotObj: placeholder });
+      console.debug(`[BULK] file="${f.name}" -> slot=${slotIdx} (reserviert)`);
+    });
+    renderSlotList();
+
+    let okCount = 0, errCount = 0;
+    let pending = targets.length;
+
+    targets.forEach(({ file: f, slotIdx, slotObj }) => {
       const r = new FileReader();
       r.onload = async e => {
-        const b64      = e.target.result.split(',')[1];
-        const emptyIdx = APP.editSlots.findIndex(sl => !sl.data);
-        const slotIdx  = emptyIdx >= 0 ? emptyIdx : APP.editSlots.length;
-        let slotObj;
-        if (_fxEditContext.kind === 'ambient') {
-          const fileId = (emptyIdx >= 0 && APP.editSlots[emptyIdx]._fileId) || uid();
-          await idbSet(audioKey(fileId, 0), b64);
-          slotObj = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId };
-        } else {
-          const stableId = APP.editId || APP._pendingSoundId || uid();
-          if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
-          await saveSlotAudio(stableId, slotIdx, b64, null);
-          slotObj = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null };
-        }
-        if (emptyIdx >= 0) APP.editSlots[emptyIdx] = slotObj;
-        else               APP.editSlots.push(slotObj);
         try {
+          const b64 = e.target.result.split(',')[1];
+          let idbSlot = slotIdx;
+          if (_fxEditContext.kind === 'ambient') {
+            const fileId = slotObj._fileId || uid();
+            await idbSet(audioKey(fileId, 0), b64);
+            Object.assign(slotObj, { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId });
+            delete slotObj._loading;
+          } else {
+            const stableId = APP.editId || APP._pendingSoundId || uid();
+            if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
+            await saveSlotAudio(stableId, slotIdx, b64, null);
+            console.debug(`[BULK] file="${f.name}" -> slot=${slotIdx} -> idbKey=${audioKey(stableId, slotIdx)}`);
+            Object.assign(slotObj, { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idbSlot });
+            delete slotObj._loading;
+          }
+
           const bin = atob(b64); const arr = new Uint8Array(bin.length);
           for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
           const decoded = await actx().decodeAudioData(arr.buffer.slice(0));
+          // Slot könnte inzwischen per Drag-and-Drop verschoben worden
+          // sein — _ed_N folgt dem Slot-Objekt über ui.js' Reorder-Resync,
+          // daher hier bewusst weiterhin über den ursprünglich reservierten
+          // slotIdx schreiben: renderSlotList()/der Resync-Mechanismus
+          // hält _ed_N synchron zur aktuellen Position des Objekts.
           APP.audioBuffers[`_ed_${slotIdx}`] = decoded;
+          okCount++;
         } catch (err) {
+          errCount++;
           console.warn('[events] bulkFile decode error:', err?.message || err);
+        } finally {
+          if (--pending === 0) {
+            renderSlotList();
+            if (errCount === 0) toast(`${okCount} Dateien importiert ✓`, 'ok');
+            else toast(`${okCount} Dateien importiert, ${errCount} fehlgeschlagen`, errCount === targets.length ? 'err' : 'ok');
+          }
         }
-        if (--pending === 0) renderSlotList();
+      };
+      r.onerror = () => {
+        errCount++;
+        console.warn('[events] bulkFile read error:', f.name);
+        if (--pending === 0) {
+          renderSlotList();
+          toast(`${okCount} Dateien importiert, ${errCount} fehlgeschlagen`, errCount === targets.length ? 'err' : 'ok');
+        }
       };
       r.readAsDataURL(f);
     });
-    toast(`${files.length} Dateien geladen`, 'ok');
   });
 
   // Ambient basics: variant-mode toggle (Zufällig / Rotierend)
@@ -1724,7 +1793,7 @@ export function registerEvents() {
 
   // ── SOUND MODAL SAVE ───────────────────────────────────────
 
-  document.getElementById('btnSaveSound')?.addEventListener('click', () => {
+  document.getElementById('btnSaveSound')?.addEventListener('click', async () => {
     if (_fxEditContext.kind === 'ambient') {
       const g = id => document.getElementById(id);
       const t = findAmbientTrack(_fxEditContext.id);
@@ -1793,26 +1862,51 @@ export function registerEvents() {
     const effects  = readEffectsFromUI();
     const items    = CItems();
 
+    // Bugfix (Ursache 2 / Abschnitt 8+9, Testfälle F/G/H): BEVOR die
+    // internen Tracking-Felder entfernt werden, muss die physische
+    // IndexedDB-Position jedes Slots an seine finale (evtl. per
+    // Drag-and-Drop veränderte) Reihenfolge angeglichen werden — sonst
+    // bleibt Audio nach einem Reorder unter dem alten Index liegen,
+    // während die Metadaten schon die neue Reihenfolge zeigen.
+    const stableIdForNormalize = APP.editId || APP._pendingSoundId;
+    if (stableIdForNormalize) {
+      const existingSound   = APP.editId ? items.find(x => x.id === APP.editId) : null;
+      const previousSlotCnt = existingSound ? (existingSound.slots || []).length : 0;
+      try {
+        await normalizeSlotAudioStorage(stableIdForNormalize, APP.editSlots, previousSlotCnt);
+      } catch (err) {
+        console.error('[events] normalizeSlotAudioStorage fehlgeschlagen:', err);
+      }
+    }
+
     // Strip internal-only fields from slots before persisting
     const cleanSlots = APP.editSlots.map(sl => {
       if (!sl) return sl;
-      const { _tempId, ...rest } = sl; // remove temporary ID field
+      const { _tempId, _idbSlot, _loading, ...rest } = sl; // remove temporary editor-only fields
       return rest;
     });
 
     if (APP.editId) {
       const s = items.find(x => x.id === APP.editId);
       if (!s) { toast('Sound nicht gefunden', 'err'); return; }
+      const oldSlotCount = (s.slots || []).length;
       Object.assign(s, { name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, effects });
-      // Invalidate only slots that were actually modified in this session
+      // Bugfix (Abschnitt 8): der Laufzeit-Cache (APP.audioBuffers, bk()-
+      // Keys) ist POSITIONSBEZOGEN. Da Slots reordert/ersetzt/entfernt
+      // worden sein können, wird er für den gesamten (alten UND neuen)
+      // Index-Bereich zunächst komplett invalidiert und danach NUR mit
+      // sicher korrekten Buffern (aus _ed_N, das ui.js bei jedem Reorder
+      // synchron zur jeweiligen Slot-Objekt-Identität hält) neu befüllt.
+      // Für alle übrigen Slots lädt getOrDecodeBuffer() beim nächsten
+      // Abspielen zuverlässig aus dem gerade normalisierten IndexedDB
+      // nach — dadurch kann kein veralteter positionaler Cache-Eintrag
+      // (z.B. von einer VOR dem Reorder an diesem Index liegenden Datei)
+      // mehr fälschlich weiterverwendet werden.
+      const maxIdx = Math.max(oldSlotCount, cleanSlots.length);
+      for (let i = 0; i < maxIdx; i++) invalidateBuffer(s.id, i);
       cleanSlots.forEach((sl, i) => {
         const edBuf = APP.audioBuffers[`_ed_${i}`];
-        if (edBuf) {
-          // New audio was loaded for this slot → update cache
-          APP.audioBuffers[bk(s.id, i)] = edBuf;
-        } else {
-          // No new audio loaded → keep existing cache entry (do NOT invalidate)
-        }
+        if (edBuf) APP.audioBuffers[bk(s.id, i)] = edBuf;
       });
     } else {
       // Use the pre-generated stable ID (so IDB audio keys already match)
@@ -1829,6 +1923,7 @@ export function registerEvents() {
       }
       // Copy edit-modal buffers into the main cache for immediate playback
       cleanSlots.forEach((sl, i) => {
+        invalidateBuffer(id, i);
         const edBuf = APP.audioBuffers[`_ed_${i}`];
         if (edBuf) APP.audioBuffers[bk(id, i)] = edBuf;
       });
