@@ -151,7 +151,8 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
  * @param {object} slot             - { trimStart, trimEnd, fadeIn, fadeOut }
  * @param {object} s                - Sound-Settings: { vol, pitch, loop, fade, effects }
  * @param {object} opts
- * @param {'live'|'preview'|'export'} opts.mode
+ * @param {'live'|'preview'|'export'} opts.mode - steuert Loop-Verhalten UND
+ *   ob ein AnalyserNode erzeugt wird (live/preview ja, export nein).
  * @param {AudioNode} opts.destination
  * @param {number} [opts.masterVol=1] - globale Lautstärke (nur 'live' relevant, s.o. Bestandsverhalten)
  * @param {boolean} [opts.allowLoop=true] - false erzwingt Einmal-Wiedergabe selbst bei s.loop (z.B. sequenzielle Makro-Wiedergabe)
@@ -162,7 +163,13 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   const { destination, mode = 'live', masterVol = 1, allowLoop = true } = opts;
-  const isLive = mode === 'live';
+  const isLive    = mode === 'live';
+  // Abschnitt 3/8: Analyzer war bisher an isLive geknüpft — dadurch blieb
+  // er bei mode==='preview' immer leer, obwohl die Preview denselben Graph
+  // durchläuft. Live UND Preview dürfen ihn erzeugen (sofern in den
+  // Effekten aktiviert); Export bleibt bewusst ausgeschlossen (dort gibt
+  // es kein Canvas/keine Live-Visualisierung, nur unnötiger Overhead).
+  const isPreview = mode === 'preview';
 
   const ts = slot.trimStart || 0;
   let   te = slot.trimEnd ?? buffer.duration;
@@ -210,7 +217,7 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   const masterGain = ctx.createGain(); masterGain.gain.value = baseGain;
 
   let analyser = null;
-  if (isLive && s.effects?.analyzer?.enabled) analyser = createAnalyzerSplit(ctx);
+  if ((isLive || isPreview) && s.effects?.analyzer?.enabled) analyser = createAnalyzerSplit(ctx);
 
   let node = src;
   if (pitchNode) { node.connect(pitchNode.input); node = pitchNode.output; }

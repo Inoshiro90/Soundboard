@@ -25,6 +25,17 @@ export const APP = {
            clippingRegions: [] },
   // Phase 3
   analyzer:     { node: null, canvas: null, rafId: null, mode: 'bars', active: false },
+  // Effekt-Editor-Preview (Audio-Effekt-Dialog): eigener, von der normalen
+  // Soundboard-Wiedergabe (activeAudio/_setPlaying/Ducking/Rotation)
+  // vollständig isolierter Lifecycle-State. `token` schützt gegen Race
+  // Conditions zwischen einem laufenden async Decode/Graph-Aufbau und
+  // einem zwischenzeitlichen Stop/Neustart (s. audio.js startEffectPreview()).
+  audioPreview: {
+    playing: false, loading: false,
+    soundId: null, slotIdx: null,
+    src: null, masterGain: null, analyser: null,
+    token: 0
+  },
   irCache:      {},
   idbReady:     false,
   pitchWorkletReady: false,

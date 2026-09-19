@@ -2081,6 +2081,41 @@ i[data-lucide] {
   transition: opacity 0.2s;
 }
 
+/* Abschnitt 24: dezenter Idle-Hinweis, solange der Analyzer aktiviert ist,
+   aber nichts zu visualisieren läuft (keine Preview) — sonst wirkt das
+   Canvas nur leer/defekt. Liegt über dem Canvas, greift dessen Hintergrund
+   ab (also automatisch Light/Dark-fähig über --bg-warm) und blockiert
+   keine Klicks (pointer-events:none — der Analyzer selbst ist nicht
+   interaktiv). Kein Übergangseffekt (bewusst keine Animation, Abschnitt 19).
+   Standardmäßig unsichtbar (display:none); .is-idle auf dem Wrapper
+   blendet ihn ein. */
+.analyzer-canvas-wrap { position: relative; }
+.analyzer-idle-hint {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-warm);
+  border-radius: 4px;
+  text-align: center;
+  padding: 0 var(--space-2);
+  pointer-events: none;
+}
+.analyzer-canvas-wrap.is-idle .analyzer-idle-hint { display: flex; }
+[data-theme='dark'] .analyzer-idle-hint { background: var(--bg-surface); }
+
+/* Preview-Buttons während des Ladens (Abschnitt 20) — dieselbe Konvention
+   wie an anderer Stelle im Projekt bereits für :disabled verwendet
+   (s. ambient.css/music.css), hier bewusst auf die beiden Preview-Buttons
+   beschränkt statt global auf .btn, um bestehendes Verhalten anderer
+   Buttons nicht ungewollt mit zu verändern. */
+#btnPreviewSound:disabled,
+#btnPreviewFx:disabled { opacity: .5; cursor: not-allowed; }
+
 /* Phase 3 section header style */
 .fx-section + .fx-section {
   border-top: 2px solid var(--border-color);

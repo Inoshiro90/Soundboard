@@ -6,7 +6,7 @@
 import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
-import { actx, stopAll, stopItem, runMacro, previewSound, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
 import {
   getPresetById, applyPresetEffects, createUserPreset, updateUserPreset,
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
@@ -328,6 +328,9 @@ function writeEffectsToUI(fx) {
 
   chk('fxAnalyzerEnabled', fx.analyzer?.enabled);
   set('fxAnalyzerMode', fx.analyzer?.mode || 'bars');
+  // Abschnitt 24: Idle-Hinweis direkt beim Öffnen korrekt setzen, falls der
+  // Analyzer für diesen Sound bereits aktiviert ist.
+  updateAnalyzerIdleHint();
 
   // Phase 4
   chk('fxSpatialEnabled', fx.spatial?.enabled);
@@ -834,6 +837,10 @@ export function openSoundModal(id, placeholderId = null) {
   // Abschnitt 8/15: frische Audio-Rollback-Sicherung für diese Editiersitzung —
   // eine evtl. Sicherung der vorherigen Sitzung darf hier keinesfalls erben.
   _resetAudioRollback();
+  // Abschnitt 23: defensiv — eine Preview aus einer vorherigen Sitzung darf
+  // niemals in eine neue "erben" (normalerweise bereits durch den
+  // hide.bs.modal-Listener beim letzten Schließen erledigt).
+  stopEffectPreview();
 
   const s = id ? CItems().find(x => x.id === id) : null;
 
@@ -906,6 +913,8 @@ function openAmbientEffectsModal(trackId) {
   });
   // Abschnitt 8/15: frische Audio-Rollback-Sicherung für diese Editiersitzung.
   _resetAudioRollback();
+  // Abschnitt 23: defensiv, s. openSoundModal().
+  stopEffectPreview();
 
   _setModalContext('ambient');
   document.getElementById('sMTitle').textContent = 'AMBIENT BEARBEITEN';
@@ -1150,6 +1159,18 @@ export function registerEvents() {
     message: 'Es gibt ungespeicherte Änderungen. Wenn du die Dialogbox jetzt schließt, gehen diese Änderungen verloren. Dialogbox wirklich schließen?',
     onDiscard: () => _discardAudioRollback(),
   });
+
+  // Abschnitt 16: Effekt-Editor-Preview (inkl. Analyzer/RAF) IMMER beenden,
+  // sobald #soundModal zu schließen beginnt — unabhängig davon, ob über X,
+  // Abbruch, Backdrop, Escape oder programmatisch nach Speichern/Löschen
+  // geschlossen wird (hide.bs.modal deckt alle diese Wege einheitlich ab,
+  // s. modalGuards.js/_soundDraftGuard oben). Bewusst ein EIGENER, separater
+  // Listener statt in den Draft-Guard eingebaut: der Draft-Guard kann das
+  // Schließen bei ungespeicherten Änderungen per preventDefault() zunächst
+  // verhindern — die Preview soll aber so oder so sofort stoppen, damit nie
+  // Audio über eine ggf. blockierende Rückfrage hinweg weiterläuft. Einmalig
+  // hier registriert (registerEvents() läuft nur einmal, s. main.js).
+  document.getElementById('soundModal')?.addEventListener('hide.bs.modal', () => stopEffectPreview());
 
   // Theme toggle
   document.getElementById('btnTheme')?.addEventListener('click', () => {
@@ -1928,10 +1949,19 @@ export function registerEvents() {
   });
 
   // Analyzer
-  document.getElementById('fxAnalyzerEnabled')?.addEventListener('change', () => {
+  document.getElementById('fxAnalyzerEnabled')?.addEventListener('change', function() {
     updateEffectSectionVisibility();
-    const on = !!(document.getElementById('fxAnalyzerEnabled')?.checked);
-    if (!on) stopAnalyzer();
+    // Abschnitt 38: "Analyzer AUS ≠ Preview AUS" — betrifft nur die
+    // Visualisierung, eine laufende Preview spielt unverändert weiter.
+    if (!this.checked) stopAnalyzer();
+    else syncPreviewAnalyzer(true);
+  });
+  document.getElementById('fxAnalyzerMode')?.addEventListener('change', function() {
+    // Abschnitt 10/39: ein laufender Analyzer (Live ODER Preview) wechselt
+    // sofort den Darstellungsmodus, ohne den Audio-Graph neu aufzubauen —
+    // die Zeichenschleife liest APP.analyzer.mode bei jedem Frame neu.
+    // Bestehende Modusvariable wiederverwendet, keine zweite eingeführt.
+    if (APP.analyzer.active) APP.analyzer.mode = this.value;
   });
 
   // Full export (with audio)
@@ -1973,6 +2003,11 @@ export function registerEvents() {
   // ── SOUND MODAL SAVE ───────────────────────────────────────
 
   document.getElementById('btnSaveSound')?.addEventListener('click', async () => {
+    // Abschnitt 17: Preview zuerst stoppen, dann speichern, dann schließen.
+    // Der hide.bs.modal-Listener oben würde das ohnehin beim anschließenden
+    // .hide() nachholen — hier zusätzlich explizit, um die geforderte
+    // Reihenfolge unmissverständlich abzubilden.
+    stopEffectPreview();
     if (_fxEditContext.kind === 'ambient') {
       const g = id => document.getElementById(id);
       const t = findAmbientTrack(_fxEditContext.id);
@@ -2121,6 +2156,7 @@ export function registerEvents() {
   document.getElementById('btnDelSound')?.addEventListener('click', () => {
     if (!APP.editId) return;
     if (!confirm('Diesen Sound wirklich löschen?')) return;
+    stopEffectPreview();
     stopItem(APP.editId);
     const items = CItems(); const idx = items.findIndex(x => x.id === APP.editId);
     if (idx >= 0) { const order = items[idx].order; items.splice(idx, 1, { type: 'placeholder', id: uid(), order, locked: false }); }
@@ -2135,11 +2171,28 @@ export function registerEvents() {
     if (APP.editId) exportSoundItem(APP.editId);
   });
 
-  document.getElementById('btnPreviewSound')?.addEventListener('click', async () => {
+  // Abschnitt 5/30: gemeinsame Handler-Funktion statt doppelter Logik —
+  // #btnPreviewSound (Sticky-Bar des Sound-Editors) und #btnPreviewFx
+  // (Footer von "Audio-Effekte", auf Wunsch links neben "Fertig" ergänzt)
+  // steuern beide dieselbe, einzige Preview (previewSound()/APP.audioPreview).
+  async function _handlePreviewClick() {
     if (_fxEditContext.kind === 'ambient') { toggleAmbientPlay(_fxEditContext.id); return; }
+
+    // Abschnitt 5/14: ein Klick während einer laufenden ODER ladenden
+    // Preview stoppt sie — previewSound() togglet das intern (audio.js).
+    if (APP.audioPreview.playing || APP.audioPreview.loading) { await previewSound(); return; }
+
     const slots = APP.editSlots;
     const hasData = slots.some(sl => sl && sl.data);
     if (!hasData) { toast('Keine Audio-Dateien geladen', 'err'); return; }
+
+    // Abschnitt 31: den Slot verwenden, der gerade im Slot-Editor offen ist
+    // (sofern vorhanden und mit Audio belegt) — sonst den ersten belegten
+    // Slot. NICHT hartkodiert Slot 0, der könnte inzwischen leer/entfernt
+    // sein (Abschnitt 11 erlaubt das Entfernen einzelner Slots im Draft).
+    const editIdx = getSlotEditIndex();
+    let slotIdx = (editIdx !== null && slots[editIdx]?.data) ? editIdx : slots.findIndex(sl => sl && sl.data);
+    if (slotIdx < 0) slotIdx = 0;
 
     // Build a temporary sound object from the current modal state
     // so preview uses the FULL effect chain (same engine as playback)
@@ -2147,28 +2200,40 @@ export function registerEvents() {
     const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
     const effects = readEffectsFromUI();
 
+    // Abschnitt 4/19: eigene, von der echten Sound-ID losgelöste Preview-ID
+    // statt APP.editId zu übernehmen — verhindert, dass die Preview unter
+    // demselben activeAudio/Buffer-Cache-Schlüssel wie der ECHTE,
+    // gespeicherte Sound landet (der würde sonst z.B. beim Editieren eines
+    // bereits gespeicherten Sounds dessen Kachel als "spielend" markieren).
     const tempSound = {
-      id:      APP.editId || ('_preview_' + Date.now()),
+      id:      '_fxpreview_' + (APP.editId || APP._pendingSoundId || 'draft'),
       name:    document.getElementById('eName')?.value || 'Preview',
       slots:   APP.editSlots,
       vol, pitch, loop: false, fade: false, random: false, curSlot: 0, effects
     };
 
-    // Map _ed_N buffers into the audioBuffers cache under the temp ID
+    // Buffer-Cache für die Preview-ID vorwärmen (Abschnitt 19: nicht unnötig
+    // neu dekodieren). Priorität: ein in dieser Sitzung bereits geladener/
+    // ersetzter Buffer (_ed_N) vor einem unveränderten, bereits unter der
+    // ECHTEN Sound-ID gecachten Buffer.
     APP.editSlots.forEach((sl, i) => {
       const edBuf = APP.audioBuffers[`_ed_${i}`];
-      if (edBuf) APP.audioBuffers[bk(tempSound.id, i)] = edBuf;
+      if (edBuf) { APP.audioBuffers[bk(tempSound.id, i)] = edBuf; return; }
+      if (APP.editId) {
+        const existing = APP.audioBuffers[bk(APP.editId, i)];
+        if (existing) APP.audioBuffers[bk(tempSound.id, i)] = existing;
+      }
     });
 
-    toast('▶ Vorschau mit Effekten…');
     try {
-      await previewSound(tempSound, 0);
-      toast('Vorschau läuft ✓', 'ok');
+      await previewSound(tempSound, slotIdx);
     } catch(e) {
       console.error('Preview error:', e);
       toast('Vorschau-Fehler: ' + e.message, 'err');
     }
-  });
+  }
+  document.getElementById('btnPreviewSound')?.addEventListener('click', _handlePreviewClick);
+  document.getElementById('btnPreviewFx')?.addEventListener('click', _handlePreviewClick);
 
   // ── TRIM MODAL ─────────────────────────────────────────────
   // NOTE: canvas mousedown/mousemove/wheel handled by _initTrimCanvasDrag() in ui.js,

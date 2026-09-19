@@ -468,27 +468,61 @@ export function setupDrag() {
 }
 
 /**
- * Verschiebt Kachel `srcId` an die Position von `dstId` — echtes Einfügen
- * (Splice), nicht paarweises Tauschen: alle dazwischenliegenden Kacheln
- * rücken nach, wie beim Neuanordnen einer Liste (iOS-Homescreen-Prinzip),
- * statt dass Quelle und Ziel stur ihre Position tauschen.
+ * Verschiebt Kachel `srcId` auf die Position von `dstId` — ECHTER
+ * Positionstausch (Swap) der beiden `.order`-Werte. Nur die gezogene und
+ * die Ziel-Kachel wechseln ihren Platz; alle übrigen Kacheln (und
+ * bestehende Lücken/Platzhalter) bleiben exakt an ihrer Stelle.
  *
- * BUGFIX: die vorherige _swapTileOrder() tauschte ausschließlich die
- * .order-Werte von GENAU zwei Elementen. Das fühlte sich beim Ablegen auf
- * einer LEEREN Platzhalter-Kachel wie ein Fehlschlag an — die Zielkachel
- * "sprang" nicht wirklich an die neue Stelle, sondern es entstand
- * lediglich ein Platzhalter an der alten Position, während alle
- * dazwischenliegenden Kacheln unverändert blieben (kein echtes
- * Verschieben mit Nachrücken).
+ * TATSÄCHLICHER FEHLER (vorherige Implementierung): die Funktion hat
+ * NICHT getauscht, sondern per splice()-Remove+Insert ein "Einfügen mit
+ * Nachrücken" gemacht (`items.splice(ai,1)` gefolgt von
+ * `items.splice(bi,0,moved)`). Dabei rücken ALLE Kacheln, die zwischen
+ * Quell- und Zielposition liegen, um genau eine Stelle nach — inklusive
+ * bestehender Platzhalter/Lücken, die dabei mitgeschoben wurden statt an
+ * ihrem Platz zu bleiben. Das erklärt exakt die gemeldeten Symptome:
+ *   - Fehler A: zieht man eine Kachel weiter nach rechts auf eine andere,
+ *     werden alle dazwischenliegenden Kacheln um eins nach LINKS
+ *     verschoben (und umgekehrt bei einer Bewegung nach links werden
+ *     dazwischenliegende Kacheln nach RECHTS verschoben) — obwohl der
+ *     Nutzer nur EINE Kachel bewegen wollte.
+ *   - Fehler B: eine bestehende Lücke, die zwischen Quelle und Ziel liegt,
+ *     wird beim Verschieben unbeabsichtigt mitgenommen/verschoben, statt
+ *     an ihrer bisherigen visuellen Stelle stehen zu bleiben bzw. exakt
+ *     die freigewordene Zielposition zu übernehmen.
+ * Reproduzierbar rein aus der Datenstruktur: bei [A,B,C,D] (order 0..3)
+ * ergab ein Drag von D (Index 3) auf B (Index 1) vorher [A,D,B,C] — C
+ * (Index 2) wurde nach rechts verschoben, obwohl nur D bewegt werden
+ * sollte. Die Anforderung "andere Kacheln dürfen nicht unkontrolliert
+ * verschoben werden" verlangt stattdessen einen reinen Swap: [A,D,C,B].
+ *
+ * Bonus-Fix: `dstId` kann auf eine der rein visuellen, nachträglich in
+ * renderGrid() angehängten "+"-Füll-Platzhalter zeigen (siehe
+ * TRAILING_PLACEHOLDERS) — die existieren NUR im DOM/in der lokalen
+ * Render-Liste, nicht in CItems(). Ein Drop darauf fand bisher keinen
+ * Treffer (bi < 0) und tat dadurch kommentarlos gar nichts. Das wird hier
+ * als "an eine frische Stelle ans Ende verschieben" behandelt, statt den
+ * Drop wirkungslos verpuffen zu lassen.
  */
 function _moveTileOrder(srcId, dstId) {
-  const items = CItems().sort((a, b) => (a.order || 0) - (b.order || 0));
-  const ai = items.findIndex(x => x.id === srcId);
-  const bi = items.findIndex(x => x.id === dstId);
-  if (ai < 0 || bi < 0 || ai === bi) return;
-  const [moved] = items.splice(ai, 1);
-  items.splice(bi, 0, moved);
-  items.forEach((x, i) => { x.order = i; });
+  const items = CItems();
+  const src = items.find(x => x.id === srcId);
+  if (!src) return;
+
+  const dst = items.find(x => x.id === dstId);
+  if (src === dst) return;
+
+  if (!dst) {
+    // dstId gehört zu einem transienten, nicht persistierten Füll-
+    // Platzhalter (s.o.) — an eine neue, echte Stelle ans Ende verschieben.
+    const maxOrder = items.reduce((m, x) => Math.max(m, x.order || 0), -1);
+    src.order = maxOrder + 1;
+    renderGrid();
+    return;
+  }
+
+  const srcOrder = src.order;
+  src.order = dst.order;
+  dst.order = srcOrder;
   renderGrid();
 }
 

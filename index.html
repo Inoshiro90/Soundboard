@@ -1482,8 +1482,13 @@
                       <option value="scope">Oszilloskop</option>
                     </select>
                   </div>
-                  <canvas id="analyzerCanvas"
-                    style="width:100%;height:64px;border-radius:4px;display:block;border:var(--border-whisper)"></canvas>
+                  <div class="analyzer-canvas-wrap" id="analyzerCanvasWrap">
+                    <canvas id="analyzerCanvas"
+                      style="width:100%;height:64px;border-radius:4px;display:block;border:var(--border-whisper)"></canvas>
+                    <div class="analyzer-idle-hint" aria-hidden="true">
+                      <i class="fa-solid fa-play" aria-hidden="true"></i> Vorschau starten, um den Analyzer zu sehen
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1513,9 +1518,14 @@
         </div>
         <div class="modal-footer u-flex-between">
           <span class="u-text-muted u-text-badge">Änderungen wirken sofort auf die Vorschau.</span>
-          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
-          </button>
+          <div class="u-flex u-gap-2">
+            <button class="btn btn--sm" id="btnPreviewFx" aria-label="Vorschau">
+              <i class="fa-solid fa-play u-text-accent" aria-hidden="true"></i>
+            </button>
+            <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+              <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+            </button>
+          </div>
         </div>
       </div>
     </div>
