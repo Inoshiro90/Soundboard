@@ -31,17 +31,27 @@
   min-height: var(--h-menubar);
 }
 
+/* BUGFIX (rote Aktionsleiste): .sm-basics-row war `display:grid` OHNE
+   grid-template-columns — dadurch lief das hier stehende `flex-wrap:wrap`
+   komplett ins Leere (flex-wrap wirkt nur auf einen flex-Container, nicht
+   auf grid), UND .sm-basics-name/.sm-basics-actions ihrerseits nutzten
+   flex-Eigenschaften (`flex:1`, `flex-shrink:0`) die als Kind eines
+   grid-Containers ebenfalls wirkungslos sind. .sm-basics-actions hatte
+   dazu noch eine feste, winzige Breite (`calc(var(--w-1col)/2)` — die
+   HÄLFTE einer einzelnen Rasterspalte!) für eine Gruppe mit bis zu fünf
+   Icon+Text-Buttons. Ergebnis: die Buttons wurden auf diese winzige,
+   nicht schrumpf- und nicht umbruchfähige Breite gepresst statt sauber
+   umzubrechen — exakt das im Screenshot sichtbare Icon-only-Gedränge.
+   Echtes Flexbox (mit tatsächlich wirksamem flex-wrap) ersetzt das jetzt
+   an beiden Stellen: */
 .sm-basics-row {
-  display: grid;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
-  /* Spez. Kap. 31/46: Umbruch erlaubt (200%-Textvergrößerung / sehr
-     lange Namen dürfen nicht abgeschnitten werden oder überlaufen) —
-     die Reihe bleibt dabei durch Flex-Wrap bedienbar, nicht "kaputt". */
-  flex-wrap: wrap;
 }
 
-.sm-basics-name { flex: 1; min-width: 0; }
+.sm-basics-name { min-width: 0; }
 
 .sm-name-input {
   /* Spez. Kap. 30: Name-Input -> volle Formularbreite, Höhe var(--h-btn).
@@ -54,11 +64,18 @@
 }
 
 .sm-basics-actions {
-  width: calc(var(--w-1col)/2);
+  /* Keine feste Breite mehr: jeder Button behält seine natürliche,
+     für Icon+Text nötige Breite (kein Schrumpfen unter Lesbarkeit,
+     var(--h-btn) bleibt unverändert die Button-Höhe aus components.css).
+     Passen nicht alle Buttons nebeneinander in die verfügbare Breite,
+     bricht die Gruppe dank flex-wrap selbständig in weitere Zeilen um —
+     ohne horizontales Scrollen und ohne Overflow. */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
-  flex-shrink: 0;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
 }
 
 /* ── Scrollable Body ───────────────────────────────────────── */

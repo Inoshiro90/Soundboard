@@ -887,11 +887,32 @@
 }
 
 /* ─── SLOT LIST ───────────────────────────────────────────────
-   Grid-System-Layout statt Flex-Wrap: Ziehgriff/Nummer fix, Name
-   nimmt den Rest, die vier Kernaktionen (Play/Ordner/Bearbeiten/
-   Entfernen) sind ≥44px große Touch-Ziele (WCAG 2.5.5) statt der
-   vorherigen ~20px-Icon-Klicks — Sounddauer/Start/Ende/Zuschneiden
-   leben jetzt im slotEditModal, siehe dort. */
+   Ziehgriff/Nummer fix, Name nimmt den Rest, die (variable Anzahl)
+   Kernaktionen (Play/Ordner/Bearbeiten/Entfernen — Preview/Bearbeiten
+   fehlen je nach Slot-Zustand) sind ≥44px große Touch-Ziele (WCAG 2.5.5)
+   statt der vorherigen ~20px-Icon-Klicks — Sounddauer/Start/Ende/
+   Zuschneiden leben jetzt im slotEditModal, siehe dort.
+
+   BUGFIX (Name konkurriert mit Buttons um Platz): die alte
+   grid-template-columns: auto auto minmax(0,1fr) repeat(4, auto)
+   nahm hart AN, es gäbe immer genau vier Aktionsbuttons — tatsächlich
+   variiert die Zahl (renderSlotList() lässt z.B. Preview/Bearbeiten weg,
+   wenn der Slot keine nutzbaren Audiodaten hat). Der Name musste sich sein
+   1fr zudem mit denselben Buttons in EINER Zeile teilen, wodurch lange
+   Namen auf schmalen Viewports bis zur Unlesbarkeit zusammengedrückt
+   wurden, während die Buttons unverändert breit blieben (exakt das im
+   Screenshot sichtbare Verhalten).
+   Fix: die Aktionsbuttons stecken jetzt in einem eigenen Wrapper
+   (.slot-actions, siehe renderSlotList() in js/ui.js) — .slot-row hat
+   dadurch IMMER genau vier Spalten unabhängig von der Button-Anzahl.
+   Mobile-first (≤767px, XS/SM = max. 4 Rasterspalten): Ziehgriff+Nummer+
+   Name in Zeile 1, Aktionen als eigene, volle Zeile darunter — der Name
+   konkurriert dadurch gar nicht mehr mit den Buttons. Ab 768px (MD = 8,
+   LG/XL/XXL = 12 Rasterspalten) rutschen die Aktionen wieder in dieselbe
+   Zeile, der Name bekommt dafür fest die Breite von 4 Rasterspalten
+   (var(--w-4col) aus grid-system.css — dieselbe „4 Spalten"-Breite
+   unabhängig davon, ob das Root-Raster an diesem Breakpoint gerade 8
+   oder 12 Spalten hat). */
 .slot-list {
 	display: flex;
 	flex-direction: column;
@@ -904,9 +925,9 @@
 	border: var(--border-whisper);
 	border-radius: var(--radius-subtle);
 	display: grid;
-	grid-template-columns: auto auto minmax(0, 1fr) repeat(4, auto);
+	grid-template-columns: auto auto minmax(0, 1fr);
 	align-items: center;
-	gap: var(--grid-gutter);
+	gap: var(--space-2) var(--grid-gutter);
 	padding: var(--space-2) var(--space-3);
 	cursor: default;
 	transition: border-color var(--dur-fast) var(--ease);
@@ -917,6 +938,35 @@
 }
 .slot-row.is-dragging {
 	opacity: 0.35;
+}
+
+/* ≤767px (XS/SM, max. 4 Rasterspalten): eigene, volle Zeile für die
+   Aktionen — erzwungen per grid-column-Span statt per Reihenfolge/
+   Zufall, damit es unabhängig von der tatsächlichen Button-Anzahl
+   IMMER eine eigene Zeile ist. */
+.slot-actions {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-1);
+}
+
+/* ≥768px (MD = 8, LG/XL/XXL = 12 Rasterspalten): Aktionen zurück in
+   dieselbe Zeile wie Name, Name fest auf 4 Rasterspalten Breite. */
+@media (min-width: 768px) {
+	.slot-row {
+		display: flex;
+		align-items: center;
+	}
+	.slot-name {
+		flex: 0 0 var(--w-4col);
+		width: var(--w-4col);
+	}
+	.slot-actions {
+		flex-shrink: 0;
+		margin-left: auto;
+	}
 }
 
 .slot-drag-handle {
@@ -957,6 +1007,7 @@
 .slot-btn {
 	width: 44px;
 	height: 44px;
+	flex-shrink: 0; /* darf in .slot-actions (flex-wrap) nie zusammengedrückt werden */
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -1707,6 +1758,57 @@ i[data-lucide] {
 .fx-controls {
   padding-left: var(--space-3);
   transition: opacity 0.12s ease;
+}
+
+/* ─── #slotDestructiveModal: Unterabschnitte IMMER untereinander ───
+   URSACHE des Nebeneinander-Layouts: .fx-controls trug hier bisher die
+   Utility-Klassen u-flex/u-gap-2/u-wrap direkt im HTML (display:flex +
+   flex-wrap:wrap, siehe utilities.css). flex-wrap lässt so viele Items
+   wie möglich in eine Zeile — bei ausreichender Breite (ab MD/LG) passten
+   dadurch mehrere schmale Unterabschnitte nebeneinander in dieselbe
+   Zeile. Zusätzlich standen Label und Bedienelemente in jedem
+   Unterabschnitt als flache Geschwister in EINEM Flex-Item
+   (<span class="u-flex u-gap-2">Label + Input + Button</span>), wodurch
+   das Label zwangsläufig NEBEN statt ÜBER den Feldern stand.
+   Fix ist bewusst NUR hier verdrahtet: die globalen Utility-Klassen
+   .u-flex/.u-wrap/.fx-controls selbst bleiben unverändert und wirken in
+   allen anderen Effekt-Dialogen (Sound-Editor-Effekte, Ambient, EQ,
+   Kompressor, Limiter) weiterhin exakt wie zuvor. Die Utility-Klassen
+   wurden aus dem Markup dieses einen Dialogs entfernt und durch zwei
+   dedizierte, nur hier verwendete Klassen ersetzt: */
+#slotDestructiveModal .fx-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+/* Trim/Umkehren: eigene, kompakte Aktionsgruppe oberhalb der
+   parametrisierten Bearbeitungszeilen, bewusst nicht mit ihnen
+   vermischt (Spez. Kap. 12). */
+#slotDestructiveModal .editor-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* Ein Unterabschnitt: Label in eigener Zeile oberhalb der
+   Bedienelemente — unabhängig von Rasterspalten/Bildschirmbreite immer
+   volle Breite, nie neben einem anderen Unterabschnitt. */
+#slotDestructiveModal .editor-action-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  width: 100%;
+}
+/* Die Bedienelemente EINES Unterabschnitts (Input, optionales Dropdown,
+   Button) bleiben untereinander in einer eigenen Zeile nebeneinander —
+   nur die Unterabschnitte selbst dürfen nicht mehr nebeneinander stehen. */
+#slotDestructiveModal .editor-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
 }
 
 .fx-slider-row {

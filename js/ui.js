@@ -1125,19 +1125,27 @@ export function renderSlotList() {
     // slotEditModal (Edit-Button) — die Zeile zeigt nur noch Name +
     // die vier Kernaktionen, dafür alle groß genug für motorisch
     // eingeschränkte Nutzer:innen (≥44px Touch-Ziel).
+    // Aktionsbuttons in einen eigenen Wrapper (.slot-actions) gebündelt:
+    // die Anzahl variiert je Slot-Zustand (Preview/Edit fehlen z.B. ohne
+    // Audiodaten) — .slot-row darf daher nicht von einer festen
+    // Spaltenzahl für die Buttons ausgehen (siehe CSS). Der Wrapper macht
+    // aus "Name + N variable Buttons" strukturell "Name + 1 Aktionsblock",
+    // unabhängig von N.
     row.innerHTML = `
       <div class="slot-drag-handle" title="Ziehen" aria-hidden="true"><span></span><span></span><span></span></div>
       <span class="slot-num">${i + 1}.</span>
       <span class="slot-name${sl && sl.data ? '' : ' slot-name--empty'}">${sl?._loading ? (sl.name || 'Datei ' + (i + 1)) + ' (lädt…)' : (sl && sl.data ? (sl.name || 'Datei ' + (i + 1)) : '– leer –')}</span>
-      ${previewHtml}
-      <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
-        <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
-      </button>
-      <button class="slot-btn slot-btn--load js-gen-btn" title="Testton/Sweep generieren" aria-label="Ton generieren">
-        <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
-      </button>
-      ${hasUsableData ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
-      <button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <div class="slot-actions">
+        ${previewHtml}
+        <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
+          <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+        </button>
+        <button class="slot-btn slot-btn--load js-gen-btn" title="Testton/Sweep generieren" aria-label="Ton generieren">
+          <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
+        </button>
+        ${hasUsableData ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
+        <button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
     `;
 
     row.querySelector('.js-load-btn').addEventListener('click', () => {

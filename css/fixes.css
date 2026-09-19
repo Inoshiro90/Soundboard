@@ -140,16 +140,15 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* Basics-Bar: Spez. Kap. 31/46 verlangt ausdrücklich, dass die Reihe
-   bei Bedarf umbricht statt Inhalte/Buttons abzuschneiden — das
-   vormalige "flex-wrap:nowrap; overflow:hidden;" hätte bei langen
-   Namen oder 200%-Textvergrößerung genau die verbotenen
-   abgeschnittenen Buttons erzeugt. mobile.css definiert das
-   Wrap-Verhalten bereits korrekt; hier bleibt nur die Grundregel,
-   dass der Name nicht unnötig Platz von den Actions abzieht. */
-.sm-basics-name {
-	min-width: 0;
-	flex: 1;
-}
+   bei Bedarf umbricht statt Inhalte/Buttons abzuschneiden. Das
+   eigentliche Wrap-/Breiten-Regelwerk für .sm-basics-row/.sm-basics-name/
+   .sm-basics-actions lebt jetzt VOLLSTÄNDIG (nur einmal, nicht dupliziert)
+   in mobile.css — dort wurde ein echter Flexbox-Fehler behoben (vorher
+   `display:grid` ohne grid-template-columns, wodurch das dort ebenfalls
+   vorhandene `flex-wrap` und alle flex-Eigenschaften der Kinder
+   wirkungslos blieben). Hier bleibt nur, was NICHT dupliziert wird:
+   das Input-Feld selbst darf nie eine intrinsische Mindestbreite
+   erzwingen, die den flex-Umbruch der Zeile verhindern würde. */
 .sm-name-input {
 	min-width: 0;
 }
