@@ -406,6 +406,7 @@
   padding-inline: var(--space-2);
   font-size: var(--text-caption);
   overflow: hidden;
+  min-width: fit-content;
 }
 /* Aktiver Bearbeitungsmodus (#btnTileEditMode, siehe setTileEditMode() in
    ui.js) und aktive Popover-Trigger: is-active bleibt funktional exakt wie

@@ -401,7 +401,7 @@
 	letter-spacing: 0.125px;
 	text-align: center;
 	color: var(--text-primary);
-	max-width: 100%;
+	/* max-width: 100%; */
 	min-width: 0;
 	overflow: hidden;
 	/* white-space: nowrap; */
@@ -409,6 +409,7 @@
 	line-height: 1.2;
 	flex-shrink: 0;
 	text-transform: uppercase;
+	max-width: max-content;
 }
 .tile__hotkey {
 	position: absolute;
