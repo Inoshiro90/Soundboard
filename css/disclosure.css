@@ -42,7 +42,8 @@
   display: none;
 }
 
-.popover-toggle.has-active-setting .popover-toggle__dot {
+.popover-toggle.has-active-setting .popover-toggle__dot,
+.menubar-btn.has-active-setting .popover-toggle__dot {
   display: inline-block;
 }
 

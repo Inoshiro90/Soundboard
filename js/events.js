@@ -6,7 +6,7 @@
 import { APP, CP, CItems } from './state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
-import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, EFFECT_PRESETS, defaultEffects, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, EFFECT_PRESETS, defaultEffects, defaultPlayback, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
 import {
   getPresetById, applyPresetEffects, createUserPreset, updateUserPreset,
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
@@ -350,6 +350,171 @@ function writeEffectsToUI(fx) {
 }
 
 /**
+ * BUGFIX (Kap. 2-4 des Wiedergabe&Verhalten-Prompts): "Alle Effekte
+ * zurücksetzen" (#btnFxReset) darf NUR die einzelnen Effektmodule auf ihre
+ * Standardwerte zurücksetzen — der unabhängige Master-Schalter "Effekte
+ * ein/aus" (#fxEnabled) ist bewusst KEIN Effektparameter, sondern steuert
+ * nur, ob die Effektkette überhaupt angewendet wird, und darf durch einen
+ * Parameter-Reset nicht verändert werden.
+ *
+ * defaultEffects() liefert `enabled: false` (das ist der korrekte Default
+ * für einen NEUEN Sound bzw. ein vollständig geladenes Preset/Soundobjekt,
+ * siehe writeEffectsToUI() bei openSoundModal()/Preset-Apply) — für den
+ * gezielten Parameter-Reset hier wird dieses eine Feld daher bewusst nicht
+ * aus defaultEffects() übernommen, sondern der Zustand von VOR dem Reset
+ * wiederhergestellt. Keine parallele Effekt-State-Logik: nutzt weiterhin
+ * ausschließlich readEffectsFromUI()/writeEffectsToUI() als einzige
+ * Quelle/Senke der Formularwerte.
+ */
+function resetEffectParametersPreserveMasterEnabled() {
+  const wasEnabled = !!(document.getElementById('fxEnabled')?.checked);
+  writeEffectsToUI(defaultEffects());
+  const el = document.getElementById('fxEnabled');
+  if (el) el.checked = wasEnabled;
+  // writeEffectsToUI() hat updateEffectSectionVisibility() bereits mit dem
+  // (kurzzeitig falschen) enabled:false aufgerufen — nach dem Wiederherstellen
+  // von #fxEnabled muss Panel-Opazität/Badge/Summary erneut mit dem
+  // korrekten Zustand aktualisiert werden.
+  updateEffectSectionVisibility();
+}
+
+// ─── "WIEDERGABE & VERHALTEN" UI HELPERS ─────────────────────
+// Gleiches Muster wie readEffectsFromUI()/writeEffectsToUI() oben: DOM ist
+// während der Bearbeitung die einzige Quelle/Senke, keine zweite parallele
+// State-Repräsentation. Zufall (#eRnd) bleibt bewusst außen vor — das ist
+// ein eigenständiges Sound-Feld (s.random), keine Unterstruktur von
+// s.playback, und wird weiterhin direkt in openSoundModal()/dem
+// Save-Handler über g('eRnd').checked gelesen/geschrieben.
+
+function readPlaybackFromUI() {
+  const g   = id => document.getElementById(id);
+  const num = (id, fallback) => { const v = parseFloat(g(id)?.value); return isNaN(v) ? fallback : v; };
+  const chk = id => !!(g(id)?.checked);
+  const sel = id => g(id)?.value || 'linear';
+
+  return {
+    fadeIn: {
+      enabled:  chk('pbFadeInEnabled'),
+      duration: num('pbFadeInDuration', 0.5),
+      curve:    sel('pbFadeInCurve')
+    },
+    fadeOut: {
+      enabled:  chk('pbFadeOutEnabled'),
+      duration: num('pbFadeOutDuration', 0.5),
+      curve:    sel('pbFadeOutCurve')
+    },
+    crossfade: {
+      enabled:  chk('pbCrossfadeEnabled'),
+      duration: num('pbCrossfadeDuration', 1),
+      curve:    sel('pbCrossfadeCurve')
+    }
+  };
+}
+
+function writePlaybackToUI(pb) {
+  if (!pb) pb = defaultPlayback();
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+  const lbl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  chk('pbFadeInEnabled',  pb.fadeIn?.enabled);
+  set('pbFadeInDuration', pb.fadeIn?.duration ?? 0.5);
+  lbl('pbFadeInDurationLbl', (pb.fadeIn?.duration ?? 0.5).toFixed(1) + 's');
+  set('pbFadeInCurve',    pb.fadeIn?.curve || 'linear');
+
+  chk('pbFadeOutEnabled',  pb.fadeOut?.enabled);
+  set('pbFadeOutDuration', pb.fadeOut?.duration ?? 0.5);
+  lbl('pbFadeOutDurationLbl', (pb.fadeOut?.duration ?? 0.5).toFixed(1) + 's');
+  set('pbFadeOutCurve',    pb.fadeOut?.curve || 'linear');
+
+  chk('pbCrossfadeEnabled',  pb.crossfade?.enabled);
+  set('pbCrossfadeDuration', pb.crossfade?.duration ?? 1);
+  lbl('pbCrossfadeDurationLbl', (pb.crossfade?.duration ?? 1).toFixed(1) + 's');
+  set('pbCrossfadeCurve',    pb.crossfade?.curve || 'linear');
+
+  updatePlaybackSectionVisibility();
+}
+
+/** Analog zu updateEffectSectionVisibility(): Controls je Gruppe ein-/ausblenden. */
+function updatePlaybackSectionVisibility() {
+  [['pbFadeInEnabled', 'pbFadeInControls'],
+   ['pbFadeOutEnabled', 'pbFadeOutControls'],
+   ['pbCrossfadeEnabled', 'pbCrossfadeControls']].forEach(([cbId, panelId]) => {
+    const on = !!(document.getElementById(cbId)?.checked);
+    const el = document.getElementById(panelId);
+    if (el) { el.style.opacity = on ? '1' : '0.45'; el.style.pointerEvents = on ? '' : 'none'; }
+  });
+  _markActivePlaybackSummary();
+}
+
+/**
+ * Kompakter Überblick in der "Wiedergabe & Verhalten"-Einstiegskarte —
+ * analog zu _markActiveAccordionSections()/smFxActiveSummary, nur für die
+ * neue Sektion. Kontextabhängig (_fxEditContext.kind): im Sound-Kontext
+ * zählt Zufall (#eRnd) mit (kein s.playback-Feld, aber sichtbar Teil
+ * derselben Karte); im Ambient-Kontext Loop/Zeitversetzt/Variantenmodus
+ * statt Zufall — Crossfade ist in beiden Kontexten dasselbe Feld.
+ */
+function _markActivePlaybackSummary() {
+  const pb = readPlaybackFromUI(); // liefert immer pbFadeIn/pbFadeOut/pbCrossfade — pbFadeIn/Out nur im Sound-Kontext relevant
+  const chips = [];
+  if (_fxEditContext.kind === 'ambient') {
+    const fadeInOn  = parseFloat(document.getElementById('ambFadeIn')?.value)  > 0;
+    const fadeOutOn = parseFloat(document.getElementById('ambFadeOut')?.value) > 0;
+    const loopOn    = !!(document.getElementById('ambLoop')?.checked);
+    const intervalOn = !!(document.getElementById('ambIntervalMode')?.checked);
+    if (fadeInOn)              chips.push('Fade-In');
+    if (fadeOutOn)             chips.push('Fade-Out');
+    if (pb.crossfade.enabled)  chips.push('Crossfade');
+    if (loopOn)                chips.push('Loop');
+    if (intervalOn)            chips.push('Zeitversetzt');
+    chips.push(_ambVariantMode === 'rotate' ? 'Rotierend' : 'Zufällig');
+  } else {
+    const random = !!(document.getElementById('eRnd')?.checked);
+    if (pb.fadeIn.enabled)    chips.push('Fade-In');
+    if (pb.fadeOut.enabled)   chips.push('Fade-Out');
+    if (pb.crossfade.enabled) chips.push('Crossfade');
+    if (random)                chips.push('Zufall');
+  }
+
+  const summaryEl = document.getElementById('smPlaybackActiveSummary');
+  if (summaryEl) {
+    // Bewusst kein Verlass auf .sm-fx-summary:empty::before (dessen Text
+    // "Keine Effekte aktiv" für diese Sektion falsch wäre) — eigener,
+    // passender Platzhalter, wenn nichts aktiv ist.
+    summaryEl.innerHTML = chips.length
+      ? chips.map(label => `<span class="sm-fx-summary__chip">${label}</span>`).join('')
+      : '<span class="u-text-muted u-text-badge" style="font-style:italic">Standardwiedergabe</span>';
+  }
+  const badge = document.getElementById('smPlaybackBadge');
+  if (badge) badge.style.display = chips.length ? '' : 'none';
+}
+
+/**
+ * Ambient "Loop" und "Zeitversetzt" schließen sich gegenseitig aus (Prompt
+ * 2, Kap. 18) — reine Editor-Draft-UI-Logik (keine gespeicherten Tracks
+ * betroffen, kein Aufruf von toggleAmbientLoop()/toggleAmbientInterval(),
+ * die auf GESPEICHERTEN Tracks arbeiten und sofort die Wiedergabe
+ * neu starten würden — hier wird nur der Formular-Entwurf bearbeitet, bis
+ * "Speichern" geklickt wird). Aktive Option wird per .is-active markiert
+ * (analog ambVariantRandom/Rotate), Intervall-Min/Max werden bei
+ * deaktiviertem Zeitversetzt ausgegraut (Kap. 20).
+ */
+function _syncAmbientLoopIntervalExclusivity() {
+  const loopEl = document.getElementById('ambLoop');
+  const intEl  = document.getElementById('ambIntervalMode');
+  document.getElementById('ambLoopRow')?.classList.toggle('is-active', !!loopEl?.checked);
+  document.getElementById('ambIntervalRow')?.classList.toggle('is-active', !!intEl?.checked);
+  const mmRow = document.getElementById('ambIntervalMinMaxRow');
+  if (mmRow) {
+    const on = !!intEl?.checked;
+    mmRow.style.opacity = on ? '1' : '0.45';
+    mmRow.querySelectorAll('input').forEach(el => { el.disabled = !on; });
+  }
+  _markActivePlaybackSummary();
+}
+
+/**
  * Mark accordion section headers with 'has-active-fx' if they contain active effects.
  * Improves visual hierarchy: users can see at a glance which sections are active.
  */
@@ -396,11 +561,11 @@ function _markActiveAccordionSections(fx) {
 }
 
 /**
- * Marks the "Einstellungen" popover trigger (soundMenubar) when a
+ * Marks the "Wiedergabe" dialog trigger button (#fxToolbar) when a
  * playback setting differs from its default — same idea as
- * _markActiveAccordionSections() above, applied to the popover system
- * in js/ui/disclosure.js so a non-default choice stays visible even
- * while that popover is collapsed.
+ * _markActiveAccordionSections() above, so a non-default choice stays
+ * visible even while #playbackSettingsModal is closed. (Vormals ein
+ * Popover-Indikator im inzwischen entfernten #soundMenubar — Prompt 2.)
  */
 function _syncPlaybackSettingsIndicator() {
   const gs = APP.globalSettings;
@@ -756,11 +921,15 @@ function _snapshotSoundDraft() {
       ambIntervalMax:  val('ambIntervalMax'),
       ambFadeIn:       val('ambFadeIn'),
       ambFadeOut:      val('ambFadeOut'),
+      ambFadeInCurve:  val('ambFadeInCurve'),
+      ambFadeOutCurve: val('ambFadeOutCurve'),
+      crossfade:       readPlaybackFromUI().crossfade,
       variantMode:     _ambVariantMode
     });
   } else {
     Object.assign(snap, {
       loop: chk('eLoop'), fade: chk('eFade'), random: chk('eRnd'),
+      playback: readPlaybackFromUI(),
       hotkey: val('eHotkey'), category: val('eCat'), icon: val('eIcon'),
       tileW: val('eTileW'), tileH: val('eTileH'),
       color:     _readSelectedColor('clrOpts'),
@@ -886,6 +1055,9 @@ export function openSoundModal(id, placeholderId = null) {
   // ── Effects UI ────────────────────────────────────────────
   writeEffectsToUI(s?.effects || defaultEffects());
   // ─────────────────────────────────────────────────────────
+  // ── "Wiedergabe & Verhalten" UI ─────────────────────────────
+  writePlaybackToUI(s?.playback || defaultPlayback());
+  // ─────────────────────────────────────────────────────────
   _syncAppearancePreview();
 
   document.getElementById('soundModal').addEventListener('shown.bs.modal', () => {
@@ -931,6 +1103,9 @@ function openAmbientEffectsModal(trackId) {
   set('ambIntervalMax',  t.intervalMax ?? 30);
   set('ambFadeIn',       t.fadeIn  ?? 2);
   set('ambFadeOut',      t.fadeOut ?? 2);
+  set('ambFadeInCurve',  t.fadeInCurve  || 'linear');
+  set('ambFadeOutCurve', t.fadeOutCurve || 'linear');
+  _syncAmbientLoopIntervalExclusivity();
 
   _ambVariantMode = t.variantMode === 'rotate' ? 'rotate' : 'random';
   document.getElementById('ambVariantRandom')?.classList.toggle('is-active', _ambVariantMode === 'random');
@@ -947,6 +1122,14 @@ function openAmbientEffectsModal(trackId) {
   _preloadEditBuffers();
 
   writeEffectsToUI(t.effects || defaultEffects());
+  // "Wiedergabe & Verhalten": Fade-In/Fade-Out-UI ist kontextabhängig
+  // (SOUND- vs. AMBIENT-Variante, s. index.html), nur Crossfade
+  // (pbCrossfade*) ist ein GEMEINSAMES Feld — hier mit t.crossfade befüllen.
+  // pbFadeIn/pbFadeOut selbst bleiben unberührt (unsichtbar in diesem
+  // Kontext, s. _setModalContext('ambient')), damit sie beim nächsten
+  // Sound-Editieren nicht versehentlich einen Ambient-Rest zeigen —
+  // schreibt schon der nächste openSoundModal()-Aufruf frisch.
+  writePlaybackToUI({ ...defaultPlayback(), crossfade: t.crossfade || defaultPlayback().crossfade });
 
   document.getElementById('soundModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#soundModal .icon-picker__cats');
@@ -1319,10 +1502,20 @@ export function registerEvents() {
   // (ui.js: _openTileAddChoice → openMacroModal(null, placeholderId))
   // für den Fall, dass eine bestimmte leere Kachel befüllt werden soll.
 
-  // Wiedergabe-Einstellungen (Popover im soundMenubar)
+  // Wiedergabe-Einstellungen: Dialogbox statt Popover (Prompt 2, Kap. 4) —
+  // #btnPlaybackSettingsToggle ist jetzt ein normaler Dialog-Trigger.
+  document.getElementById('btnPlaybackSettingsToggle')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('playbackSettingsModal')).show();
+  });
   document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; _syncPlaybackSettingsIndicator(); });
+
+  // Lautstärke: Dialogbox statt permanent sichtbarer Inline-Leiste
+  // (Prompt 2, Kap. 7/8) — #masterVol/#masterVolNum unverändert.
+  document.getElementById('btnOpenSoundVolumeModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('soundVolumeModal')).show();
+  });
 
   // P2 Auto Duck (Ambient): globale Wiedergabe-Einstellung, siehe
   // audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
@@ -1590,11 +1783,13 @@ export function registerEvents() {
     _ambVariantMode = 'random';
     this.classList.add('is-active');
     document.getElementById('ambVariantRotate')?.classList.remove('is-active');
+    _markActivePlaybackSummary();
   });
   document.getElementById('ambVariantRotate')?.addEventListener('click', function() {
     _ambVariantMode = 'rotate';
     this.classList.add('is-active');
     document.getElementById('ambVariantRandom')?.classList.remove('is-active');
+    _markActivePlaybackSummary();
   });
 
   // Sound modal: volume slider ↔ number input sync
@@ -1643,6 +1838,56 @@ export function registerEvents() {
   // dass beide Dialoge gleichzeitig sichtbar sind (z. B. sehr breiter Screen).
   document.getElementById('eIcon')?.addEventListener('input', _syncAppearancePreview);
   document.getElementById('clrOpts')?.addEventListener('click', _syncAppearancePreview);
+
+  // Wiedergabe & Verhalten: gleiches Muster wie Audio-Effekte/Darstellung —
+  // eigene Dialogbox statt drittem/viertem Formular-Block im Hauptdialog.
+  document.getElementById('btnOpenPlaybackModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('soundPlaybackModal')).show();
+  });
+
+  // Fade-In
+  document.getElementById('pbFadeInEnabled')?.addEventListener('change', () => updatePlaybackSectionVisibility());
+  document.getElementById('pbFadeInDuration')?.addEventListener('input', function() {
+    const lbl = document.getElementById('pbFadeInDurationLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + 's';
+  });
+  document.getElementById('pbFadeInCurve')?.addEventListener('change', () => _markActivePlaybackSummary());
+
+  // Fade-Out
+  document.getElementById('pbFadeOutEnabled')?.addEventListener('change', () => updatePlaybackSectionVisibility());
+  document.getElementById('pbFadeOutDuration')?.addEventListener('input', function() {
+    const lbl = document.getElementById('pbFadeOutDurationLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + 's';
+  });
+  document.getElementById('pbFadeOutCurve')?.addEventListener('change', () => _markActivePlaybackSummary());
+
+  // Crossfade
+  document.getElementById('pbCrossfadeEnabled')?.addEventListener('change', () => updatePlaybackSectionVisibility());
+  document.getElementById('pbCrossfadeDuration')?.addEventListener('input', function() {
+    const lbl = document.getElementById('pbCrossfadeDurationLbl');
+    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + 's';
+  });
+  document.getElementById('pbCrossfadeCurve')?.addEventListener('change', () => _markActivePlaybackSummary());
+
+  // Zufall (#eRnd) lebt jetzt in #soundPlaybackModal, aber ist ein
+  // eigenständiges Sound-Feld (s.random) — Summary/Badge trotzdem live
+  // mitziehen, wenn es umgeschaltet wird.
+  document.getElementById('eRnd')?.addEventListener('change', () => _markActivePlaybackSummary());
+
+  // AMBIENT-Kontext (Prompt 2, Kap. 17/18/20): Fade-In/Fade-Out-Kurven,
+  // Loop⇄Zeitversetzt-Ausschließlichkeit.
+  document.getElementById('ambFadeIn')?.addEventListener('input',  () => _markActivePlaybackSummary());
+  document.getElementById('ambFadeOut')?.addEventListener('input', () => _markActivePlaybackSummary());
+  document.getElementById('ambFadeInCurve')?.addEventListener('change',  () => _markActivePlaybackSummary());
+  document.getElementById('ambFadeOutCurve')?.addEventListener('change', () => _markActivePlaybackSummary());
+  document.getElementById('ambLoop')?.addEventListener('change', function() {
+    if (this.checked) { const i = document.getElementById('ambIntervalMode'); if (i) i.checked = false; }
+    _syncAmbientLoopIntervalExclusivity();
+  });
+  document.getElementById('ambIntervalMode')?.addEventListener('change', function() {
+    if (this.checked) { const l = document.getElementById('ambLoop'); if (l) l.checked = false; }
+    _syncAmbientLoopIntervalExclusivity();
+  });
 
   // Preset dropdown
   // BUGFIX (Kap. 6): die alte Merge-Logik hier übertrug beim Anwenden eines
@@ -1752,7 +1997,7 @@ export function registerEvents() {
 
   // Reset effects button
   document.getElementById('btnFxReset')?.addEventListener('click', () => {
-    writeEffectsToUI(defaultEffects());
+    resetEffectParametersPreserveMasterEnabled();
     toast('Effekte zurückgesetzt');
   });
 
@@ -2046,6 +2291,11 @@ export function registerEvents() {
       const fOut = parseFloat(g('ambFadeOut').value);
       if (!isNaN(fIn))  t.fadeIn  = Math.max(0, fIn);
       if (!isNaN(fOut)) t.fadeOut = Math.max(0, fOut);
+      t.fadeInCurve  = g('ambFadeInCurve')?.value  || 'linear';
+      t.fadeOutCurve = g('ambFadeOutCurve')?.value || 'linear';
+      // Crossfade: gemeinsame Felder mit dem Sound-Kontext (pbCrossfade*,
+      // s. #soundPlaybackModal) — hier nach t.crossfade statt s.playback.crossfade.
+      t.crossfade = readPlaybackFromUI().crossfade;
       t.variantMode = _ambVariantMode;
 
       persistAmbientNow();
@@ -2078,6 +2328,7 @@ export function registerEvents() {
     const tileW    = parseInt(g('eTileW').value)  || null;
     const tileH    = parseInt(g('eTileH').value)  || null;
     const effects  = readEffectsFromUI();
+    const playback = readPlaybackFromUI();
     const items    = CItems();
 
     // Bugfix (Ursache 2 / Abschnitt 8+9, Testfälle F/G/H): BEVOR die
@@ -2108,7 +2359,7 @@ export function registerEvents() {
       const s = items.find(x => x.id === APP.editId);
       if (!s) { toast('Sound nicht gefunden', 'err'); return; }
       const oldSlotCount = (s.slots || []).length;
-      Object.assign(s, { name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, effects });
+      Object.assign(s, { name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, effects, playback });
       // Bugfix (Abschnitt 8): der Laufzeit-Cache (APP.audioBuffers, bk()-
       // Keys) ist POSITIONSBEZOGEN. Da Slots reordert/ersetzt/entfernt
       // worden sein können, wird er für den gesamten (alten UND neuen)
@@ -2132,7 +2383,7 @@ export function registerEvents() {
       APP._pendingSoundId = null;
       const phId  = APP._phReplacingId;
       const phIdx = phId ? items.findIndex(x => x.id === phId) : -1;
-      const newS  = { type: 'sound', id, order: phIdx >= 0 ? items[phIdx].order : 99999, name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, locked: false, effects };
+      const newS  = { type: 'sound', id, order: phIdx >= 0 ? items[phIdx].order : 99999, name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, locked: false, effects, playback };
       if (phIdx >= 0) items.splice(phIdx, 1, newS);
       else {
         const firstPH = items.findIndex(x => x.type === 'placeholder');
@@ -2198,7 +2449,8 @@ export function registerEvents() {
     // so preview uses the FULL effect chain (same engine as playback)
     const vol   = parseFloat(document.getElementById('eVol')?.value)   || 1;
     const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
-    const effects = readEffectsFromUI();
+    const effects  = readEffectsFromUI();
+    const playback = readPlaybackFromUI();
 
     // Abschnitt 4/19: eigene, von der echten Sound-ID losgelöste Preview-ID
     // statt APP.editId zu übernehmen — verhindert, dass die Preview unter
@@ -2209,7 +2461,7 @@ export function registerEvents() {
       id:      '_fxpreview_' + (APP.editId || APP._pendingSoundId || 'draft'),
       name:    document.getElementById('eName')?.value || 'Preview',
       slots:   APP.editSlots,
-      vol, pitch, loop: false, fade: false, random: false, curSlot: 0, effects
+      vol, pitch, loop: false, fade: false, random: false, curSlot: 0, effects, playback
     };
 
     // Buffer-Cache für die Preview-ID vorwärmen (Abschnitt 19: nicht unnötig

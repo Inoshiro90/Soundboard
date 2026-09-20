@@ -709,8 +709,10 @@ export function renderMusicPanel() {
   const tracks = _orderedTracks();
   if (empty) empty.style.display = tracks.length ? 'none' : '';
   list.innerHTML = tracks.map(_trackRowTemplate).join('');
-  const countEl = document.getElementById('musicCount');
-  if (countEl) countEl.textContent = String(tracks.length);
+  // Prompt 4, Kap. 4/5: #musicCount (sichtbarer Zähler) wurde aus der
+  // Toolbar entfernt — _orderedTracks()/tracks.length bleiben in Gebrauch
+  // (Leerzustand-Erkennung, Listen-Rendering oben), nur die reine
+  // DOM-Zähler-Ausgabe entfällt.
   updateStatus();
 }
 
@@ -814,6 +816,14 @@ export function registerMusicEvents() {
   });
   document.getElementById('btnMusicExportProfile')?.addEventListener('click', () => {
     if (APP.music.activeProfileId) exportMusicProfile(APP.music.activeProfileId);
+  });
+
+  // Prompt 3, Kap. 7/10: Dialog-Trigger statt permanent sichtbarer Player-Leisten.
+  document.getElementById('btnOpenMusicPlaybackModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('musicPlaybackModal')).show();
+  });
+  document.getElementById('btnOpenMusicVolumeModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('musicVolumeModal')).show();
   });
 
   document.getElementById('btnMusicPrev')?.addEventListener('click', () => previousMusicTrack());

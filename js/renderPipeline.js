@@ -88,6 +88,16 @@ function _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
 }
 
 /**
+ * Exportierte Variante von _scheduleFadeCurve() für Aufrufer außerhalb
+ * dieses Moduls (audio.js: Crossfade-Ausblenden bereits laufender
+ * Instanzen desselben Sounds, s. playSelectedSlot()). Bewusst dieselbe
+ * Kurvenlogik wie die Sound-internen Fades — keine zweite Implementierung.
+ */
+export function scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
+  _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration);
+}
+
+/**
  * BUGFIX (Audit-Problem 13): begrenzt Fade-Dauern auf sinnvolle Anteile
  * der Clip-Länge — vorher konnte bei sehr kurzen Clips ein zu lang
  * gewählter Fade den gesamten Clip "auffressen" bzw. beide Fades
@@ -135,6 +145,43 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
 }
 
 /**
+ * "Wiedergabe & Verhalten": nicht-destruktive Fade-In/Fade-Out-Rampen auf
+ * einem EIGENEN, separaten Gain-Node (getrennt von envelopeGain/fadeGain,
+ * s. Kommentar an _applyFadeCurve() zur Mutual-Exclusivity-Regel der
+ * LEGACY-Fades) — dadurch koexistieren die neuen playback.fadeIn/fadeOut
+ * konfliktfrei sowohl mit der Envelope als auch mit den Legacy-Fades
+ * (s.fade/slot.fadeIn/slot.fadeOut), ohne konkurrierende Automation auf
+ * demselben AudioParam (P3-Prinzip, s.o.).
+ *
+ * `crossfadeIn` (optional) wird von playSelectedSlot() (audio.js) gesetzt,
+ * wenn diese Wiedergabe technisch ein Crossfade-Übergang zwischen zwei
+ * gleichzeitig laufenden Instanzen DESSELBEN Sounds ist (Retrigger bei
+ * aktiviertem Overlap) — in diesem Fall ersetzt die Crossfade-Dauer/-Kurve
+ * die konfigurierte fadeIn-Rampe für DIESEN Start (die neue Instanz blendet
+ * sich über die Crossfade-Zeit ein, während playSelectedSlot() die alten
+ * Instanzen parallel darüber ausblendet).
+ */
+function _applyPlaybackFades(ctx, gainNode, playback, dur, s, crossfadeIn) {
+  const t0 = ctx.currentTime;
+  if (crossfadeIn && crossfadeIn.duration > 0) {
+    const d = Math.min(crossfadeIn.duration, dur);
+    _scheduleFadeCurve(gainNode, crossfadeIn.curve || 'linear', 0, 1, t0, d);
+    return;
+  }
+  const fi = playback?.fadeIn;
+  if (fi?.enabled && fi.duration > 0 && !s.loop) {
+    const d = Math.min(fi.duration, dur * 0.9);
+    _scheduleFadeCurve(gainNode, fi.curve || 'linear', 0, 1, t0, d);
+  }
+  const fo = playback?.fadeOut;
+  if (fo?.enabled && fo.duration > 0 && !s.loop) {
+    const d = Math.min(fo.duration, dur * 0.9);
+    const foStart = Math.max(t0, t0 + dur - d);
+    _scheduleFadeCurve(gainNode, fo.curve || 'linear', 1, 0, foStart, d);
+  }
+}
+
+/**
  * Baut den vollständigen Verarbeitungsgraphen für einen Sound-Slot und
  * verbindet ihn zwischen Quelle und `opts.destination`. Funktioniert
  * identisch für Live-AudioContext und OfflineAudioContext — der einzige
@@ -143,8 +190,9 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
  *
  * Pipeline-Reihenfolge (Plan Abschnitt 1.3):
  *   Source(Trim via start-Offset) → Pitch → Realtime-Effekte (inkl. Noise
- *   Gate/Panner) → Envelope-Gain → Fade-Gain → Master-Gain → [Analyser] →
- *   Destination.
+ *   Gate/Panner) → Envelope-Gain → Fade-Gain → Playback-Fade-Gain (neu:
+ *   "Wiedergabe & Verhalten" Fade-In/Fade-Out/Crossfade) → Master-Gain →
+ *   [Analyser] → Destination.
  *
  * @param {BaseAudioContext} ctx
  * @param {AudioBuffer} buffer      - bereits destruktiv bearbeiteter Quell-Buffer
@@ -156,13 +204,14 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
  * @param {AudioNode} opts.destination
  * @param {number} [opts.masterVol=1] - globale Lautstärke (nur 'live' relevant, s.o. Bestandsverhalten)
  * @param {boolean} [opts.allowLoop=true] - false erzwingt Einmal-Wiedergabe selbst bei s.loop (z.B. sequenzielle Makro-Wiedergabe)
+ * @param {{duration:number, curve:string}} [opts.crossfadeIn] - s. _applyPlaybackFades()
  * @returns {Promise<{
  *   src: AudioBufferSourceNode, masterGain: GainNode, analyser: AnalyserNode|null,
  *   dur: number, ts: number, start: (when?: number) => void
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null } = opts;
   const isLive    = mode === 'live';
   // Abschnitt 3/8: Analyzer war bisher an isLive geknüpft — dadurch blieb
   // er bei mode==='preview' immer leer, obwohl die Preview denselben Graph
@@ -208,6 +257,13 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
     _applyFadeCurve(ctx, fadeGain, slot, s, dur);
   }
 
+  // "Wiedergabe & Verhalten": eigener, dritter Gain-Node — bewusst getrennt
+  // von envelopeGain/fadeGain (s. _applyPlaybackFades()-Doku), damit die
+  // neuen, nicht-destruktiven Fade-In/Fade-Out/Crossfade-Einstellungen
+  // unabhängig von Envelope UND Legacy-Fades funktionieren.
+  const playbackFadeGain = ctx.createGain(); playbackFadeGain.gain.value = 1;
+  _applyPlaybackFades(ctx, playbackFadeGain, s.playback, dur, s, crossfadeIn);
+
   // Master-Gain: NUR die statische Lautstärke (s.vol * masterVol bei Live;
   // Preview/Export spielen bei vollem s.vol ohne globalen Master-Regler,
   // identisch zum bisherigen Verhalten). Bleibt bewusst UNBERÜHRT von
@@ -224,7 +280,8 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   if (chain)     { node.connect(chain.input);     node = chain.output; }
   node.connect(envelopeGain);
   envelopeGain.connect(fadeGain);
-  fadeGain.connect(masterGain);
+  fadeGain.connect(playbackFadeGain);
+  playbackFadeGain.connect(masterGain);
   if (analyser) masterGain.connect(analyser);
   masterGain.connect(destination);
 

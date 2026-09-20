@@ -7,10 +7,13 @@
    Progressive-Disclosure-Hierarchie:
 
      Ebene 1 (immer sichtbar, kein Akkordeon):
-       Name (sticky bar) · Sound-Slots/Datei · Lautstärke
+       Name (sticky bar) · Sound-Slots/Datei · Lautstärke /
+       Ambient-Intervall & Fades
 
-     Ebene 2 ("Verhalten", Akkordeon, ZU beim ersten Öffnen):
-       Pitch · Loop · Fade · Zufall / Ambient-Intervall & Fades
+     Ebene 2 (eigene Dialogbox "Wiedergabe & Verhalten"):
+       Fade-In · Fade-Out · Crossfade · Zufall
+       (Loop bleibt Teil des Datenmodells, aber ohne sichtbare UI —
+       s. index.html-Kommentar bei #eLoop.)
 
      Ebene 3 (eigene Dialogbox "Darstellung & Organisation"):
        Icon · Akzentfarbe · Kachel-Hintergrund · Kategorie · Hotkey
@@ -55,3 +58,24 @@
 .sm-level1 {
   padding-top: var(--space-2);
 }
+
+/* ─── PROMPT 2, KAP. 18: LOOP ⇄ ZEITVERSETZT (AMBIENT) ──────────
+   Analoge Hervorhebung zur aktiven Option wie bei ambVariantRandom/
+   Rotate (dort .is-active auf einem <button>) — hier auf dem
+   umschließenden <label> der Checkbox-Zeile, da Loop/Zeitversetzt
+   als Switches statt Buttons dargestellt werden. */
+.sm-excl-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sm-excl-toggle.is-active {
+  background: var(--badge-bg);
+  border-color: var(--color-accent);
+}
+

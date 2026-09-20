@@ -1700,6 +1700,14 @@ i[data-lucide] {
   height: var(--h-btn) !important;
 }
 
+/* Preset-Dropdown im Audio-Effekte-Dialog: mehr Abstand (Kap. 5 des
+   "Wiedergabe & Verhalten"-Prompts) — bewusst auf dem Dropdown selbst
+   (#fxPreset) statt auf dem umgebenden .fx-row-Container gesetzt, damit
+   Label und Reset-Button nicht mitverschoben werden. */
+#fxPreset {
+  margin: var(--space-3);
+}
+
 /* Effect group */
 .fx-group {
   margin-bottom: var(--space-2);

@@ -14,7 +14,7 @@ import { bk, sleep }   from './utils.js';
 import { toast }       from './notifications.js';
 import { idbGet, audioKey, IDB_SENTINEL, isIdbRef, openDB } from './db.js';
 import { getOrDecodeBuffer, invalidateBuffer } from './audioCache.js';
-import { renderSoundGraph } from './renderPipeline.js';
+import { renderSoundGraph, scheduleFadeCurve } from './renderPipeline.js';
 // P2 Auto Duck: zirkulärer Import (ambient.js importiert umgekehrt actx/
 // hasAudioContext/buildEffectChain aus audio.js) — funktioniert für reine
 // Funktionsreferenzen, die erst zur Laufzeit (nicht beim Modul-Ladevorgang)
@@ -360,6 +360,23 @@ export function defaultEffects() {
     // Bestehende Presets ohne diese Felder funktionieren unverändert weiter,
     // da buildEffectChain() sie mit `?? 5`/`?? 150` defaultet.
     noiseGate:  { enabled: false, threshold: -50, attack: 5, release: 150 }
+  };
+}
+
+/**
+ * "Wiedergabe & Verhalten": nicht-destruktive Wiedergabeparameter eines
+ * Sounds — im Gegensatz zu slot.fadeIn/slot.fadeOut (dauerhafte, im Editor
+ * gebrannte Bearbeitung, s. editor.js editFadeIn()/editFadeOut()) verändern
+ * diese Werte nie die gespeicherte Audiodatei, sondern werden erst beim
+ * Abspielen angewendet (renderPipeline.js). Eigener Namensraum (`playback`)
+ * bewusst getrennt von den bestehenden Legacy-Feldern `s.loop`/`s.fade`/
+ * `s.random`, um Namenskonflikte mit den Slot-Fades zu vermeiden.
+ */
+export function defaultPlayback() {
+  return {
+    fadeIn:    { enabled: false, duration: 0.5, curve: 'linear' },
+    fadeOut:   { enabled: false, duration: 0.5, curve: 'linear' },
+    crossfade: { enabled: false, duration: 1,   curve: 'linear' }
   };
 }
 
@@ -914,7 +931,33 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 
   const gs       = APP.globalSettings;
   const ctx      = actx();
+
+  // "Wiedergabe & Verhalten" — Crossfade: nur sinnvoll bei einem
+  // tatsächlichen Übergang zwischen zwei GLEICHZEITIG laufenden Instanzen
+  // DESSELBEN Sounds — das setzt Overlap voraus (sonst hat stopAll() unten
+  // ohnehin bereits alles beendet) und mindestens eine bereits aktive
+  // Instanz dieses Sounds (ein Retrigger, kein Erststart). Preview nimmt
+  // bewusst nicht teil (isolierter Lifecycle, s. APP.audioPreview-Doku).
+  const cf = s.playback?.crossfade;
+  const existingInstances = APP.activeAudio[s.id] || [];
+  const doCrossfade = !!(cf?.enabled) && cf.duration > 0 && !!gs.overlap && !opts.isPreview && existingInstances.length > 0;
+
   if (!gs.overlap && !opts.isPreview) stopAll();
+
+  if (doCrossfade) {
+    // Alte Instanz(en) desselben Sounds über die Crossfade-Dauer ausblenden
+    // und danach stoppen — identische Technik wie der bestehende Makro-
+    // "fadeout"-Action-Handler (cancelScheduledValues + Rampe + verzögertes
+    // stop()), hier nur mit wählbarer Kurvenform statt fest linear.
+    existingInstances.forEach(a => {
+      try {
+        a.gain.gain.cancelScheduledValues(ctx.currentTime);
+        a.gain.gain.setValueAtTime(a.gain.gain.value, ctx.currentTime);
+        scheduleFadeCurve(a.gain, cf.curve || 'linear', a.gain.gain.value, 0, ctx.currentTime, cf.duration);
+        setTimeout(() => { try { a.src.stop(); } catch (e) {} }, cf.duration * 1000 + 50);
+      } catch (e) {}
+    });
+  }
 
   // P1 Render-Pipeline (renderPipeline.js): identischer Graph-Aufbau wie
   // Export — behebt strukturell die im P0-Audit beschriebenen Divergenzen
@@ -923,7 +966,8 @@ export async function playSelectedSlot(s, idx, opts = {}) {
   const graph = await renderSoundGraph(ctx, buf, slot, s, {
     mode: opts.isPreview ? 'preview' : 'live',
     destination: ctx.destination,
-    masterVol: gs.masterVol ?? 1
+    masterVol: gs.masterVol ?? 1,
+    crossfadeIn: doCrossfade ? { duration: cf.duration, curve: cf.curve || 'linear' } : null
   });
   const { src, masterGain, analyser, dur } = graph;
 

@@ -102,9 +102,12 @@
        Redo) betrifft ALLE drei Ansichten (Sound/Ambient/Musik), nicht nur
        Soundeffekte — deshalb jetzt in einer IMMER sichtbaren Leiste oberhalb
        der Profil-/Szenen-/Playlist-Tabs, unabhängig vom aktiven viewMode.
-       "Wiedergabe" bleibt bewusst in #soundMenubar (steuert ausschließlich
-       das Abspielverhalten von Sound-Kacheln — Überlagern/Stop bei Neustart/
-       Mehrfachklick ergeben für Ambient/Musik keinen Sinn).
+       "Wiedergabe" (globale Sound-Wiedergabeoptionen — Überlagern/Stop bei
+       Neustart/Mehrfachklick/Auto Duck) sitzt bewusst NICHT hier, sondern
+       als eigener Dialog-Button in #fxToolbar (#playbackSettingsModal,
+       Prompt 2) — sie ergeben für Ambient/Musik keinen Sinn, betreffen also
+       nur die Soundeffekt-Ansicht, nicht "alle drei Ansichten" wie
+       Export/Import/Reset/Speichern/Undo/Redo hier.
   ══════════════════════════════════════════════════════════════════════════ -->
     <div class="app-menubar" id="globalMenubar" role="toolbar" aria-label="Allgemeine Werkzeuge">
       <div class="popover-wrap">
@@ -155,66 +158,14 @@
       </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════════════
-       Die vormals hier sitzende globale Lautstärke wurde in den neuen
-       #fxToolbar-Bereich verschoben (direkt unter #soundMenubar, analog zu
-       .ambient-board__toolbar) — sie betrifft ohnehin nur Sound-Kacheln
-       (siehe audio.js), gehörte also strukturell dorthin, nicht in eine
-       immer sichtbare Leiste oberhalb beider Ansichten.
-  ══════════════════════════════════════════════════════════════════════════ -->
-
     <!-- ═══════════════════════ SOUND-EFFEKT MENÜBAND ═══════════════════════
-       Nur im Soundeffekt-Modus sichtbar (siehe setViewMode() in ambient.js) —
-       betrifft ausschließlich die Sound-Kachel-Verwaltung, nicht Ambient.
-       Enthält jetzt nur noch Wiedergabe (Einstellungen ist in #globalMenubar
-       gewandert, da global relevant) — Stop + Lautstärke sitzen in #fxToolbar.
-  ══════════════════════════════════════════════════════════════════════════ -->
-    <div class="app-menubar" id="soundMenubar" role="toolbar" aria-label="Sound-Werkzeuge">
-
-      <!-- Wiedergabe: playback behaviour for sound tiles. Rarely changed
-           once set, so tucked behind a popover (Ebene 3) instead of
-           sitting permanently in the menubar. -->
-      <div class="popover-wrap">
-        <button class="menubar-btn menubar-btn--wide popover-toggle" id="btnPlaybackSettingsToggle"
-          data-disclosure-toggle aria-expanded="false" aria-controls="playbackSettingsPopover"
-          title="Wiedergabe-Verhalten der Sound-Kacheln" aria-label="Wiedergabe-Einstellungen ein-/ausblenden">
-          <i class="fa-solid fa-sliders" aria-hidden="true"></i>
-          <span class="menubar-btn__label">Wiedergabe</span>
-          <i class="fa-solid fa-chevron-down popover-toggle__chevron" aria-hidden="true"></i>
-        </button>
-        <div class="popover-panel" id="playbackSettingsPopover" hidden>
-          <label class="popover-check" title="Mehrere Sounds können gleichzeitig abspielen">
-            <input type="checkbox" id="setOverlap" checked>
-            Überlagern
-          </label>
-          <label class="popover-check" title="Klick auf laufenden Sound stoppt ihn">
-            <input type="checkbox" id="setStopReplay">
-            Stop bei Neustart
-          </label>
-          <label class="popover-check" title="Mehrfachklick erzeugt überlagerte Kopien">
-            <input type="checkbox" id="setMultiClick" checked>
-            Mehrfachklick
-          </label>
-
-          <!-- P2 Auto Duck: senkt die Ambient-Ebene automatisch ab, solange
-               mindestens ein Sound-Kachel-Sound spielt (audio.js
-               notifyDuckTrigger()/notifyDuckRelease() + ambient.js
-               duckAmbient()). Hier statt im Sound-FX-Modal, da GLOBAL
-               wirksam, nicht pro Sound. -->
-          <label class="popover-check" title="Ambient-Lautstärke automatisch absenken, solange ein Sound spielt">
-            <input type="checkbox" id="setAutoDuck">
-            Auto Duck (Ambient)
-          </label>
-          <div class="u-flex u-gap-2 u-mt-1" id="autoDuckAmountRow" style="align-items:center;padding-left:24px">
-            <span class="u-text-muted u-text-badge">Stärke</span>
-            <input type="range" class="slider" id="setAutoDuckAmount" min="0" max="1" step="0.05" value="0.7"
-              style="flex:1;max-width:100px">
-            <span class="u-text-muted u-text-badge" id="setAutoDuckAmountLbl">70%</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
+       Prompt 2, Kap. 2-4: "Wiedergabe" stand hier vorher als eigener,
+       hochgestellter Menüband-Block (#soundMenubar) mit Popover-Toggle.
+       Diese ganze Struktur ist jetzt obsolet — der Button lebt als normaler
+       Dialog-Trigger direkt in #fxToolbar (analog Stop/+Sound/+Makro/
+       Bearbeiten/Lautstärke), der zugehörige Dialog ist jetzt
+       #playbackSettingsModal (statt #playbackSettingsPopover). setViewMode()
+       (ambient.js) verweist entsprechend nicht mehr auf #soundMenubar. -->
 
     <!-- ════════════════════════════ PROFILE TABS ════════════════════════════
        Sound-effect profiles. Hidden while in Ambient view (setViewMode()).
@@ -230,10 +181,13 @@
     <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
     <main class="board" id="soundBoard" aria-label="Soundboard">
 
-      <!-- Analog zu .ambient-board__toolbar: Stop + eigene Lautstärke für die
-           Soundeffekt-Ansicht, direkt unter #soundMenubar (Einstellungen/
-           Wiedergabe). masterVol betraf ohnehin nur Sound-Kacheln (audio.js),
-           gehört strukturell also hierher statt in eine immer sichtbare Leiste. -->
+      <!-- Prompt 2: EINE gemeinsame Toolbar für alle Sound-Werkzeuge —
+           Stop / +Sound / +Makro / Bearbeiten / Wiedergabe / Lautstärke,
+           in genau dieser Reihenfolge. "Wiedergabe" (globale Wiedergabe-
+           optionen, #playbackSettingsModal) und "Lautstärke" (#masterVol,
+           #soundVolumeModal) sind jetzt normale Dialog-Trigger-Buttons
+           statt eines separaten #soundMenubar-Blocks bzw. einer permanent
+           sichtbaren Inline-Lautstärkeleiste. -->
       <div class="fx-toolbar" id="fxToolbar">
         <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle Sounds stoppen"
           aria-label="Alle Sounds stoppen">
@@ -284,17 +238,37 @@
           <span class="menubar-btn__label">Bearbeiten</span>
         </button>
 
-        <div class="menubar-volume" aria-label="Sound-Lautstärke">
-          <span class="menubar-volume__label">
-            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
-            Lautstärke
-          </span>
-          <input type="range" id="masterVol" class="slider menubar-volume__slider" min="0" max="1" step=".01" value="1"
-            aria-label="Lautstärke Slider">
-          <input type="number" id="masterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
-            aria-label="Lautstärke Prozent">
-          <span class="menubar-volume__label u-text-badge">%</span>
-        </div>
+        <!-- Prompt 2, Kap. 4/9: normaler Dialog-Trigger (kein Popover-Toggle
+             mehr, kein Chevron) — öffnet #playbackSettingsModal. Gleiche ID
+             wie zuvor (#btnPlaybackSettingsToggle) beibehalten. -->
+        <button class="menubar-btn menubar-btn--col2" id="btnPlaybackSettingsToggle"
+          title="Wiedergabe-Verhalten der Sound-Kacheln" aria-label="Wiedergabe-Einstellungen öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 5H3" />
+            <path d="M11 12H3" />
+            <path d="M11 19H3" />
+            <path d="M21 16V5" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+          <span class="menubar-btn__label">Wiedergabe</span>
+          <span class="popover-toggle__dot" aria-hidden="true"></span>
+        </button>
+
+        <!-- Prompt 2, Kap. 7/8: ersetzt die vormals permanent sichtbare
+             .menubar-volume-Leiste — öffnet #soundVolumeModal
+             (#masterVol/#masterVolNum leben jetzt dort, gleiche IDs). -->
+        <button class="menubar-btn menubar-btn--col2" id="btnOpenSoundVolumeModal" title="Sound-Lautstärke"
+          aria-label="Lautstärke-Einstellungen öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path
+              d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+            <path d="M16 9a5 5 0 0 1 0 6" />
+            <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+          </svg>
+          <span class="menubar-btn__label">Lautstärke</span>
+        </button>
       </div>
 
       <!-- Bearbeitungsmodus-Leiste: erscheint, wenn #btnTileEditMode oben
@@ -349,20 +323,19 @@
        the main Stop-button does not affect it.
   ══════════════════════════════════════════════════════════════════════════ -->
     <main class="board ambient-board" id="ambientBoard" aria-label="Ambient-Szene" hidden>
+      <!-- Prompt 2, Kap. 11/12: strukturell an .fx-toolbar angeglichen —
+           klar erkennbare, gleich große Toolbuttons statt Inline-Slider.
+           Lautstärke jetzt eigener Dialog-Button (#ambientVolumeModal,
+           #ambientMasterVol/#ambientMasterVolNum unverändert, bleiben
+           APP.ambient.masterVol) statt permanent sichtbarer
+           .ambient-board__master-Leiste. Rauschen-Button entfernt (Kap. 13) —
+           Generatorfunktionalität bleibt vollständig erhalten, s. ambient.js
+           registerAmbientEvents(). Prompt 4, Kap. 4/6: der Zähler-Badge
+           (#ambientCount) wurde entfernt (nicht mehr oben links sichtbar) —
+           CATracks()/tracks.length bleiben in renderAmbientPanel() für die
+           Leerzustand-Erkennung in Gebrauch (js/ambient.js), nur die reine
+           DOM-Ausgabe entfällt. -->
       <div class="ambient-board__toolbar">
-        <span class="ambient-board__count-badge" id="ambientCount">0</span>
-
-        <div class="ambient-board__master" aria-label="Ambient-Gesamtlautstärke">
-          <i data-lucide="volume-2" aria-hidden="true"></i>
-          <input type="range" id="ambientMasterVol" class="slider ambient-board__master-slider" min="0" max="1"
-            step=".01" value="1" aria-label="Ambient-Gesamtlautstärke">
-          <input type="number" id="ambientMasterVolNum" class="ambient-row__num" min="0" max="100" value="100"
-            aria-label="Ambient-Gesamtlautstärke Prozent">
-          <span class="u-text-badge">%</span>
-        </div>
-
-        <span class="u-ml-auto"></span>
-
         <button class="btn btn--sm btn--danger" id="btnAmbientStopAll" title="Alle Ambient-Sounds dieser Szene stoppen"
           aria-label="Alle Ambient-Sounds stoppen">
           <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
@@ -373,20 +346,19 @@
           <i class="fa-solid fa-plus" aria-hidden="true"></i> Hinzufügen
         </button>
 
-        <!-- P2 Noise-Generatoren: eigener Track-Typ ohne Datei (siehe
-             ambient.js addNoiseGeneratorTrack()). Gleiches Popover-Pattern
-             wie #tileAddChoicePopover (Positionierung per JS, s. ambient.js
-             _openAmbientGeneratorChoice()), hier mit 3 statt 2 Optionen. -->
-        <button class="btn btn--sm" id="btnAmbientAddGenerator" title="Rauschgenerator hinzufügen (White/Pink/Brown)"
-          aria-label="Rauschgenerator hinzufügen" aria-haspopup="true" aria-expanded="false">
-          <i class="fa-solid fa-wave-square" aria-hidden="true"></i> Rauschen
+        <span class="u-ml-auto"></span>
+
+        <button class="btn btn--sm" id="btnOpenAmbientVolumeModal" title="Ambient-Gesamtlautstärke"
+          aria-label="Lautstärke-Einstellungen öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path
+              d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+            <path d="M16 9a5 5 0 0 1 0 6" />
+            <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+          </svg>
+          Lautstärke
         </button>
-        <div class="popover-panel popover-panel--row" id="ambientGeneratorPopover" role="menu"
-          aria-label="Rauschgenerator wählen" hidden>
-          <button class="btn btn--sm" id="genAddWhite" role="menuitem">White</button>
-          <button class="btn btn--sm" id="genAddPink" role="menuitem">Pink</button>
-          <button class="btn btn--sm" id="genAddBrown" role="menuitem">Brown</button>
-        </div>
 
         <input type="file" id="ambientFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
         <input type="file" id="ambientReplaceFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
@@ -419,8 +391,22 @@
        Playback läuft unabhängig von der sichtbaren Ansicht weiter — wie Ambient.
   ══════════════════════════════════════════════════════════════════════════ -->
     <main class="board music-board" id="musicBoard" aria-label="Musikspuren" hidden>
+      <!-- Prompt 3, Kap. 6: gemeinsame Toolbar analog zu .fx-toolbar/
+           .ambient-board__toolbar — Stop/Playlist/+Musik/Wiedergabe/
+           Lautstärke, in genau dieser Reihenfolge. "Wiedergabe"
+           (Crossfade/Autoplay, #musicPlaybackModal) und "Lautstärke"
+           (#musicMasterVol/#musicMasterVolNum, #musicVolumeModal) sind
+           jetzt Dialog-Buttons statt permanent sichtbarer Steuerelemente
+           im Player darunter. Prompt 4, Kap. 4/6: der Zähler-Badge
+           (#musicCount) wurde entfernt (nicht mehr oben links sichtbar) —
+           _orderedTracks()/tracks.length bleiben in renderMusicPanel() für
+           die Leerzustand-Erkennung in Gebrauch (js/music.js), nur die
+           reine DOM-Ausgabe entfällt. -->
       <div class="music-toolbar">
-        <span class="music-toolbar__count-badge" id="musicCount">0</span>
+        <button class="btn btn--sm btn--danger" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
+          <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
+        </button>
+
         <span class="u-ml-auto"></span>
         <button class="btn btn--sm" id="btnMusicExportProfile" title="Aktive Playlist als Datei exportieren"
           aria-label="Aktive Playlist exportieren">
@@ -430,6 +416,32 @@
           aria-label="Musikstück hinzufügen">
           <i class="fa-solid fa-plus" aria-hidden="true"></i> Musik
         </button>
+
+        <button class="btn btn--sm" id="btnOpenMusicPlaybackModal" title="Crossfade &amp; Autoplay"
+          aria-label="Wiedergabe-Einstellungen öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 5H3" />
+            <path d="M11 12H3" />
+            <path d="M11 19H3" />
+            <path d="M21 16V5" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+          Wiedergabe
+        </button>
+
+        <button class="btn btn--sm" id="btnOpenMusicVolumeModal" title="Musik-Gesamtlautstärke"
+          aria-label="Lautstärke-Einstellungen öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path
+              d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+            <path d="M16 9a5 5 0 0 1 0 6" />
+            <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+          </svg>
+          Lautstärke
+        </button>
+
         <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
 
@@ -439,9 +451,13 @@
       </p>
 
       <!-- ── GLOBALE STEUERLEISTE ─────────────────────────────
-           Sticky innerhalb der Musikansicht (Kap. 31), über der Playlist —
-           Previous/Play-Pause/Next, Fortschritt, Lautstärke, Repeat/Shuffle,
-           Crossfade/Autoplay. -->
+           Sticky innerhalb der Musikansicht (Kap. 31), über der Playlist.
+           Prompt 3: Trackname → Seek → zentrierte Transportgruppe
+           (Shuffle/Prev/Play/Next/Repeat, echte DOM-Reihenfolge = visuelle
+           Reihenfolge, Kap. 15). Stop/Lautstärke/Crossfade/Autoplay sind
+           jetzt in der Toolbar bzw. in eigenen Dialogen (Kap. 5/7-11) —
+           nicht mehr permanent im Player, um ihn auf das Wesentliche zu
+           reduzieren. -->
       <div class="music-player" aria-label="Musik-Player">
         <div class="music-player__now" id="musicPlayerName">Kein Track ausgewählt</div>
 
@@ -453,6 +469,10 @@
         </div>
 
         <div class="music-player__transport">
+          <button class="music-toggle-btn" id="btnMusicShuffle" title="Shuffle" aria-label="Shuffle ein-/ausschalten"
+            aria-pressed="false">
+            <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+          </button>
           <button class="music-transport-btn" id="btnMusicPrev" title="Vorheriger Track" aria-label="Vorheriger Track">
             <i class="fa-solid fa-backward-step" aria-hidden="true"></i>
           </button>
@@ -462,43 +482,10 @@
           <button class="music-transport-btn" id="btnMusicNext" title="Nächster Track" aria-label="Nächster Track">
             <i class="fa-solid fa-forward-step" aria-hidden="true"></i>
           </button>
-          <button class="music-transport-btn" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
-            <i class="fa-solid fa-stop" aria-hidden="true"></i>
-          </button>
-
-          <div class="music-player__vol-group" aria-label="Musik-Gesamtlautstärke">
-            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
-            <input type="range" id="musicMasterVol" class="slider" min="0" max="1" step=".01" value="1"
-              aria-label="Musik-Gesamtlautstärke">
-            <input type="number" id="musicMasterVolNum" class="music-player__vol-num" min="0" max="100" value="100"
-              aria-label="Musik-Gesamtlautstärke Prozent">
-          </div>
-
-          <button class="music-toggle-btn" id="btnMusicShuffle" title="Shuffle" aria-label="Shuffle ein-/ausschalten"
-            aria-pressed="false">
-            <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
-          </button>
           <button class="music-toggle-btn" id="btnMusicRepeat" title="Wiederholen: Aus" aria-label="Wiederholen: Aus"
             aria-pressed="false">
             <i class="fa-solid fa-repeat" aria-hidden="true"></i>
           </button>
-        </div>
-
-        <div class="music-player__settings">
-          <label for="musicCrossfade">Crossfade
-            <select id="musicCrossfade" aria-label="Crossfade-Dauer in Sekunden">
-              <option value="0">Aus (harter Wechsel)</option>
-              <option value="1">1 s</option>
-              <option value="2" selected>2 s</option>
-              <option value="3">3 s</option>
-              <option value="5">5 s</option>
-              <option value="10">10 s</option>
-            </select>
-          </label>
-          <label for="musicAutoplay">
-            <input type="checkbox" id="musicAutoplay" checked>
-            Automatisch nächsten Track abspielen
-          </label>
         </div>
       </div>
 
@@ -553,7 +540,7 @@
                 title="Diesen Sound als Datei exportieren" aria-label="Sound exportieren">
                 <i class="fa-solid fa-file-export" aria-hidden="true"></i><span class="btn__label">Export</span>
               </button>
-              <button class="btn btn--sm" data-bs-dismiss="modal">Abbruch</button>
+              <button class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
               <button class="btn btn--sm btn--accent" id="btnSaveSound">
                 <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Speichern
               </button>
@@ -578,10 +565,8 @@
             <div class="sm-field--full">
               <div class="u-flex-between mb-1">
                 <label class="form-label u-mb-0">
-                  <span class="sm-sound-only">Sound-Slots <small class="u-text-muted u-text-badge">(rotiert bei
-                      Klick)</small></span>
-                  <span class="sm-ambient-only" style="display:none">Datei-Varianten <small
-                      class="u-text-muted u-text-badge">(zufällig/rotierend gewählt)</small></span>
+                  <span class="sm-sound-only">Sound-Slots</span>
+                  <span class="sm-ambient-only" style="display:none">Datei-Varianten</span>
                 </label>
                 <div class="u-flex u-gap-1">
                   <button class="btn btn--sm" id="btnBulk" title="Mehrere Dateien laden"
@@ -609,66 +594,51 @@
               </div>
             </div>
 
-            <div class="sm-field--third sm-sound-only">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="eLoop">
-                <label class="form-check-label" for="eLoop">Loop</label>
-              </div>
-            </div>
-            <div class="sm-field--third sm-sound-only">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="eFade">
-                <label class="form-check-label" for="eFade">Fade-Out</label>
-              </div>
-            </div>
-            <div class="sm-field--third sm-sound-only">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="eRnd">
-                <label class="form-check-label" for="eRnd">Zufall</label>
-              </div>
+            <!-- Loop/Legacy-Fade: nicht mehr in der Hauptansicht sichtbar
+                 (verschoben/abgelöst durch "Wiedergabe & Verhalten", s.u.).
+                 Die Felder bleiben als verstecktes Formular-Element
+                 erhalten, damit bestehende gespeicherte Sounds mit
+                 loop/fade weiterhin korrekt geladen, angezeigt (im DOM-
+                 Wert) und gespeichert werden — keine destruktive Migration
+                 nur wegen der UI-Änderung. Zufall (eRnd) lebt jetzt direkt
+                 im neuen "Wiedergabe & Verhalten"-Dialog (#soundPlaybackModal). -->
+            <div class="u-hidden sm-sound-only" aria-hidden="true">
+              <input class="form-check-input" type="checkbox" id="eLoop">
+              <input class="form-check-input" type="checkbox" id="eFade">
             </div>
 
-            <!-- Ambient-only: Loop / Intervall / Varianten-Modus / Fades -->
-            <div class="sm-field--half sm-ambient-only" style="display:none">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="ambLoop">
-                <label class="form-check-label" for="ambLoop">Loop</label>
-              </div>
-            </div>
-            <div class="sm-field--half sm-ambient-only" style="display:none">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="ambIntervalMode">
-                <label class="form-check-label" for="ambIntervalMode">Zeitversetzt (Intervall statt Loop)</label>
-              </div>
-            </div>
-            <div class="sm-field--quarter sm-ambient-only" style="display:none">
-              <label class="form-label" for="ambIntervalMin">Intervall min. (s)</label>
-              <input type="number" class="form-control" id="ambIntervalMin" min="0" max="3600" step="1" value="10">
-            </div>
-            <div class="sm-field--quarter sm-ambient-only" style="display:none">
-              <label class="form-label" for="ambIntervalMax">Intervall max. (s)</label>
-              <input type="number" class="form-control" id="ambIntervalMax" min="0" max="3600" step="1" value="30">
-            </div>
-            <div class="sm-field--quarter sm-ambient-only" style="display:none">
-              <label class="form-label" for="ambFadeIn">Fade-In (s)</label>
-              <input type="number" class="form-control" id="ambFadeIn" min="0" max="30" step="0.5" value="2">
-            </div>
-            <div class="sm-field--quarter sm-ambient-only" style="display:none">
-              <label class="form-label" for="ambFadeOut">Fade-Out (s)</label>
-              <input type="number" class="form-control" id="ambFadeOut" min="0" max="30" step="0.5" value="2">
-            </div>
-            <div class="sm-field--full sm-ambient-only" style="display:none">
-              <label class="form-label u-mb-1">Bei mehreren Dateien</label>
-              <div class="u-flex u-gap-2">
-                <button type="button" class="btn btn--sm" id="ambVariantRandom" data-mode="random">
-                  <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Zufällig
-                </button>
-                <button type="button" class="btn btn--sm" id="ambVariantRotate" data-mode="rotate">
-                  <i class="fa-solid fa-repeat" aria-hidden="true"></i> Rotierend
-                </button>
-              </div>
-            </div>
+            <!-- Ambient-only Loop/Intervall/Varianten-Modus/Fades: verschoben
+                 in die neue "Wiedergabe & Verhalten"-Dialogbox
+                 (#soundPlaybackModal, Prompt 2 Kap. 15-20) — nicht mehr
+                 permanent im Hauptbereich sichtbar. Felder/IDs unverändert. -->
+          </div>
 
+          <!-- ══ "WIEDERGABE & VERHALTEN" — eigene Dialogbox ══════════════
+               Fade-In/Fade-Out/Crossfade (nicht-destruktive Wiedergabe-
+               parameter) sowie, je nach Kontext: Zufall (Sound, s.random)
+               oder Loop/Zeitversetzt/Bei mehreren Dateien (Ambient — Prompt 2,
+               Kap. 15-20). Bewusst allgemeiner benannt als nur "Wiedergabe",
+               weil hier auch Zufalls-/Loop-Verhalten konfiguriert wird. In
+               BEIDEN Kontexten sichtbar (kein sm-sound-only/sm-ambient-only
+               auf der Karte selbst) — die Dialogbox dahinter blendet ihre
+               Unterabschnitte je nach _setModalContext() passend ein/aus.
+               Erscheint VOR "Darstellung & Organisation"/"Audio-Effekte"
+               (gleiches Einstiegskarten-Muster, sm-entry-card), weil
+               Wiedergabeverhalten näher an "was macht dieser Sound/Ambient
+               beim Abspielen" liegt als Darstellung/Organisation. ═══════ -->
+          <div class="sm-entry-card">
+            <div class="sm-entry-card__head">
+              <span class="sm-entry-card__title">
+                <i class="fa-solid fa-play" aria-hidden="true"></i>
+                Wiedergabe &amp; Verhalten
+                <span class="sm-fx-badge" id="smPlaybackBadge" style="display:none">●</span>
+              </span>
+              <button class="btn btn--sm" id="btnOpenPlaybackModal" type="button">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                Bearbeiten
+              </button>
+            </div>
+            <div class="sm-fx-summary u-mt-2" id="smPlaybackActiveSummary" aria-live="polite"></div>
           </div>
 
           <!-- ══ EBENE 3: "DARSTELLUNG & ORGANISATION" — eigene Dialogbox ══
@@ -729,6 +699,486 @@
     </div>
   </div>
 
+
+
+  <!-- ═════════════════════ WIEDERGABE & VERHALTEN DIALOG ═══════════════════════
+       Nicht-destruktive Wiedergabeparameter: Fade-In/Fade-Out/Crossfade
+       (playback.*) und Zufall (s.random). Ausdrücklich NICHT zu verwechseln
+       mit den dauerhaften ("brennenden") Slot-Fades (slot.fadeIn/fadeOut,
+       editor.js editFadeIn()/editFadeOut()) oder mit Loop (s.loop, bleibt
+       Teil des Datenmodells, aber ohne sichtbare UI in dieser Iteration).
+       Eigene Dialogbox statt drittem Formular-Block im Hauptdialog (gleiches
+       Muster wie #soundFxModal/#soundAppearanceModal). Nur im Sound-Kontext
+       relevant. -->
+  <div class="modal fade" id="soundPlaybackModal" tabindex="-1" aria-labelledby="soundPlaybackModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="soundPlaybackModalTitle">
+            <i class="fa-solid fa-play" aria-hidden="true"></i>
+            Wiedergabe &amp; Verhalten
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+
+          <!-- Fade-In: SOUND-Variante (checkbox+Dauer+Kurve, playback.fadeIn) -->
+          <div class="fx-group u-mt-2 sm-sound-only">
+            <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                  id="pbFadeInEnabled"><span>Fade-In</span></label><span class="fx-value-badge"
+                id="pbFadeInDurationLbl">0.5s</span></div>
+            <div id="pbFadeInControls" class="fx-controls">
+              <div class="fx-slider-row"><span class="fx-slider-min">Dauer</span><input type="range"
+                  class="slider fx-slider" id="pbFadeInDuration" min="0" max="10" step="0.1" value="0.5"><span
+                  class="fx-slider-max">10s</span></div>
+              <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
+                  class="form-select form-select-sm fx-preset-select" id="pbFadeInCurve"
+                  style="flex:1;max-width:180px">
+                  <option value="linear" selected>Linear</option>
+                  <option value="exponential">Exponentiell</option>
+                  <option value="sCurve">S-Kurve</option>
+                </select></div>
+            </div>
+          </div>
+
+          <!-- Fade-In: AMBIENT-Variante (Dauer+Shape, t.fadeIn/t.fadeInCurve —
+               bestehendes Feld ohne separate "enabled"-Checkbox: 0s = aus,
+               identisch zur bisherigen Logik, s. Prompt 2 Kap. 17/21). -->
+          <div class="fx-group u-mt-2 sm-ambient-only" style="display:none">
+            <div class="fx-group__head"><span class="fx-check-label"><span>Fade-In</span></span></div>
+            <div class="fx-controls">
+              <div class="fx-slider-row"><span class="fx-slider-min">Dauer (s)</span>
+                <input type="number" class="form-control" id="ambFadeIn" min="0" max="30" step="0.5" value="2"
+                  style="max-width:90px"></div>
+              <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
+                  class="form-select form-select-sm fx-preset-select" id="ambFadeInCurve"
+                  style="flex:1;max-width:180px">
+                  <option value="linear" selected>Linear</option>
+                  <option value="exponential">Exponentiell</option>
+                  <option value="sCurve">S-Kurve</option>
+                </select></div>
+            </div>
+          </div>
+
+          <div class="fx-divider"></div>
+
+          <!-- Fade-Out: SOUND-Variante -->
+          <div class="fx-group sm-sound-only">
+            <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                  id="pbFadeOutEnabled"><span>Fade-Out</span></label><span class="fx-value-badge"
+                id="pbFadeOutDurationLbl">0.5s</span></div>
+            <div id="pbFadeOutControls" class="fx-controls">
+              <div class="fx-slider-row"><span class="fx-slider-min">Dauer</span><input type="range"
+                  class="slider fx-slider" id="pbFadeOutDuration" min="0" max="10" step="0.1" value="0.5"><span
+                  class="fx-slider-max">10s</span></div>
+              <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
+                  class="form-select form-select-sm fx-preset-select" id="pbFadeOutCurve"
+                  style="flex:1;max-width:180px">
+                  <option value="linear" selected>Linear</option>
+                  <option value="exponential">Exponentiell</option>
+                  <option value="sCurve">S-Kurve</option>
+                </select></div>
+            </div>
+          </div>
+
+          <!-- Fade-Out: AMBIENT-Variante -->
+          <div class="fx-group sm-ambient-only" style="display:none">
+            <div class="fx-group__head"><span class="fx-check-label"><span>Fade-Out</span></span></div>
+            <div class="fx-controls">
+              <div class="fx-slider-row"><span class="fx-slider-min">Dauer (s)</span>
+                <input type="number" class="form-control" id="ambFadeOut" min="0" max="30" step="0.5" value="2"
+                  style="max-width:90px"></div>
+              <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
+                  class="form-select form-select-sm fx-preset-select" id="ambFadeOutCurve"
+                  style="flex:1;max-width:180px">
+                  <option value="linear" selected>Linear</option>
+                  <option value="exponential">Exponentiell</option>
+                  <option value="sCurve">S-Kurve</option>
+                </select></div>
+            </div>
+          </div>
+
+          <div class="fx-divider"></div>
+
+          <!-- Crossfade — GEMEINSAME Felder für Sound UND Ambient (Prompt 2,
+               Kap. 21): identische Steuerelemente, unterschiedliche
+               Zieldaten (s.playback.crossfade bzw. t.crossfade), je nach
+               _fxEditContext.kind beim Speichern. -->
+          <div class="fx-group">
+            <div class="fx-group__head"><label class="fx-check-label"><input type="checkbox"
+                  id="pbCrossfadeEnabled"><span>Crossfade</span></label><span class="fx-value-badge"
+                id="pbCrossfadeDurationLbl">1.0s</span></div>
+            <div id="pbCrossfadeControls" class="fx-controls">
+              <div class="fx-slider-row"><span class="fx-slider-min">Dauer</span><input type="range"
+                  class="slider fx-slider" id="pbCrossfadeDuration" min="0" max="10" step="0.1" value="1"><span
+                  class="fx-slider-max">10s</span></div>
+              <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
+                  class="form-select form-select-sm fx-preset-select" id="pbCrossfadeCurve"
+                  style="flex:1;max-width:180px">
+                  <option value="linear" selected>Linear</option>
+                  <option value="exponential">Exponentiell</option>
+                  <option value="sCurve">S-Kurve</option>
+                </select></div>
+              <small class="u-text-muted u-text-badge d-block u-mt-1 sm-sound-only">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                Wirkt nur, wenn dieser Sound erneut ausgelöst wird, während er
+                bereits läuft (Overlap muss aktiv sein).
+              </small>
+              <small class="u-text-muted u-text-badge d-block u-mt-1 sm-ambient-only" style="display:none">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                Wirkt nur beim Wechsel zwischen mehreren Datei-Varianten im
+                Loop (nicht bei Zeitversetzt/einzelner Datei).
+              </small>
+            </div>
+          </div>
+
+          <div class="fx-divider"></div>
+
+          <!-- Zufall — SOUND-Kontext: verschoben aus der Sound-Editor-
+               Hauptansicht (vorher eLoop/eFade/eRnd direkt unter der
+               Lautstärke). Gleiches Formularfeld (#eRnd), keine zweite
+               Zufalls-Logik. -->
+          <div class="fx-group sm-sound-only">
+            <div class="fx-group__head">
+              <div class="form-check form-switch u-mb-0">
+                <input class="form-check-input" type="checkbox" id="eRnd">
+                <label class="form-check-label" for="eRnd">Zufall <small
+                    class="u-text-muted u-text-badge">(zufälliger statt rotierender Sound-Slot)</small></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- AMBIENT-Kontext: Loop/Zeitversetzt (Prompt 2, Kap. 17/18) —
+               schließen sich gegenseitig aus (s. events.js
+               _wirePlaybackExclusiveToggle()), aktive Option optisch
+               hervorgehoben via .is-active (analog ambVariantRandom/Rotate
+               unten). Nutzt die bestehenden Felder/IDs unverändert. -->
+          <div class="fx-group sm-ambient-only" style="display:none">
+            <div class="fx-group__head"><span class="fx-check-label"><span>Loop / Zeitversetzt</span></span></div>
+            <div class="fx-controls">
+              <div class="u-flex u-gap-2 u-wrap">
+                <label class="sm-excl-toggle form-check form-switch" id="ambLoopRow">
+                  <input class="form-check-input" type="checkbox" id="ambLoop">
+                  <span class="form-check-label">Loop</span>
+                </label>
+                <label class="sm-excl-toggle form-check form-switch" id="ambIntervalRow">
+                  <input class="form-check-input" type="checkbox" id="ambIntervalMode">
+                  <span class="form-check-label">Zeitversetzt</span>
+                </label>
+              </div>
+              <!-- Intervall min./max. gehören logisch zu "Zeitversetzt" (Kap. 20)
+                   — nur hier sichtbar, ausgegraut bei deaktiviertem Zeitversetzt. -->
+              <div class="u-flex u-gap-2 u-mt-2" id="ambIntervalMinMaxRow">
+                <div class="sm-field--half" style="flex:1">
+                  <label class="form-label" for="ambIntervalMin">Intervall min. (s)</label>
+                  <input type="number" class="form-control" id="ambIntervalMin" min="0" max="3600" step="1" value="10">
+                </div>
+                <div class="sm-field--half" style="flex:1">
+                  <label class="form-label" for="ambIntervalMax">Intervall max. (s)</label>
+                  <input type="number" class="form-control" id="ambIntervalMax" min="0" max="3600" step="1" value="30">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="fx-divider sm-ambient-only" style="display:none"></div>
+
+          <!-- AMBIENT-Kontext: "Bei mehreren Dateien" (Kap. 19) — verschoben,
+               Ausschließlichkeit random↔rotate unverändert (ui.js/events.js
+               .is-active-Handling bleibt gleich, nur der DOM-Standort ändert
+               sich). -->
+          <div class="fx-group sm-ambient-only" style="display:none">
+            <div class="fx-group__head"><span class="fx-check-label"><span>Bei mehreren Dateien</span></span></div>
+            <div class="fx-controls">
+              <div class="u-flex u-gap-2">
+                <button type="button" class="btn btn--sm" id="ambVariantRandom" data-mode="random">
+                  <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Zufällig
+                </button>
+                <button type="button" class="btn btn--sm" id="ambVariantRotate" data-mode="rotate">
+                  <i class="fa-solid fa-repeat" aria-hidden="true"></i> Rotierend
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span class="u-text-muted u-text-badge">Änderungen wirken erst nach dem Speichern des Sounds.</span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═════════════════════════ WIEDERGABE-DIALOG (GLOBAL) ═══════════════════════
+       Prompt 2, Kap. 4-6: GLOBALE Soundboard-Wiedergabeoptionen (Überlagern/
+       Stop bei Neustart/Mehrfachklick/Auto Duck) — betreffen ALLE Sound-
+       Kacheln gleichzeitig, im Gegensatz zu #soundPlaybackModal (Prompt 1),
+       das "Wiedergabe & Verhalten" NUR des gerade bearbeiteten Sounds regelt.
+       Bewusst eigenständiger Dialog statt Popover: der frühere Popover-Toggle
+       (#btnPlaybackSettingsToggle) ist jetzt ein normaler Button in
+       #fxToolbar. Alle Feld-IDs unverändert (setOverlap/setStopReplay/
+       setMultiClick/setAutoDuck/setAutoDuckAmount) — die bestehende
+       Event-Logik in events.js (setOverlap() etc., APP.globalSettings)
+       bleibt vollständig unangetastet. -->
+  <div class="modal fade" id="playbackSettingsModal" tabindex="-1" aria-labelledby="playbackSettingsModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="playbackSettingsModalTitle">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+            Wiedergabe
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <label class="popover-check" title="Mehrere Sounds können gleichzeitig abspielen">
+            <input type="checkbox" id="setOverlap" checked>
+            Überlagern
+          </label>
+          <label class="popover-check" title="Klick auf laufenden Sound stoppt ihn">
+            <input type="checkbox" id="setStopReplay">
+            Stop bei Neustart
+          </label>
+          <label class="popover-check" title="Mehrfachklick erzeugt überlagerte Kopien">
+            <input type="checkbox" id="setMultiClick" checked>
+            Mehrfachklick
+          </label>
+
+          <!-- P2 Auto Duck: senkt die Ambient-Ebene automatisch ab, solange
+               mindestens ein Sound-Kachel-Sound spielt (audio.js
+               notifyDuckTrigger()/notifyDuckRelease() + ambient.js
+               duckAmbient()). Hier statt im Sound-FX-Modal, da GLOBAL
+               wirksam, nicht pro Sound. -->
+          <label class="popover-check" title="Ambient-Lautstärke automatisch absenken, solange ein Sound spielt">
+            <input type="checkbox" id="setAutoDuck">
+            Auto Duck (Ambient)
+          </label>
+          <div class="u-flex u-gap-2 u-mt-1" id="autoDuckAmountRow" style="align-items:center;padding-left:24px">
+            <span class="u-text-muted u-text-badge">Stärke</span>
+            <input type="range" class="slider" id="setAutoDuckAmount" min="0" max="1" step="0.05" value="0.7"
+              style="flex:1;max-width:100px">
+            <span class="u-text-muted u-text-badge" id="setAutoDuckAmountLbl">70%</span>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAUTSTÄRKE-DIALOG (SOUND) ══════════════════════
+       Prompt 2, Kap. 7-8: ersetzt die vormals permanent sichtbare
+       .menubar-volume-Leiste in #fxToolbar. #masterVol/#masterVolNum
+       unverändert — bleiben APP.globalSettings.masterVol, keine Kopie in
+       einen neuen Zustand (events.js masterVol-Handler unangetastet). -->
+  <div class="modal fade" id="soundVolumeModal" tabindex="-1" aria-labelledby="soundVolumeModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="soundVolumeModalTitle">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path
+                d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+              <path d="M16 9a5 5 0 0 1 0 6" />
+              <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+            </svg>
+            Lautstärke
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="u-flex u-gap-2" style="align-items:center">
+            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <input type="range" id="masterVol" class="slider" style="flex:1" min="0" max="1" step=".01" value="1"
+              aria-label="Lautstärke Slider">
+            <input type="number" id="masterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
+              aria-label="Lautstärke Prozent">
+            <span class="u-text-muted u-text-badge">%</span>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAUTSTÄRKE-DIALOG (AMBIENT) ════════════════════
+       Prompt 2, Kap. 12: ersetzt die vormals permanent sichtbare
+       .ambient-board__master-Leiste. #ambientMasterVol/#ambientMasterVolNum
+       unverändert — bleiben APP.ambient.masterVol, bestehende
+       setAmbientMasterVolume()-Logik/Event-Handler (ambient.js
+       registerAmbientEvents()) unangetastet. -->
+  <div class="modal fade" id="ambientVolumeModal" tabindex="-1" aria-labelledby="ambientVolumeModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ambientVolumeModalTitle">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path
+                d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+              <path d="M16 9a5 5 0 0 1 0 6" />
+              <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+            </svg>
+            Lautstärke
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="u-flex u-gap-2" style="align-items:center">
+            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <input type="range" id="ambientMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01"
+              value="1" aria-label="Ambient-Gesamtlautstärke">
+            <input type="number" id="ambientMasterVolNum" class="menubar-volume__number" min="0" max="100"
+              value="100" aria-label="Ambient-Gesamtlautstärke Prozent">
+            <span class="u-text-muted u-text-badge">%</span>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════ WIEDERGABE-DIALOG (MUSIK) ════════════════════════
+       Prompt 3, Kap. 7-9: Crossfade + Autoplay waren vorher permanent im
+       Player sichtbar (.music-player__settings) — jetzt in einem eigenen
+       Dialog, analog zu #playbackSettingsModal (Sound). #musicCrossfade/
+       #musicAutoplay unverändert (gleiche IDs/Werte/Optionen), state bleibt
+       APP.music.crossfade/APP.music.autoplay, setMusicCrossfade()/
+       setMusicAutoplay() unangetastet. -->
+  <div class="modal fade" id="musicPlaybackModal" tabindex="-1" aria-labelledby="musicPlaybackModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="musicPlaybackModalTitle">
+            <i class="fa-solid fa-play" aria-hidden="true"></i>
+            Wiedergabe
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="music-player__settings">
+            <label for="musicCrossfade">Crossfade
+              <select id="musicCrossfade" aria-label="Crossfade-Dauer in Sekunden">
+                <option value="0">Aus (harter Wechsel)</option>
+                <option value="1">1 s</option>
+                <option value="2" selected>2 s</option>
+                <option value="3">3 s</option>
+                <option value="5">5 s</option>
+                <option value="10">10 s</option>
+              </select>
+            </label>
+            <label for="musicAutoplay">
+              <input type="checkbox" id="musicAutoplay" checked>
+              Automatisch nächsten Track abspielen
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAUTSTÄRKE-DIALOG (MUSIK) ══════════════════════
+       Prompt 3, Kap. 10/11: ersetzt die vormals permanent sichtbare
+       .music-player__vol-group im Player. #musicMasterVol/#musicMasterVolNum
+       unverändert — bleiben APP.music.masterVol, setMusicMasterVolume()
+       unangetastet. Lautstärke ist danach NUR hier sichtbar, nicht mehr im
+       Player (Kap. 11). -->
+  <div class="modal fade" id="musicVolumeModal" tabindex="-1" aria-labelledby="musicVolumeModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="musicVolumeModalTitle">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path
+                d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+              <path d="M16 9a5 5 0 0 1 0 6" />
+              <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+            </svg>
+            Lautstärke
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <div class="u-flex u-gap-2" style="align-items:center">
+            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <input type="range" id="musicMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01"
+              value="1" aria-label="Musik-Gesamtlautstärke">
+            <input type="number" id="musicMasterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
+              aria-label="Musik-Gesamtlautstärke Prozent">
+            <span class="u-text-muted u-text-badge">%</span>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
 
   <!-- ══════════════════════ DARSTELLUNG & ORGANISATION DIALOG ═══════════════════

@@ -51,20 +51,10 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
-.music-toolbar__count-badge {
-  font-family: var(--font-mono);
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-pill);
-  min-width: var(--h-btn);
-  height: var(--h-btn);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 var(--space-2);
-}
+
+/* Prompt 4, Kap. 4/6: .music-toolbar__count-badge (#musicCount) entfernt —
+   war ausschließlich für den jetzt aus der Toolbar entfernten Zähler-Badge
+   verwendet, kein anderer Verwendungszweck mehr vorhanden. */
 
 /* ─── TRACK LIST ──────────────────────────────────────────────
    Rasterbasierte Mindestbreite statt eigenständiger Pixelkonstante
@@ -313,9 +303,14 @@
   min-width: 0;
 }
 
+/* Prompt 3, Kap. 3/13: Transportgruppe (Shuffle/Prev/Play/Next/Repeat) als
+   zusammengehörige Einheit horizontal zentriert — nicht mehr linksbündig/
+   auseinandergezogen. DOM-Reihenfolge entspricht der visuellen Reihenfolge
+   (Kap. 15), kein order/flex-direction-Trick nötig. */
 .music-player__transport {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -384,34 +379,22 @@
   line-height: 1;
 }
 
-.music-player__vol-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: 0 1 33.333%;
-  min-width: calc(var(--grid-row-h) * 3);
-}
-.music-player__vol-group .slider { flex: 1; min-width: 60px; }
-.music-player__vol-num {
-  /* width: calc(var(--w-1col)/2); */
-  height: var(--h-btn);
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  padding: 0 var(--space-1);
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-micro);
-  color: var(--text-primary);
-}
+/* Prompt 4, Kap. 10/11/15: .music-player__vol-group/-num (Inline-Lautstärke
+   im Player) final entfernt — seit Prompt 3 nicht mehr aus dem Markup
+   referenziert, Lautstärke lebt ausschließlich in #musicVolumeModal
+   (.menubar-volume__number wird dort stattdessen verwendet). */
 
+/* Prompt 3, Kap. 7-9: lebt jetzt im Wiedergabe-Dialog (#musicPlaybackModal)
+   statt permanent im Player — Textfarbe entsprechend auf normalen
+   Vordergrund statt Muted-Ton angehoben (im Dialog ist es Hauptinhalt,
+   nicht mehr eine nebensächliche Zeile unter dem Player). */
 .music-player__settings {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
   font-size: var(--text-badge);
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 .music-player__settings select {
   height: var(--h-btn);
@@ -436,8 +419,13 @@
   .music-row { padding: var(--space-2); }
   .music-row__vol-group { flex-basis: 100%; order: 5; }
   .music-row__reorder { order: 6; flex-direction: row; }
-  .music-player__transport { justify-content: space-between; }
-  .music-player__vol-group { flex-basis: 100%; }
+  /* Prompt 3, Kap. 3/16: KEIN justify-content:space-between mehr hier —
+     würde die zentrierte Transportgruppe auf Mobile wieder auseinanderziehen
+     (genau das widerspricht Kap. 3). .music-player__transport bleibt auch
+     auf schmalen Viewports zentriert (Regel oben, kein Override nötig).
+     .music-player__vol-group (Lautstärke im PLAYER) entfällt ersatzlos —
+     die Lautstärke lebt jetzt ausschließlich in #musicVolumeModal, nicht
+     mehr im Player, also gibt es hier nichts mehr "zurückzusetzen". */
 }
 @media (max-width: 575px) {
   .music-row__artist { display: none; }

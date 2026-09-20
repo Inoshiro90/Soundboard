@@ -27,6 +27,7 @@ import { APP, CAP, CATracks }                    from './state.js';
 import { uid, iconHtmlOr, iconGlyph }             from './utils.js';
 import { toast }                                 from './notifications.js';
 import { actx, hasAudioContext, buildEffectChain } from './audio.js';
+import { scheduleFadeCurve } from './renderPipeline.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportAmbientTrack }          from './storage.js';
@@ -136,6 +137,14 @@ function _mkTrack(name) {
     // On each play/interval-firing, one is picked per variantMode.
     files: [], variantMode: 'random', // 'random' | 'rotate'
     vol: 0.7, loop: true, fadeIn: 2, fadeOut: 2,
+    // Prompt 2, Kap. 17/21: Shape der Fade-In/Fade-Out-Rampe (analog zu
+    // s.playback.fadeIn/fadeOut.curve bei Sounds) + Crossfade zwischen
+    // Datei-Varianten in der Loop-Kette (s. _playChainCycle()). Bewusst
+    // eigenständiges Feld statt eines s.playback-Klons — Ambient-Tracks
+    // haben ihr eigenes, historisch gewachsenes Datenmodell (fadeIn/fadeOut
+    // als flache Zahlenfelder statt {enabled,duration}-Objekte).
+    fadeInCurve: 'linear', fadeOutCurve: 'linear',
+    crossfade: { enabled: false, duration: 1, curve: 'linear' },
     // Time-delayed playback: instead of looping continuously, play once then
     // wait a random (or fixed, if min === max) delay before playing again.
     intervalMode: false, intervalMin: 10, intervalMax: 30
@@ -578,7 +587,7 @@ async function _startLoopPlayback(trackId) {
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
-  if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
+  if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
   gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
@@ -605,8 +614,20 @@ async function _startLoopPlayback(trackId) {
 
 /**
  * Loop-mode playback for tracks with multiple file variants: plays one
- * variant fully, then immediately (no gap, unlike interval mode) continues
- * with the next one picked per variantMode — repeating until stopped.
+ * variant fully, then continues with the next one picked per variantMode —
+ * repeating until stopped.
+ *
+ * Prompt 2, Kap. 21: Crossfade zwischen Varianten ist NUR hier sinnvoll
+ * (kontinuierliche Kette mehrerer Dateien) — nicht bei einer einzelnen Datei
+ * im Loop (nichts, wohin überblendet werden könnte) und nicht bei
+ * Intervall-Wiedergabe (dort sind Pausen zwischen den Plays gewollt, ein
+ * Crossfade würde dem widersprechen). Ist t.crossfade.enabled, wird die
+ * NÄCHSTE Variante nicht erst im onended der aktuellen gestartet (kein
+ * Overlap möglich), sondern vorzeitig per Timer — s. leadMs unten —
+ * während die aktuelle noch läuft; beide Gain-Nodes werden dann gegenläufig
+ * überblendet (identische Rampen-Technik wie audio.js playSelectedSlot()
+ * Sound-Crossfade, hier auf den Ambient-Kettenwechsel übertragen statt aus
+ * js/music.js kopiert — beide haben einen eigenen Lebenszyklus).
  */
 async function _playChainCycle(trackId) {
   let rec = _active.get(trackId);
@@ -624,14 +645,35 @@ async function _playChainCycle(trackId) {
   if (!rec || rec.kind !== 'chain') return; // stopped while decoding
   if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); _active.delete(trackId); _updateRowPlayState(trackId, false); return; }
 
+  const cf = t.crossfade;
+  const useCrossfade = !!(cf?.enabled) && cf.duration > 0;
+
+  const ts = file.trimStart || 0;
+  let   te = file.trimEnd ?? buf.duration;
+  if (te <= ts) te = buf.duration;
+  const dur = te - ts;
+
   const gainNode = ctx.createGain();
   const target    = _ambientTargetGain(t);
-  // Only fade in on the very first clip of the chain — subsequent variants
-  // continue seamlessly at full volume, like a continuous ambience loop.
-  const fadeIn    = rec.started ? 0 : Math.max(0, t.fadeIn || 0);
   const now       = ctx.currentTime;
-  gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
-  if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
+
+  // Die noch laufende VORHERIGE Variante (falls vorhanden) — vor dem
+  // Überschreiben von rec.src/rec.gain sichern, s.u.
+  const prevSrc  = rec.started ? rec.src  : null;
+  const prevGain = rec.started ? rec.gain : null;
+
+  if (useCrossfade && prevSrc) {
+    // Überlappender Wechsel: neue Variante blendet ein, während die alte
+    // (separat, parallel) ausblendet — beide über dieselbe Crossfade-Dauer/-Kurve.
+    const d = Math.min(cf.duration, dur);
+    scheduleFadeCurve(gainNode, cf.curve || 'linear', 0, target, now, d);
+  } else {
+    // Kein Crossfade (aus, oder allererste Variante der Kette): bisheriges
+    // Verhalten — nur beim allerersten Clip einblenden, danach nahtlos voll.
+    const fadeIn = rec.started ? 0 : Math.max(0, t.fadeIn || 0);
+    gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
+    if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
+  }
   gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
@@ -642,19 +684,53 @@ async function _playChainCycle(trackId) {
   rec.src     = src;
   rec.gain    = gainNode;
   rec.started = true;
+  if (rec.timerId) { clearTimeout(rec.timerId); rec.timerId = null; }
 
-  src.onended = () => {
-    const cur = _active.get(trackId);
-    if (!cur || cur.src !== src) return; // stopped/replaced already
-    cur.src  = null;
-    cur.gain = null;
-    _playChainCycle(trackId); // immediately continue with the next variant
-  };
+  if (useCrossfade && prevSrc && prevGain) {
+    // Alte Variante parallel ausblenden und danach stoppen — sie läuft
+    // technisch noch bis zu ihrem eigenen geplanten Ende weiter, wird aber
+    // durch die Rampe schon vorher unhörbar; explizites stop() danach
+    // räumt den Knoten zuverlässig auf (analog audio.js Sound-Crossfade).
+    const d = Math.min(cf.duration, dur);
+    try {
+      prevGain.gain.cancelScheduledValues(now);
+      prevGain.gain.setValueAtTime(prevGain.gain.value, now);
+      scheduleFadeCurve(prevGain, cf.curve || 'linear', prevGain.gain.value, 0, now, d);
+    } catch (e) {}
+    prevSrc.onended = null; // verhindert, dass ihr alter Handler die Kette doppelt fortsetzt
+    setTimeout(() => { try { prevSrc.stop(); } catch (e) {} }, d * 1000 + 50);
+  }
 
-  const ts = file.trimStart || 0;
-  let   te = file.trimEnd ?? buf.duration;
-  if (te <= ts) te = buf.duration;
-  src.start(0, ts, te - ts);
+  if (useCrossfade) {
+    // Nächste Variante VOR dem natürlichen Ende dieser hier anstoßen, statt
+    // erst in onended (das wäre zu spät für einen Overlap) — Vorlaufzeit =
+    // Klip-Dauer minus Crossfade-Dauer (min. 0, falls Klip kürzer ist).
+    const leadMs = Math.max(0, dur - Math.min(cf.duration, dur)) * 1000;
+    rec.timerId = setTimeout(() => {
+      const cur = _active.get(trackId);
+      if (!cur || cur.kind !== 'chain' || cur.src !== src) return; // inzwischen gestoppt/ersetzt
+      cur.timerId = null;
+      _playChainCycle(trackId);
+    }, leadMs);
+    // onended dient hier nur noch der Aufräum-Buchhaltung, falls das Ende
+    // VOR dem Timer eintrifft (z.B. sehr kurzer Klip) — die Fortsetzung
+    // übernimmt in diesem Fall bereits der obige Timer, nicht onended.
+    src.onended = () => {
+      const cur = _active.get(trackId);
+      if (!cur || cur.src !== src) return;
+      cur.src = null; cur.gain = null;
+    };
+  } else {
+    src.onended = () => {
+      const cur = _active.get(trackId);
+      if (!cur || cur.src !== src) return; // stopped/replaced already
+      cur.src  = null;
+      cur.gain = null;
+      _playChainCycle(trackId); // immediately continue with the next variant
+    };
+  }
+
+  src.start(0, ts, dur);
   _updateRowPlayState(trackId, true);
 }
 
@@ -681,7 +757,7 @@ async function _playIntervalCycle(trackId) {
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
-  if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
+  if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
   gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
@@ -732,7 +808,7 @@ export function stopAmbientTrack(trackId, { fade = true } = {}) {
           const now = ctx.currentTime;
           rec.gain.gain.cancelScheduledValues(now);
           rec.gain.gain.setValueAtTime(rec.gain.gain.value, now);
-          rec.gain.gain.linearRampToValueAtTime(0, now + fadeOut);
+          scheduleFadeCurve(rec.gain, t?.fadeOutCurve || 'linear', rec.gain.gain.value, 0, now, fadeOut);
           setTimeout(stopNode, fadeOut * 1000 + 60);
         } else {
           stopNode();
@@ -829,11 +905,13 @@ export function renderAmbientPanel() {
   ensureAmbientState();
   const list  = document.getElementById('ambientList');
   const empty = document.getElementById('ambientEmpty');
-  const count = document.getElementById('ambientCount');
   if (!list) return;
 
+  // Prompt 4, Kap. 4/5: #ambientCount (sichtbarer Zähler) wurde aus der
+  // Toolbar entfernt — CATracks()/tracks.length bleiben selbstverständlich
+  // in Gebrauch (Leerzustand-Erkennung, Listen-Rendering unten), nur die
+  // reine DOM-Zähler-Ausgabe entfällt.
   const tracks = CATracks();
-  if (count) count.textContent = String(tracks.length);
   if (empty) empty.style.display = tracks.length ? 'none' : '';
   list.innerHTML = tracks.map(_rowTemplate).join('');
 
@@ -877,7 +955,6 @@ export function setViewMode(mode) {
   const musicOn   = APP.viewMode === 'music';
 
   document.getElementById('profBar')?.toggleAttribute('hidden', !soundOn);
-  document.getElementById('soundMenubar')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('ambProfBar')?.toggleAttribute('hidden', !ambientOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', !ambientOn);
@@ -937,8 +1014,16 @@ export function registerAmbientEvents() {
     this.value = '';
   });
 
-  // P2 Noise-Generatoren: eigenes kleines Popover (White/Pink/Brown),
-  // Positionierung analog _openTileAddChoice() in ui.js.
+  // Prompt 2, Kap. 13/14: Noise-Generator-UI deaktiviert; Generatorfunktionalität
+  // bleibt für spätere Reaktivierung erhalten. Der sichtbare Button
+  // (#btnAmbientAddGenerator) und sein Popover (#ambientGeneratorPopover)
+  // wurden aus der Ambient-Toolbar entfernt (index.html) — die darunter-
+  // liegende Funktion addNoiseGeneratorTrack() (inkl. white/pink/brown,
+  // AudioWorklet-Code, Datenstrukturen) ist davon unberührt und bleibt
+  // vollständig aufrufbar (z. B. für eine künftige UI). Nur die
+  // UI-EVENT-REGISTRIERUNG für die entfernten DOM-Elemente ist unten
+  // auskommentiert, nicht die Funktionalität selbst.
+  /*
   const genBtn   = document.getElementById('btnAmbientAddGenerator');
   const genPanel = document.getElementById('ambientGeneratorPopover');
   function _closeGenPopover() {
@@ -972,6 +1057,7 @@ export function registerAmbientEvents() {
     if (e.target.closest('#ambientGeneratorPopover') || e.target.closest('#btnAmbientAddGenerator')) return;
     _closeGenPopover();
   });
+  */
 
   document.getElementById('ambientMasterVol')?.addEventListener('input', function () {
     setAmbientMasterVolume(parseFloat(this.value));
@@ -988,6 +1074,11 @@ export function registerAmbientEvents() {
   });
 
   document.getElementById('btnAmbientStopAll')?.addEventListener('click', () => stopAllAmbient());
+
+  // Prompt 2, Kap. 12: Lautstärke-Dialog statt permanent sichtbarer Leiste.
+  document.getElementById('btnOpenAmbientVolumeModal')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('ambientVolumeModal')).show();
+  });
 
   const list = document.getElementById('ambientList');
   if (list) {

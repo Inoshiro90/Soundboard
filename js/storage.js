@@ -6,7 +6,7 @@
 import { APP, CItems, CATracks, CMTracks, STORAGE_KEY } from './state.js';
 import { uid, bk }    from './utils.js';
 import { toast }      from './notifications.js';
-import { defaultEffects } from './audio.js';
+import { defaultEffects, defaultPlayback } from './audio.js';
 import { getOrDecodeBuffer } from './audioCache.js';
 import { openDB, idbSet, idbGet, idbDelete, migrateAudioToIdb, audioKey,
          IDB_SENTINEL, isIdbRef, isBase64Data } from './db.js';
@@ -49,6 +49,29 @@ function migrateEffects() {
       // Phase 4
       if (!fx.spatial)   fx.spatial   = clone(def.spatial);
       if (!fx.noiseGate) fx.noiseGate = clone(def.noiseGate);
+    });
+  });
+}
+
+// ─── "WIEDERGABE & VERHALTEN"-MIGRATION ───────────────────────
+// Analog zu migrateEffects(): stellt sicher, dass jeder gespeicherte Sound
+// (auch aus einer Version vor dieser Funktion) ein vollständiges
+// `playback`-Objekt besitzt, ohne bestehende Werte zu überschreiben.
+// s.loop/s.fade/s.random bleiben davon unberührt (eigene Legacy-Felder,
+// s. mkSound()).
+function migratePlaybackSettings() {
+  const def   = defaultPlayback();
+  const clone = x => JSON.parse(JSON.stringify(x));
+
+  APP.profiles.forEach(prof => {
+    (prof.items || []).filter(x => x.type === 'sound').forEach(s => {
+      if (!s.playback || typeof s.playback !== 'object') {
+        s.playback = clone(def); return;
+      }
+      const pb = s.playback;
+      if (!pb.fadeIn)    pb.fadeIn    = clone(def.fadeIn);
+      if (!pb.fadeOut)   pb.fadeOut   = clone(def.fadeOut);
+      if (!pb.crossfade) pb.crossfade = clone(def.crossfade);
     });
   });
 }
@@ -130,6 +153,18 @@ function _normalizeAmbientTrack(t) {
   if (typeof t.intervalMode !== 'boolean') t.intervalMode = false;
   if (typeof t.intervalMin !== 'number') t.intervalMin = 10;
   if (typeof t.intervalMax !== 'number') t.intervalMax = 30;
+  // Prompt 2, Kap. 17/21/23: neue, defensiv nachgerüstete Felder — bestehende
+  // Ambient-Tracks ohne diese Felder erhalten die gleichen Defaults wie
+  // _mkTrack() (neue Tracks), ohne vorhandene Werte zu überschreiben.
+  if (t.fadeInCurve !== 'linear' && t.fadeInCurve !== 'exponential' && t.fadeInCurve !== 'sCurve') t.fadeInCurve = 'linear';
+  if (t.fadeOutCurve !== 'linear' && t.fadeOutCurve !== 'exponential' && t.fadeOutCurve !== 'sCurve') t.fadeOutCurve = 'linear';
+  if (!t.crossfade || typeof t.crossfade !== 'object') {
+    t.crossfade = { enabled: false, duration: 1, curve: 'linear' };
+  } else {
+    if (typeof t.crossfade.enabled !== 'boolean') t.crossfade.enabled = false;
+    if (typeof t.crossfade.duration !== 'number') t.crossfade.duration = 1;
+    if (!t.crossfade.curve) t.crossfade.curve = 'linear';
+  }
   return t;
 }
 
@@ -263,7 +298,7 @@ export function mkSound(d, order) {
     vol: 1, pitch: 1, loop: false, fade: false, random: false,
     hotkey: '', category: '', locked: false,
     slots: [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }],
-    curSlot: 0, effects: defaultEffects()
+    curSlot: 0, effects: defaultEffects(), playback: defaultPlayback()
   };
 }
 
@@ -373,6 +408,7 @@ export async function load() {
         APP.activeProfileId = APP.profiles[0].id;
       }
       migrateEffects();
+      migratePlaybackSettings();
       await runIdbMigrationIfNeeded();
       // BUGFIX: No decodeAllAudio() here — lazy decode on demand
     }
@@ -826,6 +862,7 @@ export async function importData(file, { onSuccess }) {
       else if (!Array.isArray(APP.userPresets)) APP.userPresets = [];
       migratePresetCategories();
       migrateEffects();
+      migratePlaybackSettings();
       await runIdbMigrationIfNeeded();
       onSuccess();
     } catch(err) { console.error('[storage] import error:', err); toast('Import fehlgeschlagen', 'err'); }

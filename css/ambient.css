@@ -13,12 +13,9 @@
    element visible. Force it here so hiding always actually hides. */
 [hidden] { display: none !important; }
 
-/* Two stacked .app-menubar elements: the global one stays sticky under the
-   navbar, the sound-only one (hidden entirely in Ambient view) scrolls
-   normally underneath it instead of competing for the same sticky slot. */
-#soundMenubar {
-  position: static;
-}
+/* Prompt 2, Kap. 2/3: #soundMenubar wurde entfernt (index.html) — "Wiedergabe"
+   lebt jetzt als normaler Button in #fxToolbar, kein zweiter, separat
+   positionierter Menüband-Block mehr nötig. */
 
 /* ─── MODE TOGGLE (navbar) ───────────────────────────────────
    Segmented two-icon control. Both icons always visible; clicking
@@ -97,33 +94,11 @@
   flex-wrap: wrap;
 }
 
-.ambient-board__count-badge {
-  font-family: var(--font-mono);
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-pill);
-  padding: 2px var(--space-2);
-  min-width: 20px;
-  text-align: center;
-}
-
-.ambient-board__master {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-/* Spez. Kap. 32: Master-Slider rasterbasiert statt fixer 110px-Breite.
-   ~3 Rasterspalten, schrumpft aber flexibel wenn der Toolbar-Platz
-   nicht ausreicht (z.B. XS/SM). */
-.ambient-board__master-slider {
-  width: var(--w-3col);
-  max-width: 100%;
-  flex: 1 1 auto;
-}
+/* Prompt 4, Kap. 4/6/15: .ambient-board__count-badge (#ambientCount) und
+   .ambient-board__master/-slider (Inline-Lautstärke im Player) wurden
+   final entfernt — beide sind seit Prompt 2 nicht mehr aus dem Markup
+   referenziert (Zähler entfernt, Lautstärke lebt in #ambientVolumeModal)
+   und erfüllen keine Funktion mehr. */
 
 .ambient-empty {
   color: var(--text-muted);
@@ -478,7 +453,6 @@
    (Kap. 56) ist nicht mehr nötig. */
 @media (max-width: 767px) {
   .ambient-board__toolbar        { gap: var(--space-2); }
-  .ambient-board__master-slider  { flex: 1; width: auto; }
   .ambient-list                  { grid-template-columns: 1fr; }
   .ambient-row                   { padding: var(--space-2); }
   .ambient-row__vol              { flex-basis: 100%; order: 5; }
