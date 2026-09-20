@@ -188,11 +188,11 @@
            #soundVolumeModal) sind jetzt normale Dialog-Trigger-Buttons
            statt eines separaten #soundMenubar-Blocks bzw. einer permanent
            sichtbaren Inline-Lautstärkeleiste. -->
-      <div class="fx-toolbar" id="fxToolbar">
-        <button class="menubar-btn menubar-btn--stop" id="btnStop" title="Alle Sounds stoppen"
+      <div class="board-toolbar fx-toolbar" id="fxToolbar">
+        <button class="btn board-toolbar__btn btn--danger" id="btnStop" title="Alle Sounds stoppen"
           aria-label="Alle Sounds stoppen">
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
-          <span class="menubar-btn__label">Stop</span>
+          <span class="board-toolbar__label">Stop</span>
         </button>
 
         <!-- Direkter Einstieg zum Anlegen (ersetzt den Umweg über eine leere
@@ -202,23 +202,23 @@
              sofort, unabhängig davon, ob/wann das externe Lucide-Skript
              (CDN) lädt — identisches Markup wie lucide.createIcons() es
              zur Laufzeit erzeugen würde, nur fest eingebettet. -->
-        <button class="menubar-btn menubar-btn--col2 menubar-btn--accent" id="btnToolbarAddSound"
+        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddSound"
           title="Neuen Sound hinzufügen" aria-label="Neuen Sound hinzufügen">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14" />
             <path d="M12 5v14" />
           </svg>
-          <span class="menubar-btn__label">Sound</span>
+          <span class="board-toolbar__label">Sound</span>
         </button>
-        <button class="menubar-btn menubar-btn--col2 menubar-btn--accent" id="btnToolbarAddMacro"
+        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddMacro"
           title="Neues Makro hinzufügen" aria-label="Neues Makro hinzufügen">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14" />
             <path d="M12 5v14" />
           </svg>
-          <span class="menubar-btn__label">Makro</span>
+          <span class="board-toolbar__label">Makro</span>
         </button>
 
         <!-- Ersetzt den bisherigen Long-Press-Trigger für den Bearbeitungs-
@@ -227,7 +227,7 @@
              per Long-Press einzublenden. Long-Press verschiebt jetzt direkt
              die Kachel (siehe setupTileEditGestures()), unabhängig von
              diesem Modus. aria-pressed wird von setTileEditMode() gepflegt. -->
-        <button class="menubar-btn menubar-btn--col2" id="btnTileEditMode" title="Bearbeitungsmodus umschalten"
+        <button class="btn board-toolbar__btn" id="btnTileEditMode" title="Bearbeitungsmodus umschalten"
           aria-label="Bearbeitungsmodus umschalten" aria-pressed="false">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -235,13 +235,13 @@
               d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
             <path d="m15 5 4 4" />
           </svg>
-          <span class="menubar-btn__label">Bearbeiten</span>
+          <span class="board-toolbar__label">Bearbeiten</span>
         </button>
 
         <!-- Prompt 2, Kap. 4/9: normaler Dialog-Trigger (kein Popover-Toggle
              mehr, kein Chevron) — öffnet #playbackSettingsModal. Gleiche ID
              wie zuvor (#btnPlaybackSettingsToggle) beibehalten. -->
-        <button class="menubar-btn menubar-btn--col2" id="btnPlaybackSettingsToggle"
+        <button class="btn board-toolbar__btn" id="btnPlaybackSettingsToggle"
           title="Wiedergabe-Verhalten der Sound-Kacheln" aria-label="Wiedergabe-Einstellungen öffnen">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -251,14 +251,14 @@
             <path d="M21 16V5" />
             <circle cx="18" cy="16" r="3" />
           </svg>
-          <span class="menubar-btn__label">Wiedergabe</span>
+          <span class="board-toolbar__label">Wiedergabe</span>
           <span class="popover-toggle__dot" aria-hidden="true"></span>
         </button>
 
         <!-- Prompt 2, Kap. 7/8: ersetzt die vormals permanent sichtbare
              .menubar-volume-Leiste — öffnet #soundVolumeModal
              (#masterVol/#masterVolNum leben jetzt dort, gleiche IDs). -->
-        <button class="menubar-btn menubar-btn--col2" id="btnOpenSoundVolumeModal" title="Sound-Lautstärke"
+        <button class="btn board-toolbar__btn" id="btnOpenSoundVolumeModal" title="Sound-Lautstärke"
           aria-label="Lautstärke-Einstellungen öffnen">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -267,7 +267,7 @@
             <path d="M16 9a5 5 0 0 1 0 6" />
             <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
           </svg>
-          <span class="menubar-btn__label">Lautstärke</span>
+          <span class="board-toolbar__label">Lautstärke</span>
         </button>
       </div>
 
@@ -335,20 +335,22 @@
            CATracks()/tracks.length bleiben in renderAmbientPanel() für die
            Leerzustand-Erkennung in Gebrauch (js/ambient.js), nur die reine
            DOM-Ausgabe entfällt. -->
-      <div class="ambient-board__toolbar">
-        <button class="btn btn--sm btn--danger" id="btnAmbientStopAll" title="Alle Ambient-Sounds dieser Szene stoppen"
+      <div class="board-toolbar ambient-board__toolbar">
+        <button class="btn board-toolbar__btn btn--danger" id="btnAmbientStopAll" title="Alle Ambient-Sounds dieser Szene stoppen"
           aria-label="Alle Ambient-Sounds stoppen">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
+          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <span class="board-toolbar__label">Stop</span>
         </button>
 
-        <button class="btn btn--sm btn--accent" id="btnAmbientAdd" title="Ambient-Sound hinzufügen"
+        <button class="btn board-toolbar__btn btn--accent" id="btnAmbientAdd" title="Ambient-Sound hinzufügen"
           aria-label="Ambient-Sound hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i> Hinzufügen
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <span class="board-toolbar__label">Hinzufügen</span>
         </button>
 
-        <span class="u-ml-auto"></span>
+        <!-- <span class="u-ml-auto"></span> -->
 
-        <button class="btn btn--sm" id="btnOpenAmbientVolumeModal" title="Ambient-Gesamtlautstärke"
+        <button class="btn board-toolbar__btn" id="btnOpenAmbientVolumeModal" title="Ambient-Gesamtlautstärke"
           aria-label="Lautstärke-Einstellungen öffnen">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -357,7 +359,7 @@
             <path d="M16 9a5 5 0 0 1 0 6" />
             <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
           </svg>
-          Lautstärke
+          <span class="board-toolbar__label">Lautstärke</span>
         </button>
 
         <input type="file" id="ambientFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
@@ -402,22 +404,21 @@
            _orderedTracks()/tracks.length bleiben in renderMusicPanel() für
            die Leerzustand-Erkennung in Gebrauch (js/music.js), nur die
            reine DOM-Ausgabe entfällt. -->
-      <div class="music-toolbar">
-        <button class="btn btn--sm btn--danger" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
+      <div class="board-toolbar music-toolbar">
+        <button class="btn board-toolbar__btn btn--danger" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
+          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <span class="board-toolbar__label">Stop</span>
         </button>
 
-        <span class="u-ml-auto"></span>
-        <button class="btn btn--sm" id="btnMusicExportProfile" title="Aktive Playlist als Datei exportieren"
-          aria-label="Aktive Playlist exportieren">
-          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist
-        </button>
-        <button class="btn btn--sm btn--accent" id="btnMusicAdd" title="Musikstück hinzufügen"
+        <!-- <span class="u-ml-auto"></span> -->
+
+        <button class="btn board-toolbar__btn btn--accent" id="btnMusicAdd" title="Musikstück hinzufügen"
           aria-label="Musikstück hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i> Musik
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <span class="board-toolbar__label">Musik</span>
         </button>
 
-        <button class="btn btn--sm" id="btnOpenMusicPlaybackModal" title="Crossfade &amp; Autoplay"
+        <button class="btn board-toolbar__btn" id="btnOpenMusicPlaybackModal" title="Crossfade &amp; Autoplay"
           aria-label="Wiedergabe-Einstellungen öffnen">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -427,10 +428,10 @@
             <path d="M21 16V5" />
             <circle cx="18" cy="16" r="3" />
           </svg>
-          Wiedergabe
+          <span class="board-toolbar__label">Wiedergabe</span>
         </button>
 
-        <button class="btn btn--sm" id="btnOpenMusicVolumeModal" title="Musik-Gesamtlautstärke"
+        <button class="btn board-toolbar__btn" id="btnOpenMusicVolumeModal" title="Musik-Gesamtlautstärke"
           aria-label="Lautstärke-Einstellungen öffnen">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -439,9 +440,13 @@
             <path d="M16 9a5 5 0 0 1 0 6" />
             <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
           </svg>
-          Lautstärke
+          <span class="board-toolbar__label">Lautstärke</span>
         </button>
-
+        <button class="btn board-toolbar__btn" id="btnMusicExportProfile" title="Aktive Playlist als Datei exportieren"
+          aria-label="Aktive Playlist exportieren">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+          <span class="board-toolbar__label">Playlist</span>
+        </button>
         <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
 
@@ -531,7 +536,8 @@
             </div>
             <div class="sm-basics-actions">
               <button class="btn btn--sm" id="btnPreviewSound" aria-label="Abspielen">
-                <i class="fa-solid fa-play u-text-accent" aria-hidden="true"></i><span class="btn__label">Abspielen</span>
+                <i class="fa-solid fa-play u-text-accent" aria-hidden="true"></i><span
+                  class="btn__label">Abspielen</span>
               </button>
               <button class="btn btn--sm btn--danger" id="btnDelSound" style="display:none" aria-label="Entfernen">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i><span class="btn__label">Entfernen</span>
@@ -738,8 +744,7 @@
                   class="slider fx-slider" id="pbFadeInDuration" min="0" max="10" step="0.1" value="0.5"><span
                   class="fx-slider-max">10s</span></div>
               <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
-                  class="form-select form-select-sm fx-preset-select" id="pbFadeInCurve"
-                  style="flex:1;max-width:180px">
+                  class="form-select form-select-sm fx-preset-select" id="pbFadeInCurve" style="flex:1;max-width:180px">
                   <option value="linear" selected>Linear</option>
                   <option value="exponential">Exponentiell</option>
                   <option value="sCurve">S-Kurve</option>
@@ -755,7 +760,8 @@
             <div class="fx-controls">
               <div class="fx-slider-row"><span class="fx-slider-min">Dauer (s)</span>
                 <input type="number" class="form-control" id="ambFadeIn" min="0" max="30" step="0.5" value="2"
-                  style="max-width:90px"></div>
+                  style="max-width:90px">
+              </div>
               <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
                   class="form-select form-select-sm fx-preset-select" id="ambFadeInCurve"
                   style="flex:1;max-width:180px">
@@ -793,7 +799,8 @@
             <div class="fx-controls">
               <div class="fx-slider-row"><span class="fx-slider-min">Dauer (s)</span>
                 <input type="number" class="form-control" id="ambFadeOut" min="0" max="30" step="0.5" value="2"
-                  style="max-width:90px"></div>
+                  style="max-width:90px">
+              </div>
               <div class="fx-slider-row u-mt-1"><span class="fx-slider-min">Kurve</span><select
                   class="form-select form-select-sm fx-preset-select" id="ambFadeOutCurve"
                   style="flex:1;max-width:180px">
@@ -848,8 +855,8 @@
             <div class="fx-group__head">
               <div class="form-check form-switch u-mb-0">
                 <input class="form-check-input" type="checkbox" id="eRnd">
-                <label class="form-check-label" for="eRnd">Zufall <small
-                    class="u-text-muted u-text-badge">(zufälliger statt rotierender Sound-Slot)</small></label>
+                <label class="form-check-label" for="eRnd">Zufall <small class="u-text-muted u-text-badge">(zufälliger
+                    statt rotierender Sound-Slot)</small></label>
               </div>
             </div>
           </div>
@@ -951,15 +958,17 @@
             <input type="checkbox" id="setOverlap" checked>
             Überlagern
           </label>
+          </br>
           <label class="popover-check" title="Klick auf laufenden Sound stoppt ihn">
             <input type="checkbox" id="setStopReplay">
             Stop bei Neustart
           </label>
+          </br>
           <label class="popover-check" title="Mehrfachklick erzeugt überlagerte Kopien">
             <input type="checkbox" id="setMultiClick" checked>
             Mehrfachklick
           </label>
-
+          </br>
           <!-- P2 Auto Duck: senkt die Ambient-Ebene automatisch ab, solange
                mindestens ein Sound-Kachel-Sound spielt (audio.js
                notifyDuckTrigger()/notifyDuckRelease() + ambient.js
@@ -969,7 +978,7 @@
             <input type="checkbox" id="setAutoDuck">
             Auto Duck (Ambient)
           </label>
-          <div class="u-flex u-gap-2 u-mt-1" id="autoDuckAmountRow" style="align-items:center;padding-left:24px">
+          <div class="u-flex u-gap-2 u-mt-1" id="autoDuckAmountRow" style="align-items:center">
             <span class="u-text-muted u-text-badge">Stärke</span>
             <input type="range" class="slider" id="setAutoDuckAmount" min="0" max="1" step="0.05" value="0.7"
               style="flex:1;max-width:100px">
@@ -1064,10 +1073,10 @@
         <div class="modal-body sm-body">
           <div class="u-flex u-gap-2" style="align-items:center">
             <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
-            <input type="range" id="ambientMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01"
-              value="1" aria-label="Ambient-Gesamtlautstärke">
-            <input type="number" id="ambientMasterVolNum" class="menubar-volume__number" min="0" max="100"
-              value="100" aria-label="Ambient-Gesamtlautstärke Prozent">
+            <input type="range" id="ambientMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01" value="1"
+              aria-label="Ambient-Gesamtlautstärke">
+            <input type="number" id="ambientMasterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
+              aria-label="Ambient-Gesamtlautstärke Prozent">
             <span class="u-text-muted u-text-badge">%</span>
           </div>
         </div>
@@ -1163,8 +1172,8 @@
         <div class="modal-body sm-body">
           <div class="u-flex u-gap-2" style="align-items:center">
             <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
-            <input type="range" id="musicMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01"
-              value="1" aria-label="Musik-Gesamtlautstärke">
+            <input type="range" id="musicMasterVol" class="slider" style="flex:1" min="0" max="1" step=".01" value="1"
+              aria-label="Musik-Gesamtlautstärke">
             <input type="number" id="musicMasterVolNum" class="menubar-volume__number" min="0" max="100" value="100"
               aria-label="Musik-Gesamtlautstärke Prozent">
             <span class="u-text-muted u-text-badge">%</span>
@@ -1292,8 +1301,10 @@
           <!-- Eigene Presets: erstellen/bearbeiten/duplizieren/löschen/
                exportieren/importieren. Wiederverwendet vorhandene Buttons/
                Icons/Toasts statt eines neuen UI-Systems (Kap. 10, 28). -->
-          <div class="u-flex u-gap-2 u-wrap" id="fxPresetActions" style="padding:2px var(--space-4) 10px;align-items:center">
-            <button class="btn btn--sm" id="btnFxPresetSaveAs" title="Aktuelle Effekteinstellungen als eigenes Preset speichern">
+          <div class="u-flex u-gap-2 u-wrap" id="fxPresetActions"
+            style="padding:2px var(--space-4) 10px;align-items:center">
+            <button class="btn btn--sm" id="btnFxPresetSaveAs"
+              title="Aktuelle Effekteinstellungen als eigenes Preset speichern">
               <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Als Preset speichern
             </button>
             <button class="btn btn--sm" id="btnFxPresetEdit" title="Eigenes Preset bearbeiten" style="display:none">
@@ -1302,14 +1313,17 @@
             <button class="btn btn--sm" id="btnFxPresetDuplicate" title="Preset duplizieren" style="display:none">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplizieren
             </button>
-            <button class="btn btn--sm btn--danger" id="btnFxPresetDelete" title="Eigenes Preset löschen" style="display:none">
+            <button class="btn btn--sm btn--danger" id="btnFxPresetDelete" title="Eigenes Preset löschen"
+              style="display:none">
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
             </button>
             <span style="flex:1"></span>
-            <button class="btn btn--sm" id="btnFxPresetExport" title="Ausgewähltes Preset als JSON exportieren" style="display:none">
+            <button class="btn btn--sm" id="btnFxPresetExport" title="Ausgewähltes Preset als JSON exportieren"
+              style="display:none">
               <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
             </button>
-            <button class="btn btn--sm" id="btnFxPresetExportAll" title="Alle eigenen Presets als eine JSON-Datei exportieren">
+            <button class="btn btn--sm" id="btnFxPresetExportAll"
+              title="Alle eigenen Presets als eine JSON-Datei exportieren">
               <i class="fa-solid fa-file-zipper" aria-hidden="true"></i> Alle exportieren
             </button>
             <button class="btn btn--sm" id="btnFxPresetImportTrigger" title="Preset(s) aus JSON-Datei importieren">
@@ -1422,146 +1436,146 @@
                 </div>
                 <div id="fxEq10Controls" class="fx-controls">
                   <div class="fx-eq10-grid">
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_0" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_0" min="-18" max="18" step="1" value="0"
-                              aria-label="31 Hz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">31</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_0" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="31 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_0" aria-hidden="true">Q1.4</span>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_0" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_0" min="-18" max="18" step="1" value="0"
+                          aria-label="31 Hz Gain" aria-valuetext="0 dB">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_1" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_1" min="-18" max="18" step="1" value="0"
-                              aria-label="62 Hz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">62</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_1" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="62 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_1" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__freq">31</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_0" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="31 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_2" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_2" min="-18" max="18" step="1" value="0"
-                              aria-label="125 Hz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">125</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_2" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="125 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_2" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_0" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_1" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_1" min="-18" max="18" step="1" value="0"
+                          aria-label="62 Hz Gain" aria-valuetext="0 dB">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_3" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_3" min="-18" max="18" step="1" value="0"
-                              aria-label="250 Hz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">250</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_3" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="250 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_3" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__freq">62</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_1" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="62 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_4" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_4" min="-18" max="18" step="1" value="0"
-                              aria-label="500 Hz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">500</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_4" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="500 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_4" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_1" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_2" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_2" min="-18" max="18" step="1" value="0"
+                          aria-label="125 Hz Gain" aria-valuetext="0 dB">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_5" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_5" min="-18" max="18" step="1" value="0"
-                              aria-label="1 kHz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">1k</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_5" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="1 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_5" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__freq">125</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_2" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="125 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_6" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_6" min="-18" max="18" step="1" value="0"
-                              aria-label="2 kHz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">2k</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_6" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="2 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_6" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_2" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_3" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_3" min="-18" max="18" step="1" value="0"
+                          aria-label="250 Hz Gain" aria-valuetext="0 dB">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_7" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_7" min="-18" max="18" step="1" value="0"
-                              aria-label="4 kHz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">4k</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_7" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="4 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_7" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__freq">250</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_3" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="250 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_8" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_8" min="-18" max="18" step="1" value="0"
-                              aria-label="8 kHz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">8k</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_8" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="8 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_8" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_3" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_4" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_4" min="-18" max="18" step="1" value="0"
+                          aria-label="500 Hz Gain" aria-valuetext="0 dB">
                       </div>
-                      <div class="eq10-band">
-                        <span class="eq10-band__gain-value" id="fxEq10Lbl_9" aria-hidden="true">+0</span>
-                        <div class="eq10-gain-wrap">
-                          <input type="range" class="eq10-band__gain" id="fxEq10_9" min="-18" max="18" step="1" value="0"
-                              aria-label="16 kHz Gain" aria-valuetext="0 dB">
-                        </div>
-                        <span class="eq10-band__freq">16k</span>
-                        <div class="eq10-band__divider" aria-hidden="true"></div>
-                        <div class="eq10-q-wrap">
-                          <input type="range" class="eq10-band__q" id="fxEq10Q_9" min="0.3" max="10" step="0.1" value="1.4"
-                              aria-label="16 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
-                        </div>
-                        <span class="eq10-band__q-value" id="fxEq10QLbl_9" aria-hidden="true">Q1.4</span>
+                      <span class="eq10-band__freq">500</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_4" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="500 Hz Q (Bandbreite)" aria-valuetext="Q 1.4">
                       </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_4" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_5" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_5" min="-18" max="18" step="1" value="0"
+                          aria-label="1 kHz Gain" aria-valuetext="0 dB">
+                      </div>
+                      <span class="eq10-band__freq">1k</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_5" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="1 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
+                      </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_5" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_6" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_6" min="-18" max="18" step="1" value="0"
+                          aria-label="2 kHz Gain" aria-valuetext="0 dB">
+                      </div>
+                      <span class="eq10-band__freq">2k</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_6" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="2 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
+                      </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_6" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_7" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_7" min="-18" max="18" step="1" value="0"
+                          aria-label="4 kHz Gain" aria-valuetext="0 dB">
+                      </div>
+                      <span class="eq10-band__freq">4k</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_7" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="4 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
+                      </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_7" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_8" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_8" min="-18" max="18" step="1" value="0"
+                          aria-label="8 kHz Gain" aria-valuetext="0 dB">
+                      </div>
+                      <span class="eq10-band__freq">8k</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_8" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="8 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
+                      </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_8" aria-hidden="true">Q1.4</span>
+                    </div>
+                    <div class="eq10-band">
+                      <span class="eq10-band__gain-value" id="fxEq10Lbl_9" aria-hidden="true">+0</span>
+                      <div class="eq10-gain-wrap">
+                        <input type="range" class="eq10-band__gain" id="fxEq10_9" min="-18" max="18" step="1" value="0"
+                          aria-label="16 kHz Gain" aria-valuetext="0 dB">
+                      </div>
+                      <span class="eq10-band__freq">16k</span>
+                      <div class="eq10-band__divider" aria-hidden="true"></div>
+                      <div class="eq10-q-wrap">
+                        <input type="range" class="eq10-band__q" id="fxEq10Q_9" min="0.3" max="10" step="0.1"
+                          value="1.4" aria-label="16 kHz Q (Bandbreite)" aria-valuetext="Q 1.4">
+                      </div>
+                      <span class="eq10-band__q-value" id="fxEq10QLbl_9" aria-hidden="true">Q1.4</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1988,7 +2002,8 @@
        fragt nur Name/Kategorie/Beschreibung ab und übernimmt beim
        Speichern die aktuell im Formular stehenden Effektwerte
        (siehe events.js btnFxPresetMetaSave). -->
-  <div class="modal fade" id="fxPresetMetaModal" tabindex="-1" aria-labelledby="fxPresetMetaModalTitle" aria-hidden="true">
+  <div class="modal fade" id="fxPresetMetaModal" tabindex="-1" aria-labelledby="fxPresetMetaModalTitle"
+    aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-sm">
       <div class="modal-content">
 
@@ -2866,7 +2881,7 @@
             aria-label="Musikstück exportieren">
             <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
           </button>
-          <span class="u-ml-auto"></span>
+          <!-- <span class="u-ml-auto"></span> -->
           <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
           <button class="btn btn--accent" id="btnMusicEditSave">Speichern</button>
         </div>

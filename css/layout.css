@@ -170,17 +170,6 @@
   color: var(--color-accent);
   border-color: var(--color-accent);
 }
-/* Danger variant */
-.menubar-btn--stop {
-  color: var(--color-orange);
-  border-color: rgba(221,91,0,0.25);
-  background: rgba(221,91,0,0.05);
-}
-.menubar-btn--stop:hover {
-  background: rgba(221,91,0,0.1);
-  border-color: var(--color-orange);
-  color: var(--color-orange);
-}
 /* Save accent */
 .menubar-btn--save {
   color: var(--color-accent);
@@ -191,47 +180,6 @@
   background: var(--color-accent);
   color: #fff;
   border-color: var(--color-accent);
-}
-
-/* +Sound / +Makro / Bearbeiten im #fxToolbar: exakt 2 Rasterspalten breit,
-   gleiche Höhe wie der Stop-Button (beides von .menubar-btn geerbt bzw.
-   hier fixiert), auf Nutzerwunsch. overflow/ellipsis als Schutz, falls der
-   Label-Text bei sehr kleinem --grid-row-h (viele Spalten/schmaler
-   Viewport) nicht mehr ganz hineinpasst — die Zeile scrollt in diesem Fall
-   aber ohnehin horizontal (siehe .fx-toolbar), Kürzung ist nur ein
-   zusätzliches Sicherheitsnetz. */
-.menubar-btn--col2 {
-  width: var(--w-2col);
-  min-height: var(--h-btn);
-  justify-content: center;
-  padding-left: var(--space-2);
-  padding-right: var(--space-2);
-  overflow: hidden;
-}
-.menubar-btn--col2 .menubar-btn__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Aktiver Bearbeitungsmodus (siehe setTileEditMode() in ui.js): visuelles
-   Feedback, analog .menubar-btn.is-active. */
-.menubar-btn--col2.is-active {
-  background: var(--badge-bg);
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-}
-/* +Sound / +Makro: gleiche blaue Akzentfarbe wie "+ Hinzufügen" im
-   Ambient-/Musikbereich (dort .btn--accent), hier als menubar-btn-Variante
-   nachgebildet. */
-.menubar-btn--accent {
-  background: var(--color-accent);
-  color: #fff;
-  border-color: transparent;
-}
-.menubar-btn--accent:hover {
-  background: var(--color-accent-active);
-  border-color: transparent;
-  color: #fff;
 }
 
 /* Einstellungen/Wiedergabe: 2 Rasterspalten breit an JEDEM Breakpoint,
@@ -425,20 +373,63 @@
   gap: var(--space-3);
 }
 
-.fx-toolbar {
+/* ─── BOARD TOOLBAR ───
+   Eine gemeinsame Toolbar-Komponente für #fxToolbar, .ambient-board__toolbar
+   und .music-toolbar (siehe jeweils css/ambient.css / css/music.css — dort
+   verbleiben nur noch board-spezifische Regeln, keine eigene Toolbar-
+   Implementierung mehr). Nutzerwunsch: Buttons bleiben in EINER Zeile (kein
+   Umbruch) und die Zeile wird horizontal scrollbar, sobald nicht mehr alles
+   auf den Bildschirm passt — statt Buttons zu quetschen oder umzubrechen.
+   .btn hat bereits flex-shrink:0 (components.css), Buttons bleiben also bei
+   ihrer festen Breite und lösen bei Platzmangel Scroll statt Verzerrung aus.
+   Alle drei Boards verhalten sich hierin exakt gleich. */
+.board-toolbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  /* Nutzerwunsch: Buttons bleiben in EINER Zeile (kein Umbruch mehr) und
-     die Zeile wird horizontal scrollbar, sobald nicht mehr alles auf den
-     Bildschirm passt — statt Buttons zu quetschen oder umzubrechen.
-     .menubar-btn hat bereits flex-shrink:0 (s. weiter unten), Buttons
-     bleiben also bei ihrer festen Breite und lösen bei Platzmangel Scroll
-     statt Verzerrung aus. */
   flex-wrap: nowrap;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+}
+
+/* Board-Toolbar-Buttons: Grundgestaltung kommt vollständig von .btn
+   (components.css) — hier nur die tatsächlich zusätzlich benötigten,
+   rasterbasierten Board-Toolbar-Maße ergänzen, keine Duplizierung, keine
+   dritte parallele Button-Designsprache. Breite/Höhe bleiben an das
+   bestehende Grid gekoppelt (var(--w-2col) / var(--h-btn)). */
+.board-toolbar__btn {
+  width: var(--w-2col);
+  height: var(--h-btn);
+  min-height: var(--h-btn);
+  justify-content: center;
+  padding-inline: var(--space-2);
+  font-size: var(--text-caption);
+  overflow: hidden;
+}
+/* Aktiver Bearbeitungsmodus (#btnTileEditMode, siehe setTileEditMode() in
+   ui.js) und aktive Popover-Trigger: is-active bleibt funktional exakt wie
+   zuvor (JS toggelt weiterhin nur die Klasse), nur die Darstellung kommt
+   jetzt vom gemeinsamen Board-Toolbar-System statt von .menubar-btn--col2. */
+.board-toolbar__btn.is-active {
+  background: var(--badge-bg);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+/* Einheitliche Icongröße unabhängig davon, ob Font Awesome (<i>, erbt
+   font-size von .board-toolbar__btn) oder Inline-SVG (feste width/height-
+   Attribute im Markup) verwendet wird — keine weiteren hardcodierten
+   Pixelwerte, relative Größe über 1em. */
+.board-toolbar__btn svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+.board-toolbar__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tile-grid {
@@ -500,6 +491,10 @@
   .toolbar           { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
   .profile-bar       { padding: var(--space-1) var(--space-3); }
   .board             { padding: var(--space-2); }
+  /* Gilt für alle drei Board-Toolbars gleichermaßen (vormals nur in
+     .ambient-board__toolbar, css/ambient.css) — eine gemeinsame Regel statt
+     Toolbar-spezifischer Sonderwerte. */
+  .board-toolbar     { gap: var(--space-2); }
 
   /* .app-menubar enthält ab jetzt nur noch die 2-Spalten-breiten
      Einstellungen/Wiedergabe-Buttons (.menubar-btn--wide, Stop lebt in

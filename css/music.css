@@ -44,13 +44,9 @@
 }
 
 /* ─── TOOLBAR (Hinzufügen) ────────────────────────────────────
-   Mirrors .ambient-board__toolbar. */
-.music-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
+   Layout/Struktur kommt vollständig von .board-toolbar (css/layout.css,
+   gemeinsam mit #fxToolbar/.ambient-board__toolbar) — hier bewusst keine
+   eigene Toolbar-Implementierung mehr. */
 
 /* Prompt 4, Kap. 4/6: .music-toolbar__count-badge (#musicCount) entfernt —
    war ausschließlich für den jetzt aus der Toolbar entfernten Zähler-Badge

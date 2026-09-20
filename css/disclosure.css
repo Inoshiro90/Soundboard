@@ -43,7 +43,8 @@
 }
 
 .popover-toggle.has-active-setting .popover-toggle__dot,
-.menubar-btn.has-active-setting .popover-toggle__dot {
+.menubar-btn.has-active-setting .popover-toggle__dot,
+.board-toolbar .has-active-setting .popover-toggle__dot {
   display: inline-block;
 }
 
@@ -102,6 +103,11 @@
   color: var(--text-secondary);
   white-space: nowrap;
   cursor: pointer;
+}
+
+label.popover-check {
+  display: flex;
+  text-indent: var(--space-2);
 }
 
 /* The Raster popover hosts the existing .grid-control-group markup —

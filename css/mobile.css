@@ -8,27 +8,29 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* Modal sizing: tall, internal scroll */
-.modal-xl .modal-dialog { max-width: min(860px, 98vw); }
+.modal-xl .modal-dialog {
+	max-width: min(860px, 98vw);
+}
 
 .sm-content {
-  display: flex;
-  flex-direction: column;
-  max-height: 90dvh;
-  max-height: 90vh; /* fallback */
+	display: flex;
+	flex-direction: column;
+	max-height: 90dvh;
+	max-height: 90vh; /* fallback */
 }
 
 /* ── Sticky Basics Bar ─────────────────────────────────────── */
 .sm-basics-bar {
-  flex-shrink: 0;
-  border-bottom: var(--border-whisper);
-  background: var(--bg-surface);
-  padding: var(--space-2) var(--space-4);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  /* Spez. Kap. 31: min-height statt starrer Höhe — wächst bei
+	flex-shrink: 0;
+	border-bottom: var(--border-whisper);
+	background: var(--bg-surface);
+	padding: var(--space-2) var(--space-4);
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	/* Spez. Kap. 31: min-height statt starrer Höhe — wächst bei
      notwendigem Textumbruch statt Inhalte abzuschneiden. */
-  min-height: var(--h-menubar);
+	min-height: var(--h-menubar);
 }
 
 /* BUGFIX (rote Aktionsleiste): .sm-basics-row war `display:grid` OHNE
@@ -45,45 +47,50 @@
    Echtes Flexbox (mit tatsächlich wirksamem flex-wrap) ersetzt das jetzt
    an beiden Stellen: */
 .sm-basics-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2);
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--space-2);
 }
 
-.sm-basics-name { min-width: 0; }
+.sm-basics-name {
+	min-width: 0;
+}
 
 .sm-name-input {
-  /* Spez. Kap. 30: Name-Input -> volle Formularbreite, Höhe var(--h-btn).
+	/* Spez. Kap. 30: Name-Input -> volle Formularbreite, Höhe var(--h-btn).
      min-height statt height, damit bei 200%-Textvergrößerung nichts
      abgeschnitten wird (Kap. 46). */
-  font-size: 1rem;
-  font-weight: var(--fw-semibold);
-  min-height: var(--h-btn);
-  height: auto;
+	font-size: 1rem;
+	font-weight: var(--fw-semibold);
+	min-height: var(--h-btn);
+	height: auto;
 }
 
 .sm-basics-actions {
-  /* Keine feste Breite mehr: jeder Button behält seine natürliche,
+	/* Keine feste Breite mehr: jeder Button behält seine natürliche,
      für Icon+Text nötige Breite (kein Schrumpfen unter Lesbarkeit,
      var(--h-btn) bleibt unverändert die Button-Höhe aus components.css).
      Passen nicht alle Buttons nebeneinander in die verfügbare Breite,
      bricht die Gruppe dank flex-wrap selbständig in weitere Zeilen um —
      ohne horizontales Scrollen und ohne Overflow. */
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2);
+	width: 100%;
+	min-width: 0;
 }
 
 /* ── Scrollable Body ───────────────────────────────────────── */
 .sm-body {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 0 !important;
+	flex: 1;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	/* padding: 0 !important; */
+	font-size: var(--text-badge);
+	font-weight: var(--fw-medium);
+	color: var(--text-primary);
 }
 
 /* BUGFIX: .sm-body is intentionally zero-padding so accordion rows
@@ -97,64 +104,70 @@
    .sm-body), so it never gets padded twice. */
 .sm-body > .sm-grid,
 .sm-body > .sm-level1 {
-  padding-left: var(--space-4);
-  padding-right: var(--space-4);
+	padding-left: var(--space-4);
+	padding-right: var(--space-4);
 }
 
 /* ── Accordion Sections ────────────────────────────────────── */
 .sm-section {
-  border-bottom: var(--border-whisper);
+	border-bottom: var(--border-whisper);
 }
 
 .sm-section-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-surface);
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  /* Fix: --text-sm war nie definiert (Legacy-Bug, nicht Teil des
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--space-3) var(--space-4);
+	background: var(--bg-surface);
+	border: none;
+	cursor: pointer;
+	text-align: left;
+	/* Fix: --text-sm war nie definiert (Legacy-Bug, nicht Teil des
      Rastersystems) — auf den nächstliegenden definierten Text-Token
      gemappt. */
-  font-size: var(--text-caption);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
-  transition: background var(--dur-base);
-  gap: var(--space-2);
-  /* Spez. Kap. 30: Accordion Header -> var(--h-menubar) */
-  min-height: var(--h-menubar);
+	font-size: var(--text-caption);
+	font-weight: var(--fw-medium);
+	color: var(--text-primary);
+	transition: background var(--dur-base);
+	gap: var(--space-2);
+	/* Spez. Kap. 30: Accordion Header -> var(--h-menubar) */
+	min-height: var(--h-menubar);
 }
 
-.sm-section-toggle:hover { background: var(--border-color); }
-.sm-section-toggle.is-open { background: var(--bg-warm); }
+.sm-section-toggle:hover {
+	background: var(--border-color);
+}
+.sm-section-toggle.is-open {
+	background: var(--bg-warm);
+}
 
 .sm-chevron {
-  transition: transform 0.2s ease;
-  color: var(--text-muted);
-  flex-shrink: 0;
+	transition: transform 0.2s ease;
+	color: var(--text-muted);
+	flex-shrink: 0;
 }
 
 .sm-section-toggle.is-open .sm-chevron {
-  transform: rotate(180deg);
+	transform: rotate(180deg);
 }
 
 .sm-section-body {
-  padding: var(--space-2) var(--space-4) var(--space-3);
-  background: var(--bg-warm);
+	padding: var(--space-2) var(--space-4) var(--space-3);
+	background: var(--bg-warm);
 }
 
 /* Active FX badge */
 .sm-fx-badge {
-  color: var(--color-accent);
-  font-size: 0.8em;
-  margin-left: 4px;
+	color: var(--color-accent);
+	font-size: 0.8em;
+	margin-left: 4px;
 }
 
 /* Inline toggle inside section header */
-.sm-inline-toggle .fx-toggle__label { display: none; }
+.sm-inline-toggle .fx-toggle__label {
+	display: none;
+}
 
 /* ══════════════════════════════════════════════════════════════
    RESPONSIVE OVERRIDES
@@ -162,23 +175,55 @@
 
 /* Mobile (< 576px) */
 @media (max-width: 575px) {
-  .sm-content { max-height: 95dvh; max-height: 95vh; border-radius: 12px 12px 0 0; }
-  .modal-dialog { margin: auto 0 0 !important; align-items: flex-end !important; }
-  .sm-basics-bar { padding: var(--space-2) var(--space-3); }
-  .sm-basics-row { gap: var(--space-1); }
-  .sm-basics-actions .btn { padding: 6px 8px; font-size: 0.8rem; }
-  .sm-section-toggle { padding: var(--space-3); font-size: 0.85rem; }
-  .sm-section-body { padding: var(--space-2) var(--space-3) var(--space-3); }
-  .fx-slider-min { font-size: 0.65rem; min-width: 38px; }
-  .fx-group { margin-bottom: var(--space-3); }
-  /* Stack columns on mobile */
-  .row.g-3 > [class*="col-lg"] { flex: 0 0 100%; max-width: 100%; }
+	.sm-content {
+		max-height: 95dvh;
+		max-height: 95vh;
+		border-radius: 12px 12px 0 0;
+	}
+	.modal-dialog {
+		margin: auto 0 0 !important;
+		align-items: flex-end !important;
+	}
+	.sm-basics-bar {
+		padding: var(--space-2) var(--space-3);
+	}
+	.sm-basics-row {
+		gap: var(--space-1);
+	}
+	.sm-basics-actions .btn {
+		padding: 6px 8px;
+		font-size: 0.8rem;
+	}
+	.sm-section-toggle {
+		padding: var(--space-3);
+		font-size: 0.85rem;
+	}
+	.sm-section-body {
+		padding: var(--space-2) var(--space-3) var(--space-3);
+	}
+	.fx-slider-min {
+		font-size: 0.65rem;
+		min-width: 38px;
+	}
+	.fx-group {
+		margin-bottom: var(--space-3);
+	}
+	/* Stack columns on mobile */
+	.row.g-3 > [class*='col-lg'] {
+		flex: 0 0 100%;
+		max-width: 100%;
+	}
 }
 
 /* Tablet (576px – 767px) */
 @media (min-width: 576px) and (max-width: 767px) {
-  .sm-content { max-height: 92dvh; max-height: 92vh; }
-  .sm-section-body { padding: var(--space-2) var(--space-3) var(--space-3); }
+	.sm-content {
+		max-height: 92dvh;
+		max-height: 92vh;
+	}
+	.sm-section-body {
+		padding: var(--space-2) var(--space-3) var(--space-3);
+	}
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -186,36 +231,36 @@
    ══════════════════════════════════════════════════════════════ */
 
 .macro-tl-wrap {
-  border: var(--border-whisper);
-  border-radius: var(--radius-subtle);
-  background: var(--bg-surface);
-  overflow: hidden;
-  margin-bottom: var(--space-3);
+	border: var(--border-whisper);
+	border-radius: var(--radius-subtle);
+	background: var(--bg-surface);
+	overflow: hidden;
+	margin-bottom: var(--space-3);
 }
 
 .macro-tl-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: var(--border-whisper);
-  background: var(--bg-warm);
-  flex-wrap: wrap;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border-bottom: var(--border-whisper);
+	background: var(--bg-warm);
+	flex-wrap: wrap;
 }
 
 .macro-tl-scroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-  min-height: 80px;
-  -webkit-overflow-scrolling: touch;
+	overflow-x: auto;
+	overflow-y: hidden;
+	min-height: 80px;
+	-webkit-overflow-scrolling: touch;
 }
 
 #macroTimelineCanvas {
-  display: block;
-  cursor: crosshair;
-  touch-action: none; /* allow pointer events */
-  user-select: none;
+	display: block;
+	cursor: crosshair;
+	touch-action: none; /* allow pointer events */
+	user-select: none;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -223,35 +268,43 @@
    ══════════════════════════════════════════════════════════════ */
 
 .autosave-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  margin-left: 4px;
-  opacity: 0;
-  transition: opacity 0.3s;
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--color-accent);
+	margin-left: 4px;
+	opacity: 0;
+	transition: opacity 0.3s;
 }
 
-.autosave-dot.is-saving { opacity: 1; }
+.autosave-dot.is-saving {
+	opacity: 1;
+}
 
 /* ══════════════════════════════════════════════════════════════
    PERFORMANCE: reduce paint on idle
    ══════════════════════════════════════════════════════════════ */
 
-.tile-wrap { contain: layout style; }
-.fx-section { contain: layout; }
+.tile-wrap {
+	contain: layout style;
+}
+.fx-section {
+	contain: layout;
+}
 
 /* ══════════════════════════════════════════════════════════════
    TOUCH IMPROVEMENTS
    ══════════════════════════════════════════════════════════════ */
 
 @media (hover: none) {
-  /* Spez. Kap. 9: keine zweite, unabhängige Touch-Größenlogik mehr —
+	/* Spez. Kap. 9: keine zweite, unabhängige Touch-Größenlogik mehr —
      var(--h-btn)/var(--h-menubar) erfüllen die 24×24-Mindestgröße
      bereits an jedem Breakpoint. .slot-item ist totes Markup (die
      reale Klasse heißt .slot-row/.slot-btn, bereits 44×44 Kategorie C). */
-  .fx-check-label { padding: 4px 0; }
+	.fx-check-label {
+		padding: 4px 0;
+	}
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -259,43 +312,45 @@
    ══════════════════════════════════════════════════════════════ */
 
 [data-tip] {
-  position: relative;
-  cursor: help;
+	position: relative;
+	cursor: help;
 }
 
 [data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.85);
-  color: #fff;
-  font-size: 0.7rem;
-  padding: 3px 7px;
-  border-radius: 4px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 9999;
+	content: attr(data-tip);
+	position: absolute;
+	bottom: calc(100% + 6px);
+	left: 50%;
+	transform: translateX(-50%);
+	background: rgba(0, 0, 0, 0.85);
+	color: #fff;
+	font-size: 0.7rem;
+	padding: 3px 7px;
+	border-radius: 4px;
+	white-space: nowrap;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.15s;
+	z-index: 9999;
 }
 
 [data-tip]:hover::after,
-[data-tip]:focus::after { opacity: 1; }
+[data-tip]:focus::after {
+	opacity: 1;
+}
 
 /* ══════════════════════════════════════════════════════════════
    ACTIVE EFFECTS HIGHLIGHT
    ══════════════════════════════════════════════════════════════ */
 
 .sm-section-toggle.has-active-fx {
-  border-left: 3px solid var(--color-accent);
+	border-left: 3px solid var(--color-accent);
 }
 
 .sm-section-toggle.has-active-fx > span::before {
-  content: '● ';
-  color: var(--color-accent);
-  font-size: 0.65em;
+	content: '● ';
+	color: var(--color-accent);
+	font-size: 0.65em;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -303,11 +358,11 @@
    ══════════════════════════════════════════════════════════════ */
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 3px;
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+	border-radius: 3px;
 }
 
 .sm-section-toggle:focus-visible {
-  outline-offset: -2px;
+	outline-offset: -2px;
 }

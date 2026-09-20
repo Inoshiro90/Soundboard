@@ -11,7 +11,9 @@
    .app-menubar{display:flex}), which — being an author rule — otherwise
    wins over the browser's default `[hidden]{display:none}`, leaving the
    element visible. Force it here so hiding always actually hides. */
-[hidden] { display: none !important; }
+[hidden] {
+	display: none !important;
+}
 
 /* Prompt 2, Kap. 2/3: #soundMenubar wurde entfernt (index.html) — "Wiedergabe"
    lebt jetzt als normaler Button in #fxToolbar, kein zweiter, separat
@@ -21,78 +23,84 @@
    Segmented two-icon control. Both icons always visible; clicking
    the inactive one switches focus/active mode to it. */
 .mode-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-pill);
-  /* padding: 3px; */
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-pill);
+	/* padding: 3px; */
 }
 .mode-toggle__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Spez. Kap. 13/66: eigenständiges Icon-only-Target -> var(--h-btn) */
-  width: var(--h-btn);
-  height: var(--h-btn);
-  border-radius: var(--radius-pill);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	/* Spez. Kap. 13/66: eigenständiges Icon-only-Target -> var(--h-btn) */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	border-radius: var(--radius-pill);
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--dur-fast) var(--ease);
 }
-.mode-toggle__btn:hover { color: var(--text-primary); }
+.mode-toggle__btn:hover {
+	color: var(--text-primary);
+}
 .mode-toggle__btn.is-active {
-  background: var(--bg-surface);
-  color: var(--color-accent);
-  box-shadow: var(--shadow-card);
+	background: var(--bg-surface);
+	color: var(--color-accent);
+	box-shadow: var(--shadow-card);
 }
-.mode-toggle__btn svg { display: block; }
+.mode-toggle__btn svg {
+	display: block;
+}
 
 /* ─── AMBIENT-ONLY MODAL FIELDS (Grundeinstellungen) ──────────
    Variant-mode toggle buttons inside the shared sound/ambient editor modal. */
 #ambVariantRandom.is-active,
 #ambVariantRotate.is-active {
-  background: var(--color-accent);
-  color: #fff;
-  border-color: var(--color-accent);
+	background: var(--color-accent);
+	color: #fff;
+	border-color: var(--color-accent);
 }
 
 /* ─── SCENE-TAB LIVE INDICATOR ───────────────────────────────
    Small pulsing dot shown on an ambient scene's tab while at least
    one of its tracks is playing — visible even from the Sound view. */
 .profile-tab__live {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-teal);
-  box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.2);
-  animation: ambient-pulse 1.6s ease-in-out infinite;
-  vertical-align: middle;
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--color-teal);
+	box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.2);
+	animation: ambient-pulse 1.6s ease-in-out infinite;
+	vertical-align: middle;
 }
 @keyframes ambient-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: .35; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
 }
 
 /* ─── AMBIENT BOARD ───────────────────────────────────────────
    .board base sizing (flex:1, padding) comes from layout.css;
    this only adds the internal toolbar + list structure. */
 .ambient-board {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
 }
 
-.ambient-board__toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
+/* Layout/Struktur kommt vollständig von .board-toolbar (css/layout.css,
+   gemeinsam mit #fxToolbar/.music-toolbar) — hier bewusst keine eigene
+   Toolbar-Implementierung mehr. */
 
 /* Prompt 4, Kap. 4/6/15: .ambient-board__count-badge (#ambientCount) und
    .ambient-board__master/-slider (Inline-Lautstärke im Player) wurden
@@ -101,349 +109,405 @@
    und erfüllen keine Funktion mehr. */
 
 .ambient-empty {
-  color: var(--text-muted);
-  font-size: var(--text-caption);
-  max-width: 560px;
-  line-height: 1.5;
+	color: var(--text-muted);
+	font-size: var(--text-caption);
+	max-width: 560px;
+	line-height: 1.5;
 }
 
 /* ─── LIST ─── */
 .ambient-list {
-  display: grid;
-  /* Spez. Kap. 9/47: rasterbasierte Mindestbreite statt einer
+	display: grid;
+	/* Spez. Kap. 9/47: rasterbasierte Mindestbreite statt einer
      eigenständigen 320px-Konstante — an var(--grid-row-h) gekoppelt.
      min(...,100%) verhindert Overflow, falls ein Container schmaler
      als die berechnete Mindestbreite ist (nur oberhalb 767px aktiv,
      s. Media Query unten, die XS/SM ohnehin auf 1fr zwingt). */
-  grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--grid-row-h) * 6), 100%), 1fr));
-  gap: var(--grid-gutter);
+	grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--grid-row-h) * 6), 100%), 1fr));
+	gap: var(--grid-gutter);
 }
 
 /* ─── ROW (not a tile: horizontal, info-dense, wraps on mobile) ─── */
 .ambient-row {
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  transition: border-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-sm);
+	padding: var(--space-2) var(--space-3);
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	transition:
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease);
 }
 .ambient-row.is-playing {
-  border-color: var(--color-teal);
-  box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.15);
+	border-color: var(--color-teal);
+	box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.15);
 }
 /* Interval-mode track currently silent, waiting for its next scheduled play */
 .ambient-row.is-waiting {
-  border-color: var(--color-accent);
-  border-style: dashed;
-  box-shadow: none;
+	border-color: var(--color-accent);
+	border-style: dashed;
+	box-shadow: none;
 }
 
 .ambient-row__state {
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  font-style: italic;
-  flex-shrink: 0;
-  white-space: nowrap;
+	font-size: var(--text-badge);
+	color: var(--text-muted);
+	font-style: italic;
+	flex-shrink: 0;
+	white-space: nowrap;
 }
-.ambient-row.is-playing .ambient-row__state { color: var(--color-teal); font-style: normal; }
-.ambient-row.is-waiting .ambient-row__state { color: var(--color-accent); }
+.ambient-row.is-playing .ambient-row__state {
+	color: var(--color-teal);
+	font-style: normal;
+}
+.ambient-row.is-waiting .ambient-row__state {
+	color: var(--color-accent);
+}
 
 .ambient-row__play {
-  /* Spez. Kap. 32: Ambient Play/Stop -> var(--h-btn) */
-  width: var(--h-btn);
-  height: var(--h-btn);
-  border-radius: var(--radius-circle);
-  border: var(--border-whisper);
-  background: var(--bg-surface);
-  color: var(--color-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--dur-fast) var(--ease);
+	/* Spez. Kap. 32: Ambient Play/Stop -> var(--h-btn) */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	border-radius: var(--radius-circle);
+	border: var(--border-whisper);
+	background: var(--bg-surface);
+	color: var(--color-accent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: all var(--dur-fast) var(--ease);
 }
-.ambient-row__play:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
-.ambient-row__play:disabled { opacity: .35; cursor: not-allowed; }
+.ambient-row__play:hover:not(:disabled) {
+	background: var(--color-accent);
+	color: #fff;
+}
+.ambient-row__play:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
 .ambient-row.is-playing .ambient-row__play {
-  background: var(--color-teal);
-  color: #fff;
-  border-color: var(--color-teal);
+	background: var(--color-teal);
+	color: #fff;
+	border-color: var(--color-teal);
 }
 
 .ambient-row__icon {
-  /* Spez. Kap. 32: Ambient Icon/Edit Target -> var(--h-btn) */
-  width: var(--h-btn);
-  height: var(--h-btn);
-  font-size: 1.05rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-micro);
+	/* Spez. Kap. 32: Ambient Icon/Edit Target -> var(--h-btn) */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	font-size: 1.05rem;
+	background: none;
+	border: none;
+	cursor: pointer;
+	flex-shrink: 0;
+	line-height: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--radius-micro);
 }
-.ambient-row__icon:hover { background: var(--bg-surface); }
+.ambient-row__icon:hover {
+	background: var(--bg-surface);
+}
 
 .ambient-row__name {
-  flex: 1 1 100px;
-  min-width: 70px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid transparent;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--text-caption);
-  font-weight: var(--fw-medium);
-  padding: 2px var(--space-1);
-  outline: none;
+	flex: 1 1 100px;
+	min-width: 70px;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid transparent;
+	color: var(--text-primary);
+	font-family: var(--font-sans);
+	font-size: var(--text-caption);
+	font-weight: var(--fw-medium);
+	padding: 2px var(--space-1);
+	outline: none;
 }
-.ambient-row__name:hover  { border-bottom-color: var(--border-color); }
-.ambient-row__name:focus  { border-bottom-color: var(--color-accent); }
+.ambient-row__name:hover {
+	border-bottom-color: var(--border-color);
+}
+.ambient-row__name:focus {
+	border-bottom-color: var(--color-accent);
+}
 
 /* P2 Noise-Generator-Kennzeichnung (weder Datei noch normaler Ambient-Sound). */
 .ambient-row__gen-badge {
-  flex-shrink: 0;
-  font-size: var(--text-badge);
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-accent);
-  background: var(--badge-bg);
-  border-radius: var(--radius-subtle);
-  padding: 1px var(--space-1);
+	flex-shrink: 0;
+	font-size: var(--text-badge);
+	font-weight: var(--fw-semibold);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--color-accent);
+	background: var(--badge-bg);
+	border-radius: var(--radius-subtle);
+	padding: 1px var(--space-1);
 }
 
 /* Spez. Kap. 32: Ambient Volume Group — auf XS/SM flexibel/volle Breite,
    ab MD rasterbasiert (~1/3 der Zeile). */
 .ambient-row__vol {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: 1 1 100%;
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 0.7rem;
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	flex: 1 1 100%;
+	min-width: 0;
+	color: var(--text-muted);
+	font-size: 0.7rem;
 }
 @media (min-width: 768px) {
-  .ambient-row__vol {
-    flex: 0 1 33.333%;
-    min-width: calc(var(--grid-row-h) * 3);
-  }
+	.ambient-row__vol {
+		flex: 0 1 33.333%;
+		min-width: calc(var(--grid-row-h) * 3);
+	}
 }
-.ambient-row__vol-slider { flex: 1; min-width: 60px; }
+.ambient-row__vol-slider {
+	flex: 1;
+	min-width: 60px;
+}
 .ambient-row__vol-pct {
-  font-family: var(--font-mono);
-  width: 34px;
-  text-align: right;
-  flex-shrink: 0;
-  color: var(--text-secondary);
+	font-family: var(--font-mono);
+	width: 34px;
+	text-align: right;
+	flex-shrink: 0;
+	color: var(--text-secondary);
 }
 
 .ambient-row__opt {
-  /* Spez. Kap. 32: Ambient Option Buttons -> var(--h-btn) */
-  width: var(--h-btn);
-  height: var(--h-btn);
-  border-radius: var(--radius-micro);
-  border: var(--border-whisper);
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--dur-fast) var(--ease);
-  font-size: 0.75rem;
+	/* Spez. Kap. 32: Ambient Option Buttons -> var(--h-btn) */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	border-radius: var(--radius-micro);
+	border: var(--border-whisper);
+	background: var(--bg-surface);
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: all var(--dur-fast) var(--ease);
+	font-size: 0.75rem;
 }
-.ambient-row__opt:hover { color: var(--text-primary); border-color: rgba(0, 0, 0, 0.18); }
-[data-theme='dark'] .ambient-row__opt:hover { border-color: rgba(255, 255, 255, 0.15); }
+.ambient-row__opt:hover {
+	color: var(--text-primary);
+	border-color: rgba(0, 0, 0, 0.18);
+}
+[data-theme='dark'] .ambient-row__opt:hover {
+	border-color: rgba(255, 255, 255, 0.15);
+}
 .ambient-row__opt.is-active {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-  background: var(--badge-bg);
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	background: var(--badge-bg);
 }
-.ambient-row__opt--danger:hover { color: var(--color-orange); border-color: var(--color-orange); }
-.ambient-row__opt:disabled { opacity: .35; cursor: not-allowed; }
-.ambient-row__opt:disabled:hover { color: var(--text-muted); border-color: var(--border-color); }
+.ambient-row__opt--danger:hover {
+	color: var(--color-orange);
+	border-color: var(--color-orange);
+}
+.ambient-row__opt:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+.ambient-row__opt:disabled:hover {
+	color: var(--text-muted);
+	border-color: var(--border-color);
+}
 
 .ambient-row__file-count {
-  position: absolute;
-  transform: translate(9px, -9px);
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
-  color: #fff;
-  font-size: 0.55rem;
-  font-family: var(--font-mono);
-  line-height: 14px;
-  text-align: center;
+	position: absolute;
+	transform: translate(9px, -9px);
+	min-width: 14px;
+	height: 14px;
+	padding: 0 3px;
+	border-radius: var(--radius-pill);
+	background: var(--color-accent);
+	color: #fff;
+	font-size: 0.55rem;
+	font-family: var(--font-mono);
+	line-height: 14px;
+	text-align: center;
 }
-.ambient-row__opt { position: relative; }
+.ambient-row__opt {
+	position: relative;
+}
 
 .ambient-row__extra {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding-top: var(--space-2);
-  margin-top: var(--space-1);
-  border-top: var(--border-whisper);
+	flex-basis: 100%;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-3);
+	padding-top: var(--space-2);
+	margin-top: var(--space-1);
+	border-top: var(--border-whisper);
 }
-.ambient-row__extra[hidden] { display: none; }
+.ambient-row__extra[hidden] {
+	display: none;
+}
 
 .ambient-row__num-lbl {
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+	font-size: var(--text-badge);
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
 }
-.ambient-row__num-lbl.is-disabled { opacity: .4; }
+.ambient-row__num-lbl.is-disabled {
+	opacity: 0.4;
+}
 
 .ambient-row__extra-sep {
-  width: 1px;
-  align-self: stretch;
-  background: var(--border-color);
-  flex-shrink: 0;
+	width: 1px;
+	align-self: stretch;
+	background: var(--border-color);
+	flex-shrink: 0;
 }
 .ambient-row__num {
-  /* Spez. Kap. 34: Breite Kategorie-C (kurzes Zahlenfeld), Höhe folgt
+	/* Spez. Kap. 34: Breite Kategorie-C (kurzes Zahlenfeld), Höhe folgt
      dem gemeinsamen Control-System. */
-  width: 52px;
-  height: var(--h-btn);
-  background: var(--bg-surface);
-  border: var(--border-whisper);
-  border-radius: var(--radius-micro);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  padding: 0 var(--space-1);
-  text-align: center;
+	width: 52px;
+	height: var(--h-btn);
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-micro);
+	color: var(--text-primary);
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	padding: 0 var(--space-1);
+	text-align: center;
 }
-.ambient-row__num:disabled { opacity: .5; cursor: not-allowed; }
+.ambient-row__num:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
 
 .ambient-row__filename {
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 160px;
+	font-size: var(--text-badge);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 160px;
 }
 
 /* ─── FILE VARIANTS ───────────────────────────────────────────
    Several audio files per track (e.g. 3 different dog-bark clips) —
    one is picked per play, either randomly or rotated in order. */
 .ambient-row__files {
-  flex-basis: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-2);
-  margin-top: var(--space-1);
-  border-top: var(--border-whisper);
+	flex-basis: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding-top: var(--space-2);
+	margin-top: var(--space-1);
+	border-top: var(--border-whisper);
 }
 
 .ambient-row__files-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: var(--space-2);
 }
 
 .ambient-row__files-label {
-  font-size: var(--text-badge);
-  color: var(--text-muted);
+	font-size: var(--text-badge);
+	color: var(--text-muted);
 }
 
 .ambient-row__vm-group {
-  display: inline-flex;
-  gap: 2px;
-  background: var(--bg-surface);
-  border: var(--border-whisper);
-  border-radius: var(--radius-pill);
-  padding: 2px;
+	display: inline-flex;
+	gap: 2px;
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-pill);
+	padding: 2px;
 }
 .ambient-row__vm-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: var(--h-btn);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-badge);
-  font-family: var(--font-sans);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-2);
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: var(--h-btn);
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: var(--text-badge);
+	font-family: var(--font-sans);
+	border-radius: var(--radius-pill);
+	padding: 0 var(--space-2);
+	cursor: pointer;
+	transition: all var(--dur-fast) var(--ease);
 }
-.ambient-row__vm-btn:hover:not(:disabled) { color: var(--text-primary); }
+.ambient-row__vm-btn:hover:not(:disabled) {
+	color: var(--text-primary);
+}
 .ambient-row__vm-btn.is-active {
-  background: var(--color-accent);
-  color: #fff;
+	background: var(--color-accent);
+	color: #fff;
 }
-.ambient-row__vm-btn:disabled { opacity: .4; cursor: not-allowed; }
+.ambient-row__vm-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
 
 .ambient-row__file-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	align-items: center;
 }
 
 .ambient-row__file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-surface);
-  border: var(--border-whisper);
-  border-radius: var(--radius-pill);
-  padding: 3px var(--space-2);
-  font-size: var(--text-badge);
-  color: var(--text-secondary);
-  /* Spez. Kap. 33: die nichtinteraktive Namens-Ellipsis (unten) trägt
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-pill);
+	padding: 3px var(--space-2);
+	font-size: var(--text-badge);
+	color: var(--text-secondary);
+	/* Spez. Kap. 33: die nichtinteraktive Namens-Ellipsis (unten) trägt
      die max-width, nicht der Chip selbst — sonst würde der Remove-
      Button (eigenständiges Target) mit abgeschnitten. */
-  max-width: none;
+	max-width: none;
 }
-.ambient-row__file-chip.is-missing { border-color: var(--color-orange); color: var(--color-orange); }
+.ambient-row__file-chip.is-missing {
+	border-color: var(--color-orange);
+	color: var(--color-orange);
+}
 .ambient-row__file-chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 130px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 130px;
 }
 .ambient-row__file-chip-btn {
-  /* Spez. Kap. 33: eigenständiges Remove-Target -> var(--h-btn) Hit Area.
+	/* Spez. Kap. 33: eigenständiges Remove-Target -> var(--h-btn) Hit Area.
      Der sichtbare ✕-Kreis bleibt klein (siehe ::before). */
-  width: var(--h-btn);
-  height: var(--h-btn);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 50%;
-  flex-shrink: 0;
-  font-size: 0.65rem;
+	width: var(--h-btn);
+	height: var(--h-btn);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-radius: 50%;
+	flex-shrink: 0;
+	font-size: 0.65rem;
 }
-.ambient-row__file-chip-btn:hover { color: var(--text-primary); background: var(--bg-warm); }
+.ambient-row__file-chip-btn:hover {
+	color: var(--text-primary);
+	background: var(--bg-warm);
+}
 
 /* ─── RESPONSIVE ───
    Spez. Kap. 56: auf sanktionierten Breakpoint migriert (767px)
@@ -452,11 +516,27 @@
    Breakpoint fluide korrekt, ein zusätzlicher 380px-Sonderfall
    (Kap. 56) ist nicht mehr nötig. */
 @media (max-width: 767px) {
-  .ambient-board__toolbar        { gap: var(--space-2); }
-  .ambient-list                  { grid-template-columns: 1fr; }
-  .ambient-row                   { padding: var(--space-2); }
-  .ambient-row__vol              { flex-basis: 100%; order: 5; }
-  .ambient-row__name             { flex-basis: calc(100% - 130px); }
-  .ambient-row__state            { flex-basis: 100%; order: 4; font-size: 0.65rem; }
-  .ambient-row__extra            { gap: var(--space-2); }
+	/* .board-toolbar { gap: var(--space-2); } gilt bereits gemeinsam für
+	   alle drei Boards, siehe css/layout.css. */
+	.ambient-list {
+		grid-template-columns: 1fr;
+	}
+	.ambient-row {
+		padding: var(--space-2);
+	}
+	.ambient-row__vol {
+		flex-basis: 100%;
+		order: 5;
+	}
+	.ambient-row__name {
+		flex-basis: calc(100% - 130px);
+	}
+	.ambient-row__state {
+		flex-basis: 100%;
+		order: 4;
+		font-size: 0.65rem;
+	}
+	.ambient-row__extra {
+		gap: var(--space-2);
+	}
 }
