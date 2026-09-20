@@ -396,17 +396,15 @@
 }
 .tile__label {
 	font-family: var(--font-sans);
-	font-size: clamp(0.6rem, 4.5cqi, 0.9375rem);
+	font-size: clamp(var(--tile-label-min-size), 4.5cqi, 0.9375rem);
 	font-weight: var(--fw-semibold);
 	letter-spacing: 0.125px;
 	text-align: center;
 	color: var(--text-primary);
-	word-break: break-word;
 	max-width: 100%;
+	min-width: 0;
 	overflow: hidden;
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	-webkit-box-orient: vertical;
+	/* white-space: nowrap; */
 	pointer-events: none;
 	line-height: 1.2;
 	flex-shrink: 0;

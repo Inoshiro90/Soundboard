@@ -881,12 +881,6 @@ function _rowTemplate(t) {
       aria-label="Name des Ambient-Sounds" placeholder="Ambient-Name">
     ${generatorBadge}
     <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
-    <div class="ambient-row__vol">
-      <i class="fa-solid fa-volume-low" aria-hidden="true"></i>
-      <input type="range" class="slider ambient-row__vol-slider" data-act="vol" min="0" max="1" step=".01"
-        value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}">
-      <span class="ambient-row__vol-pct">${Math.round(t.vol * 100)}%</span>
-    </div>
     <button class="ambient-row__opt" data-act="fx" title="Bearbeiten — Grundeinstellungen &amp; Audio-Effekte" aria-label="Ambient-Sound bearbeiten">
       <i class="fa-solid fa-pen" aria-hidden="true"></i>
     </button>
@@ -897,6 +891,12 @@ function _rowTemplate(t) {
       aria-label="Ambient-Sound entfernen">
       <i class="fa-solid fa-trash" aria-hidden="true"></i>
     </button>
+        <div class="ambient-row__vol">
+      <i class="fa-solid fa-volume-low" aria-hidden="true"></i>
+      <input type="range" class="slider ambient-row__vol-slider" data-act="vol" min="0" max="1" step=".01"
+        value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}">
+      <span class="ambient-row__vol-pct">${Math.round(t.vol * 100)}%</span>
+    </div>
   </div>`;
 }
 

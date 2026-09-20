@@ -82,6 +82,12 @@ export function renderGrid() {
   for (let i = trailingPH; i < TRAILING_PLACEHOLDERS; i++) list.push(mkPH(list.length));
 
   grid.innerHTML = '';
+  // Bisherige Kacheln werden gleich verworfen (innerHTML = '') — vorher
+  // alle Beobachtungen des gemeinsamen Sound-Tile-Label-ResizeObservers
+  // lösen, sonst würden verwaiste, nicht mehr im DOM befindliche
+  // .tile-wrap-Elemente dauerhaft beobachtet bleiben (Memory Leak bei
+  // häufigem Neu-Rendern des Grids).
+  _tileLabelObserver.disconnect();
   list.forEach(item => {
     grid.appendChild(
       item.type === 'sound' ? makeSoundTile(item) :
@@ -98,6 +104,105 @@ export function renderGrid() {
 }
 
 // ─── TILE BUILDERS ────────────────────────────────────────────
+
+// ─── SOUND-TILE LABEL AUTO-FIT ──────────────────────────────────
+// Verkleinert die Schriftgröße von .tile__label--autofit automatisch
+// so weit, bis der vollständige (unveränderte) Soundname einzeilig in
+// die tatsächlich verfügbare Kachelbreite passt — kein Zeilenumbruch,
+// keine Ellipsis (siehe .tile__label in components.css: white-space:
+// nowrap, kein -webkit-line-clamp mehr). Nur für Sound-Tiles aktiv;
+// Macro-Tiles (makeMacroTile) behalten die normale CSS-clamp()-Größe
+// unverändert, da ihre Labels nicht die Klasse .tile__label--autofit
+// erhalten.
+//
+// Messung erfolgt über eine Offscreen-<canvas> (kein DOM-Reflow pro
+// Messschritt), Reaktion auf Größenänderungen der Kachel über einen
+// einzigen gemeinsamen ResizeObserver (kein setInterval/Polling).
+
+const _tileLabelCanvas = document.createElement('canvas');
+const _tileLabelCtx    = _tileLabelCanvas.getContext('2d');
+const TILE_LABEL_SAFETY_PX = 3; // Sicherheitsmarge (Letter-Spacing/Rundung)
+
+function _cssLengthToPx(value) {
+  if (!value) return 0;
+  const remMatch = /^([\d.]+)rem$/.exec(value);
+  if (remMatch) {
+    const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return parseFloat(remMatch[1]) * rootSize;
+  }
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Untere Grenze aus dem bestehenden Designsystem (--tile-label-min-size,
+// css/base.css) — deckt sich mit dem bisherigen unteren clamp()-Wert von
+// .tile__label, kein neuer willkürlicher Wert.
+function tileLabelMinSize() {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue('--tile-label-min-size').trim();
+  return _cssLengthToPx(raw) || 9.6; // Fallback ≈ 0.6rem bei 16px Root-Schrift
+}
+
+function fitTileLabel(label) {
+  if (!label || !label.isConnected) return;
+
+  // Baseline (vom CSS clamp() vorgegebene Größe) zuerst wiederherstellen —
+  // sonst würde eine zuvor reduzierte Größe als neuer Ausgangswert dienen
+  // und nie mehr größer werden, wenn die Kachel anschließend wächst.
+  label.style.fontSize = '';
+
+  const availableWidth = label.clientWidth;
+  if (availableWidth <= 0) return;
+
+  const cs       = getComputedStyle(label);
+  const baseSize = parseFloat(cs.fontSize);
+  if (!baseSize) return;
+
+  const text = (label.textContent || '').toUpperCase(); // text-transform: uppercase
+  _tileLabelCtx.font = `${cs.fontWeight} ${baseSize}px ${cs.fontFamily}`;
+  const textWidth = _tileLabelCtx.measureText(text).width;
+
+  if (textWidth <= availableWidth) return; // passt bereits — nichts zu tun
+
+  const minSize = tileLabelMinSize();
+
+  // Schritt 1: neue Größe direkt aus dem Verhältnis verfügbare/tatsächliche
+  // Breite ableiten, statt viele kleine Einzelschritte zu messen.
+  let newSize = Math.max(minSize, baseSize * (availableWidth - TILE_LABEL_SAFETY_PX) / textWidth);
+
+  // Schritt 2: kurze Feinjustierung, da Rendering/Letter-Spacing/Rundung
+  // vom reinen Verhältnis abweichen können.
+  for (let i = 0; i < 6 && newSize > minSize; i++) {
+    _tileLabelCtx.font = `${cs.fontWeight} ${newSize}px ${cs.fontFamily}`;
+    if (_tileLabelCtx.measureText(text).width <= availableWidth - TILE_LABEL_SAFETY_PX) break;
+    newSize -= 0.5;
+  }
+
+  label.style.fontSize = `${Math.max(minSize, newSize)}px`;
+}
+
+// Ein einziger gemeinsamer ResizeObserver für alle Sound-Tiles statt
+// einem Observer pro Kachel. .tile-wrap trägt bereits container-type:
+// inline-size (components.css) — seine Breite ist also die maßgebliche,
+// dynamische Größe (Grid-Spaltenwechsel, Breakpoints, Fenster-Resize).
+// Mehrere gleichzeitig ausgelöste Callbacks werden in einem
+// requestAnimationFrame gebündelt, um font-size nicht mehrfach
+// hintereinander pro Tick zu setzen.
+let _tileLabelFitScheduled = false;
+const _tileLabelPending = new Set();
+const _tileLabelObserver = new ResizeObserver(entries => {
+  entries.forEach(entry => {
+    const label = entry.target.querySelector('.tile__label--autofit');
+    if (label) _tileLabelPending.add(label);
+  });
+  if (_tileLabelFitScheduled) return;
+  _tileLabelFitScheduled = true;
+  requestAnimationFrame(() => {
+    _tileLabelFitScheduled = false;
+    _tileLabelPending.forEach(fitTileLabel);
+    _tileLabelPending.clear();
+  });
+});
 
 function tileStyle(item) {
   return item.tileColor ? `background:${item.tileColor};` : '';
@@ -119,7 +224,7 @@ export function makeSoundTile(s) {
          role="button" aria-label="${s.name || 'Sound'}">
       ${hkHtml}
       <div class="tile__icon" aria-hidden="true">${iconHtmlOr(s.icon, '🔊', 'tile__icon-img')}</div>
-      <div class="tile__label">${s.name || 'SOUND'}</div>
+      <div class="tile__label tile__label--autofit">${s.name || 'SOUND'}</div>
       <div class="tile__slot-badge" aria-hidden="true"></div>
       <i class="fa-solid fa-rotate tile__loop-icon" aria-hidden="true"></i>
       <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
@@ -150,6 +255,8 @@ export function makeSoundTile(s) {
     e.stopPropagation();
     import('./events.js').then(m => m.openSoundModal(s.id));
   });
+
+  _tileLabelObserver.observe(wrap);
 
   refreshRotBadge(s.id);
   return wrap;

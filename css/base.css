@@ -71,6 +71,12 @@
   --text-caption: 0.875rem;
   --text-badge:   0.75rem;
 
+  /* Untere Grenze für die automatische Schriftgrößen-Reduzierung von
+     Sound-Tile-Labels (siehe .tile__label / fitTileLabel() in js/ui.js) —
+     deckt sich mit dem bisherigen unteren clamp()-Wert von .tile__label,
+     kein neuer willkürlicher Designwert. */
+  --tile-label-min-size: 0.6rem;
+
   --fw-regular:  400;
   --fw-medium:   500;
   --fw-semibold: 600;

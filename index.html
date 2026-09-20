@@ -202,22 +202,14 @@
              sofort, unabhängig davon, ob/wann das externe Lucide-Skript
              (CDN) lädt — identisches Markup wie lucide.createIcons() es
              zur Laufzeit erzeugen würde, nur fest eingebettet. -->
-        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddSound"
-          title="Neuen Sound hinzufügen" aria-label="Neuen Sound hinzufügen">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
+        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddSound" title="Neuen Sound hinzufügen"
+          aria-label="Neuen Sound hinzufügen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
           <span class="board-toolbar__label">Sound</span>
         </button>
-        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddMacro"
-          title="Neues Makro hinzufügen" aria-label="Neues Makro hinzufügen">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
+        <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddMacro" title="Neues Makro hinzufügen"
+          aria-label="Neues Makro hinzufügen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
           <span class="board-toolbar__label">Makro</span>
         </button>
 
@@ -336,8 +328,8 @@
            Leerzustand-Erkennung in Gebrauch (js/ambient.js), nur die reine
            DOM-Ausgabe entfällt. -->
       <div class="board-toolbar ambient-board__toolbar">
-        <button class="btn board-toolbar__btn btn--danger" id="btnAmbientStopAll" title="Alle Ambient-Sounds dieser Szene stoppen"
-          aria-label="Alle Ambient-Sounds stoppen">
+        <button class="btn board-toolbar__btn btn--danger" id="btnAmbientStopAll"
+          title="Alle Ambient-Sounds dieser Szene stoppen" aria-label="Alle Ambient-Sounds stoppen">
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           <span class="board-toolbar__label">Stop</span>
         </button>
@@ -345,7 +337,7 @@
         <button class="btn board-toolbar__btn btn--accent" id="btnAmbientAdd" title="Ambient-Sound hinzufügen"
           aria-label="Ambient-Sound hinzufügen">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
-          <span class="board-toolbar__label">Hinzufügen</span>
+          <span class="board-toolbar__label">Ambient</span>
         </button>
 
         <!-- <span class="u-ml-auto"></span> -->
@@ -405,7 +397,8 @@
            die Leerzustand-Erkennung in Gebrauch (js/music.js), nur die
            reine DOM-Ausgabe entfällt. -->
       <div class="board-toolbar music-toolbar">
-        <button class="btn board-toolbar__btn btn--danger" id="btnMusicStop" title="Musik stoppen" aria-label="Musik stoppen">
+        <button class="btn board-toolbar__btn btn--danger" id="btnMusicStop" title="Musik stoppen"
+          aria-label="Musik stoppen">
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           <span class="board-toolbar__label">Stop</span>
         </button>
