@@ -76,6 +76,14 @@ function migratePlaybackSettings() {
   });
 }
 
+// ─── PROFIL-FARBEN-MIGRATION ─────────────────────────────────
+// Prompt 1, Kap. 5: Sound-Profile (Tabs) bekommen ein `color`-Feld.
+// Bestehende, ohne dieses Feld gespeicherte Profile erhalten automatisch
+// 'none' (keine Akzentfarbe) — keine destruktive Migration.
+function migrateProfileColors() {
+  APP.profiles.forEach(p => { if (!p.color) p.color = 'none'; });
+}
+
 // ─── IDB MIGRATION ───────────────────────────────────────────
 
 async function runIdbMigrationIfNeeded() {
@@ -146,6 +154,9 @@ function _normalizeAmbientTrack(t) {
   if (t.variantMode !== 'random' && t.variantMode !== 'rotate') t.variantMode = 'random';
   if (!t.name) t.name = 'Ambient';
   if (!t.icon) t.icon = '🌫️';
+  // Prompt 1, Kap. 6: Akzentfarbe für Ambient-Tracks — bestehende Tracks
+  // ohne dieses Feld erhalten automatisch 'none' (keine Akzentfarbe).
+  if (!t.color) t.color = 'none';
   if (typeof t.vol !== 'number')  t.vol  = 0.7;
   if (typeof t.loop !== 'boolean') t.loop = true;
   if (typeof t.fadeIn !== 'number')  t.fadeIn  = 2;
@@ -183,6 +194,8 @@ function _normalizeAmbient(raw) {
     if (!p.id)   p.id   = uid();
     if (!p.name) p.name = 'Ambient';
     if (!p.icon) p.icon = '🌫️';
+    // Prompt 1, Kap. 5/6: Szene-Akzentfarbe — rückwärtskompatibel ergänzt.
+    if (!p.color) p.color = 'none';
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeAmbientTrack);
   });
@@ -230,6 +243,8 @@ function _normalizeMusic(raw) {
     if (!p.id)   p.id   = uid();
     if (!p.name) p.name = 'Musik';
     if (!p.icon) p.icon = '🎵';
+    // Prompt 1, Kap. 5: Playlist-Akzentfarbe — rückwärtskompatibel ergänzt.
+    if (!p.color) p.color = 'none';
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeMusicTrack);
     // Spez. Kap. 54: klares Modell statt widersprüchlicher Kombination —
@@ -278,16 +293,16 @@ export async function decodeAllAudio() {
 // festes Zeilenlimit mehr, daher ein fester, viewport-unabhängiger Wert.
 export const STARTER_PLACEHOLDER_COUNT = 24;
 
-export function mkProfile(name, icon) {
-  return { id: uid(), name, icon: icon || '🎵', items: [] };
+export function mkProfile(name, icon, color) {
+  return { id: uid(), name, icon: icon || '🎵', color: color || 'none', items: [] };
 }
 
-export function mkAmbientProfile(name, icon) {
-  return { id: uid(), name: name || 'Ambient', icon: icon || '🌫️', tracks: [] };
+export function mkAmbientProfile(name, icon, color) {
+  return { id: uid(), name: name || 'Ambient', icon: icon || '🌫️', color: color || 'none', tracks: [] };
 }
 
-export function mkMusicProfile(name, icon) {
-  return { id: uid(), name: name || 'Musik', icon: icon || '🎵', tracks: [] };
+export function mkMusicProfile(name, icon, color) {
+  return { id: uid(), name: name || 'Musik', icon: icon || '🎵', color: color || 'none', tracks: [] };
 }
 
 export function mkSound(d, order) {
@@ -409,6 +424,7 @@ export async function load() {
       }
       migrateEffects();
       migratePlaybackSettings();
+      migrateProfileColors();
       await runIdbMigrationIfNeeded();
       // BUGFIX: No decodeAllAudio() here — lazy decode on demand
     }

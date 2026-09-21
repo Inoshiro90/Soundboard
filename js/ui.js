@@ -9,7 +9,7 @@
  * - Theme icon updated on toggle
  */
 
-import { APP, CP, CItems, CMTracks, EMOJI_CATS, EMOJI_KEYWORDS, COLORS } from './state.js';
+import { APP, CP, CItems, CMTracks, EMOJI_CATS, EMOJI_KEYWORDS, COLORS, COLOR_NAMES } from './state.js';
 import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils.js';
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
@@ -27,6 +27,28 @@ export const PENCIL_ICON_SVG =
   'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
   'aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
 
+/**
+ * Prompt 1, Kap. 5: gemeinsame Hilfsfunktion für die dezente Akzent-
+ * markierung eingefärbter Tabs — von allen drei Tab-Leisten verwendet
+ * (#profBar in ui.js, #ambProfBar in ambient.js, #musicProfBar in music.js),
+ * damit keine drei separaten Umsetzungen entstehen. Setzt KEINE
+ * Vollfarbe als Hintergrund, sondern einen farbigen oberen Rand über eine
+ * CSS-Custom-Property, die von .profile-tab per box-shadow ausgelesen wird
+ * (siehe css/components.css) — dadurch bleiben Active-/Hover-Zustand
+ * (Hintergrund, unterer Rand) davon vollkommen unberührt.
+ * @param {HTMLElement} tab
+ * @param {string} color - Hex-Farbe oder 'none'
+ */
+export function _applyTabAccent(tab, color) {
+  if (color && color !== 'none') {
+    tab.style.setProperty('--tab-accent', color);
+    tab.classList.add('profile-tab--accent');
+  } else {
+    tab.style.removeProperty('--tab-accent');
+    tab.classList.remove('profile-tab--accent');
+  }
+}
+
 // ─── PROFILE TABS ─────────────────────────────────────────────
 
 export function renderProfileTabs() {
@@ -38,6 +60,9 @@ export function renderProfileTabs() {
     const tab = document.createElement('button');
     tab.className = 'profile-tab' + (p.id === APP.activeProfileId ? ' is-active' : '');
     tab.dataset.pid = p.id;
+    // Prompt 1, Kap. 5: dezente, dauerhafte Akzentmarkierung statt
+    // Vollfarben-Hintergrund — siehe _applyTabAccent() weiter unten.
+    _applyTabAccent(tab, p.color);
     tab.innerHTML =
       `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${p.name}</span>` +
       `<span class="profile-tab__edit" title="Profil bearbeiten" aria-label="Profil bearbeiten">` +
@@ -1138,22 +1163,60 @@ function _mkCatPill(key, label, icon, isActive) {
 
 // ─── COLOR PICKER ─────────────────────────────────────────────
 
+/**
+ * Prompt 1, Kap. 2/3: zentraler Farbpicker — quadratische, abgerundete
+ * Swatches mit ZWEI Ebenen (äußerer neutraler Rand bleibt IMMER sichtbar,
+ * auch im ausgewählten Zustand; die Akzentfarbe lebt als innere Fläche +
+ * innerer Rand auf einer zweiten, verschachtelten Ebene — siehe
+ * .color-swatch/.color-swatch__fill in css/components.css). Der
+ * Selection-State wird bewusst NICHT mehr über eine Randfarben-Überschreibung
+ * realisiert, sondern über eine eigene Kennzeichnung (.is-selected setzt
+ * einen zusätzlichen box-shadow-Ring), damit er sich von Hover/Focus klar
+ * unterscheidet und den neutralen Rand nicht verdrängt.
+ *
+ * Rückwärtskompatibilität (Kap. 3): `current` kann ein alter, nicht mehr in
+ * COLORS enthaltener Hex-Wert sein (z.B. aus einem älteren Speicherstand).
+ * Dieser wird dann als zusätzliches, bereits ausgewähltes Swatch ans Ende
+ * angehängt — keine destruktive Migration, der Wert bleibt beim Speichern
+ * exakt erhalten, solange der Nutzer ihn nicht aktiv ändert.
+ */
 export function buildColorOpts(containerId, current) {
   const co = document.getElementById(containerId);
   if (!co) return;
   co.innerHTML = '';
-  COLORS.forEach(c => {
+
+  const isLegacyCustom = current && current !== 'none' && !COLORS.includes(current);
+  const palette = isLegacyCustom ? [...COLORS, current] : COLORS;
+
+  palette.forEach(c => {
+    const isNone = c === 'none';
+    const isCustom = isLegacyCustom && c === current && !COLORS.includes(c);
     const d = document.createElement('div');
-    d.className    = 'color-swatch' + (c === 'none' ? ' color-swatch--none' : '') + (c === current ? ' is-selected' : '');
-    if (c !== 'none') d.style.background = c;
+    d.className = 'color-swatch' +
+      (isNone ? ' color-swatch--none' : '') +
+      (c === current ? ' is-selected' : '');
     d.dataset.color = c;
-    d.title = c === 'none' ? 'Kein Akzent' : c;
+
+    const name = isNone ? 'Kein Akzent' : (COLOR_NAMES[c] || (isCustom ? 'Aktuelle Farbe' : c));
+    d.title = isNone ? name : `${name} (${c})`;
+
+    if (!isNone) {
+      // Innere Fläche + innerer Rand in derselben Akzentfarbe (Kap. 2) —
+      // eigenes Element, damit der äußere neutrale Rand (.color-swatch
+      // selbst) davon unberührt bleibt.
+      const fill = document.createElement('div');
+      fill.className = 'color-swatch__fill';
+      fill.style.background  = c;
+      fill.style.borderColor = c;
+      d.appendChild(fill);
+    }
+
     // Spez. Kap. 24: Color Swatches müssen per Tastatur bedienbar und
     // fokussierbar sein (WCAG 2.1.1 / 2.4.7), nicht nur per Klick.
     d.setAttribute('role', 'button');
     d.setAttribute('tabindex', '0');
     d.setAttribute('aria-pressed', String(c === current));
-    d.setAttribute('aria-label', c === 'none' ? 'Kein Akzent' : `Farbe ${c}`);
+    d.setAttribute('aria-label', isNone ? name : `Farbe ${name}`);
     const select = () => {
       co.querySelectorAll('.color-swatch').forEach(x => {
         x.classList.remove('is-selected');

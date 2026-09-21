@@ -152,6 +152,21 @@
 	box-shadow: none;
 }
 
+/* Prompt 1, Kap. 6: Akzent-Rand entsprechend t.color (gesetzt via
+   --row-accent, siehe _rowTemplate() in js/ambient.js). Eigene Regeln pro
+   Play-Zustand, damit der Akzent IMMER sichtbar bleibt, ohne die
+   bestehende box-shadow-Kennzeichnung von .is-playing zu verdrängen bzw.
+   das box-shadow:none von .is-waiting zu überschreiben. */
+.ambient-row--accent {
+	box-shadow: inset 3px 0 0 0 var(--row-accent);
+}
+.ambient-row--accent.is-playing {
+	box-shadow: inset 3px 0 0 0 var(--row-accent), 0 0 0 2px rgba(42, 157, 153, 0.15);
+}
+.ambient-row--accent.is-waiting {
+	box-shadow: inset 3px 0 0 0 var(--row-accent);
+}
+
 .ambient-row__state {
 	font-size: var(--text-badge);
 	color: var(--text-muted);

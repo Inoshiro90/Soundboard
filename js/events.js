@@ -1244,6 +1244,7 @@ function openProfileModal(id) {
   if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('profIconGrid', p ? p.icon : '🎵');
+  buildColorOpts('profColorOpts', p ? (p.color || 'none') : 'none');
   document.getElementById('profModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#profModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1270,6 +1271,7 @@ function openAmbientProfileModal(id) {
   if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('ambProfIconGrid', p ? p.icon : '🌫️');
+  buildColorOpts('ambProfColorOpts', p ? (p.color || 'none') : 'none');
   document.getElementById('ambProfModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#ambProfModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1375,13 +1377,15 @@ export function registerEvents() {
 
   // Profile modal
   document.getElementById('btnSaveProfile')?.addEventListener('click', () => {
-    const name = document.getElementById('profNameInput').value.trim() || 'Profil';
-    const icon = document.getElementById('profIconInput').value.trim() || '🎵';
+    const name  = document.getElementById('profNameInput').value.trim() || 'Profil';
+    const icon  = document.getElementById('profIconInput').value.trim() || '🎵';
+    const clrEl = document.querySelector('#profColorOpts .color-swatch.is-selected');
+    const color = clrEl?.dataset.color || 'none';
     if (APP.editProfileId) {
       const p = APP.profiles.find(x => x.id === APP.editProfileId);
-      if (p) { p.name = name; p.icon = icon; }
+      if (p) { p.name = name; p.icon = icon; p.color = color; }
     } else {
-      const np = mkProfile(name, icon);
+      const np = mkProfile(name, icon, color);
       for (let i = 0; i < STARTER_PLACEHOLDER_COUNT; i++) np.items.push(mkPH(i));
       APP.profiles.push(np);
       APP.activeProfileId = np.id;
@@ -1404,9 +1408,11 @@ export function registerEvents() {
   // Ambient scene modal
   document.getElementById('btnAddAmbientProfile')?.addEventListener('click', () => openAmbientProfileModal(null));
   document.getElementById('btnSaveAmbientProfile')?.addEventListener('click', () => {
-    const name = document.getElementById('ambProfNameInput').value.trim() || 'Szene';
-    const icon = document.getElementById('ambProfIconInput').value.trim() || '🌫️';
-    saveAmbientProfile(_editAmbientProfileId, name, icon);
+    const name  = document.getElementById('ambProfNameInput').value.trim() || 'Szene';
+    const icon  = document.getElementById('ambProfIconInput').value.trim() || '🌫️';
+    const clrEl = document.querySelector('#ambProfColorOpts .color-swatch.is-selected');
+    const color = clrEl?.dataset.color || 'none';
+    saveAmbientProfile(_editAmbientProfileId, name, icon, color);
     bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
     toast('Szene gespeichert', 'ok');
   });

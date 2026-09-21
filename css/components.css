@@ -202,6 +202,19 @@
 	border-bottom-color: var(--bg-surface);
 }
 
+/* Prompt 1, Kap. 5: dezente, dauerhafte Akzentmarkierung für eingefärbte
+   Tabs (Sound-Profile, Ambient-Szenen, Musik-Playlists) — bewusst KEINE
+   Vollfarbe als Hintergrund. Ein box-shadow-Inset am oberen Rand ändert
+   das Layout nicht (kein zusätzlicher border, kein Reflow) und bleibt in
+   normal/hover/active gleichermaßen sichtbar, ohne mit dem unteren
+   Active-Border (der Tab/Panel optisch verschmilzt) zu kollidieren. */
+.profile-tab--accent {
+	box-shadow: inset 0 3px 0 0 var(--tab-accent);
+}
+.profile-tab--accent.is-active {
+	box-shadow: inset 0 3px 0 0 var(--tab-accent);
+}
+
 .profile-tab__name {
 	display: inline-flex;
 	align-items: center;
@@ -860,29 +873,59 @@
 	flex-wrap: wrap;
 	align-items: center;
 }
+/* Prompt 1, Kap. 2: quadratisch + gerundet, ZWEI Ebenen:
+     äußerer neutraler Rand (.color-swatch selbst)
+     └── innere farbige Fläche + farbiger Rand (.color-swatch__fill)
+   Der äußere neutrale Rand trennt das Swatch immer sichtbar vom Hintergrund
+   des umgebenden Elements und bleibt — anders als bisher — auch im
+   ausgewählten Zustand unverändert bestehen; Auswahl/Hover/Fokus werden
+   stattdessen über einen zusätzlichen Ring (box-shadow/outline) markiert,
+   der die äußere Randfarbe nicht überschreibt. */
 .color-swatch {
-	width: 24px;
-	height: 24px;
-	border-radius: var(--radius-circle);
+	position: relative;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-sm);
 	cursor: pointer;
-	border: 2px solid transparent;
-	transition: transform var(--dur-fast) var(--ease);
+	border: 2px solid var(--border-color);
+	background: var(--bg-warm);
+	box-sizing: border-box;
+	transition: box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
-.color-swatch:hover,
+.color-swatch__fill {
+	position: absolute;
+	inset: 3px;
+	border-radius: calc(var(--radius-sm) - 2px);
+	border: 2px solid transparent;
+	pointer-events: none;
+}
+.color-swatch:hover {
+	transform: scale(1.08);
+}
+/* Selection-State: eigener Ring statt Randfarben-Überschreibung — der
+   neutrale äußere Rand (border-color: var(--border-color)) bleibt dabei
+   unangetastet (Kap. 2, "Selection-State"). */
 .color-swatch.is-selected {
-	transform: scale(1.2);
-	border-color: var(--text-primary);
+	box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary);
 }
 /* Spez. Kap. 24/45: sichtbarer Fokusring, nicht abgeschnitten (Row
-   erlaubt via flex-wrap + gap genug Raum um jedes Swatch). */
+   erlaubt via flex-wrap + gap genug Raum um jedes Swatch). Klar von
+   Hover/Selected unterscheidbar (eigene Ringfarbe var(--color-accent)). */
 .color-swatch:focus-visible {
 	outline: none;
-	box-shadow: var(--shadow-focus);
-	transform: scale(1.2);
+	box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--color-accent);
 }
 .color-swatch--none {
-	background: var(--bg-warm);
-	border: var(--border-medium);
+	/* 'none' bleibt ein eigener Zustand ohne innere Farbfläche — nur der
+	   neutrale äußere Rand ist sichtbar. */
+}
+.color-swatch--none::after {
+	content: '';
+	position: absolute;
+	inset: 3px;
+	border-radius: calc(var(--radius-sm) - 2px);
+	background:
+		linear-gradient(to top right, transparent calc(50% - 1px), var(--border-color), transparent calc(50% + 1px));
 }
 
 /* ─── SLOT LIST ───────────────────────────────────────────────

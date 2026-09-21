@@ -37,7 +37,7 @@ import { toast }                     from './notifications.js';
 import { actx }                      from './audio.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportMusicTrack, exportMusicProfile } from './storage.js';
-import { PENCIL_ICON_SVG, updateStatus }   from './ui.js';
+import { PENCIL_ICON_SVG, updateStatus, _applyTabAccent }   from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ export function saveMusicProfile(id, name, icon) {
     const p = APP.music.profiles.find(x => x.id === id);
     if (p) { p.name = cleanName; p.icon = cleanIcon; }
   } else {
-    const np = { id: uid(), name: cleanName, icon: cleanIcon, tracks: [], manualOrder: false };
+    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: 'none', tracks: [], manualOrder: false };
     APP.music.profiles.push(np);
     APP.music.activeProfileId = np.id;
   }
@@ -656,6 +656,7 @@ export function renderMusicProfileTabs() {
     const hasLive  = (p.tracks || []).some(t => t.id === APP.music.activeTrackId) && isMusicPlaying();
     tab.className = 'profile-tab' + (isActive ? ' is-active' : '');
     tab.dataset.pid = p.id;
+    _applyTabAccent(tab, p.color);
     tab.innerHTML =
       `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${_esc(p.name)}${hasLive ? ' <span class="profile-tab__live" title="Musik läuft" aria-hidden="true"></span>' : ''}</span>` +
       `<span class="profile-tab__edit" title="Playlist bearbeiten" aria-label="Playlist bearbeiten">${PENCIL_ICON_SVG}</span>`;
@@ -668,8 +669,12 @@ function _trackRowTemplate(t) {
   const isPlaying = isActive && isMusicPlaying();
   const rec       = isActive ? _players?.[_activeSlot] : null;
   const pct       = rec && rec.audio.duration ? Math.min(100, (rec.audio.currentTime / rec.audio.duration) * 100) : 0;
+  // Prompt 1, Kap. 7: t.color als Akzent nutzen (bisher ignoriert) —
+  // analog zu Soundkachel/Ambient-Track, nie als Vollfarben-Hintergrund.
+  const hasAccent  = t.color && t.color !== 'none';
+  const accentAttr = hasAccent ? ` style="--row-accent:${t.color};"` : '';
   return `
-  <div class="music-row${isActive ? ' is-active' : ''}${isPlaying ? ' is-playing' : ''}" data-id="${t.id}">
+  <div class="music-row${isActive ? ' is-active' : ''}${isPlaying ? ' is-playing' : ''}${hasAccent ? ' music-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
     <span class="music-row__handle" draggable="true" title="Ziehen zum Neuanordnen" aria-label="${_esc(t.name)} neu anordnen">
       <i class="fa-solid fa-grip-vertical" aria-hidden="true"></i>
     </span>

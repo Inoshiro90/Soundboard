@@ -31,7 +31,7 @@ import { scheduleFadeCurve } from './renderPipeline.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportAmbientTrack }          from './storage.js';
-import { PENCIL_ICON_SVG }                       from './ui.js';
+import { PENCIL_ICON_SVG, _applyTabAccent }       from './ui.js';
 import { buildNoiseGenerator, setNoiseGeneratorType } from './generators.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -186,16 +186,17 @@ function _pickTrackFile(t) {
 
 // ─── SCENE (PROFILE) CRUD ──────────────────────────────────────
 
-/** Creates a new scene or renames/re-icons an existing one (id === null → create). */
-export function saveAmbientProfile(id, name, icon) {
+/** Creates a new scene or renames/re-icons/re-colors an existing one (id === null → create). */
+export function saveAmbientProfile(id, name, icon, color) {
   ensureAmbientState();
-  const cleanName = (name || '').trim() || 'Szene';
-  const cleanIcon = (icon || '').trim() || '🌫️';
+  const cleanName  = (name || '').trim() || 'Szene';
+  const cleanIcon  = (icon || '').trim() || '🌫️';
+  const cleanColor = color || 'none';
   if (id) {
     const p = APP.ambient.profiles.find(x => x.id === id);
-    if (p) { p.name = cleanName; p.icon = cleanIcon; }
+    if (p) { p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor; }
   } else {
-    const np = { id: uid(), name: cleanName, icon: cleanIcon, tracks: [] };
+    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, tracks: [] };
     APP.ambient.profiles.push(np);
     APP.ambient.activeProfileId = np.id;
   }
@@ -847,6 +848,7 @@ export function renderAmbientProfileTabs() {
     const tab = document.createElement('button');
     tab.className = 'profile-tab' + (p.id === APP.ambient.activeProfileId ? ' is-active' : '');
     tab.dataset.pid = p.id;
+    _applyTabAccent(tab, p.color);
     const playingCount = (p.tracks || []).filter(t => isAmbientPlaying(t.id)).length;
     tab.innerHTML =
       `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🌫️', 'profile-tab__icon-img')} ${_esc(p.name)}${playingCount ? ` <span class="profile-tab__live" title="${playingCount} Sound(s) laufen" aria-hidden="true"></span>` : ''}</span>` +
@@ -870,8 +872,15 @@ function _rowTemplate(t) {
   const generatorBadge = isGenerator
     ? `<span class="ambient-row__gen-badge" title="Rauschgenerator">${_esc({white:'White',pink:'Pink',brown:'Brown'}[t.generatorType] || 'Noise')}</span>`
     : '';
+  // Prompt 1, Kap. 6: sichtbarer Akzent-Rand entsprechend t.color, analog
+  // zur Soundkachel. Über --row-accent + .ambient-row--accent (siehe
+  // css/ambient.css) statt direktem box-shadow, damit die bestehende
+  // .is-playing/.is-waiting-Kennzeichnung unverändert weiterfunktioniert.
+  // Bei color === 'none' erscheint kein Akzent.
+  const hasAccent  = t.color && t.color !== 'none';
+  const accentAttr = hasAccent ? ` style="--row-accent:${t.color};"` : '';
   return `
-  <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}" data-id="${t.id}">
+  <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}${hasAccent ? ' ambient-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
     <button class="ambient-row__play" data-act="play" ${loaded ? '' : 'disabled'}
       title="${playing ? 'Stoppen' : 'Abspielen'}" aria-label="${playing ? 'Stoppen' : 'Abspielen'}">
       <i class="fa-solid ${playing ? 'fa-stop' : 'fa-play'}" aria-hidden="true"></i>
