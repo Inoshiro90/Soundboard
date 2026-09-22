@@ -58,12 +58,26 @@
 }
 
 /* ─── AMBIENT-ONLY MODAL FIELDS (Grundeinstellungen) ──────────
-   Variant-mode toggle buttons inside the shared sound/ambient editor modal. */
+   Variant-mode toggle buttons inside the shared sound/ambient editor modal.
+   Prompt 2, Kap. 8: Loop/Zeitversetzt (#ambLoopRow/#ambIntervalRow) folgen
+   exakt demselben Referenzmuster wie Zufällig/Rotierend — gleiche Klasse,
+   gleicher Active-State, nur Icon/Label unterscheiden sich. */
 #ambVariantRandom.is-active,
-#ambVariantRotate.is-active {
+#ambVariantRotate.is-active,
+#ambLoopRow.is-active,
+#ambIntervalRow.is-active {
 	background: var(--color-accent);
 	color: #fff;
 	border-color: var(--color-accent);
+}
+
+/* Lucide-Icons in Loop/Zeitversetzt (und vergleichbaren Vorschau-Kontexten)
+   auf dieselbe optische Größe wie die Font-Awesome-Icons der
+   Referenzbuttons bringen (Kap. 8: "gleiche Typografie"). */
+.preview-icon {
+	width: 13px;
+	height: 13px;
+	flex-shrink: 0;
 }
 
 /* ─── SCENE-TAB LIVE INDICATOR ───────────────────────────────

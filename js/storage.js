@@ -229,6 +229,11 @@ function _normalizeMusicTrack(t) {
   if (typeof t.order    !== 'number') t.order    = 0;
   if (typeof t.trimStart !== 'number') t.trimStart = 0;
   if (t.trimEnd === undefined) t.trimEnd = null;
+  // Prompt 3, Kap. 5: bestehende Musik-Tracks ohne vollständiges
+  // Effekt-Objekt bekommen es rückwärtskompatibel ergänzt (dieselbe
+  // defaultEffects()-Fabrik wie Sound/Ambient — kein eigenes Modell,
+  // keine destruktive Migration bereits vorhandener Effekte).
+  if (!t.effects || typeof t.effects !== 'object') t.effects = defaultEffects();
   return t;
 }
 

@@ -451,18 +451,20 @@ export function updateStatus() {
   if (sdot) sdot.classList.toggle('is-active', n > 0);
 }
 
-// ─── AUDIO-EFFEKT-PRESET-DROPDOWN ─────────────────────────────
-// Ersetzt die früher statisch in index.html hinterlegten <optgroup>-Blöcke
-// ("Phase 1"/"Phase 2", technisch nach Entwicklungsphase gruppiert). Baut
-// die Optionsliste jetzt dynamisch nach akustischer Kategorie (Kap. 9) auf
-// und hängt eine eigene Gruppe für benutzerdefinierte Presets an — dadurch
-// erscheinen neu erstellte/importierte User-Presets sofort im Dropdown,
-// ohne dass HTML angefasst werden muss (Kap. 17: generisch, keine
-// Sonderfälle je Preset-ID).
-export function renderPresetDropdown() {
-  const sel = document.getElementById('fxPreset');
+/**
+ * Prompt 4, Kap. 3: generische Variante von renderPresetDropdown() — baut
+ * die Preset-Optionsliste (Kategorien + eigene Presets) in ein beliebiges
+ * <select>-Element statt fest in #fxPreset. Es darf nur EINE Quelle für die
+ * Preset-Liste geben: sowohl Sound-Effekte (#fxPreset) als auch der
+ * Musik-Track-Dialog (Prompt 3) und die Profil-Presets (Prompt 4) rufen
+ * diese Funktion auf.
+ * @param {HTMLSelectElement} sel - Ziel-<select>, dessen erstes <option>
+ *   ("— Kein Preset —"/"Kein Preset") im Markup bereits vorhanden sein muss.
+ * @param {string} [currentId] - zu erhaltender Wert; Standard: sel.value.
+ */
+export function renderPresetOptions(sel, currentId) {
   if (!sel) return;
-  const prevValue = sel.value;
+  const prevValue = currentId !== undefined ? currentId : sel.value;
 
   // WICHTIG: sel.options ist eine FLACHE Liste aller <option>-Elemente,
   // auch derer innerhalb von <optgroup>s. sel.remove(1) entfernt daher nur
@@ -513,6 +515,19 @@ export function renderPresetDropdown() {
   // Auswahl beibehalten, falls das Preset noch existiert (z.B. nach dem
   // Bearbeiten eines eigenen Presets); sonst zurück auf "Kein Preset".
   sel.value = [...sel.options].some(o => o.value === prevValue) ? prevValue : '';
+}
+
+// ─── AUDIO-EFFEKT-PRESET-DROPDOWN (Sound-Editor) ──────────────
+// Ersetzt die früher statisch in index.html hinterlegten <optgroup>-Blöcke
+// ("Phase 1"/"Phase 2", technisch nach Entwicklungsphase gruppiert). Baut
+// die Optionsliste jetzt dynamisch nach akustischer Kategorie (Kap. 9) auf
+// und hängt eine eigene Gruppe für benutzerdefinierte Presets an — dadurch
+// erscheinen neu erstellte/importierte User-Presets sofort im Dropdown,
+// ohne dass HTML angefasst werden muss (Kap. 17: generisch, keine
+// Sonderfälle je Preset-ID). Dünner Wrapper um renderPresetOptions() für
+// die einzige feste Aufrufstelle #fxPreset (Prompt 4, Kap. 3).
+export function renderPresetDropdown() {
+  renderPresetOptions(document.getElementById('fxPreset'));
 }
 
 // ─── CATEGORIES ───────────────────────────────────────────────
@@ -983,7 +998,7 @@ export function buildIconGrid(containerId, current) {
   if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...catBar.querySelectorAll('[data-lucide]')] });
 
   // Input ID map
-  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput', musicIconGrid: 'musicIconInput' };
+  const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput', musicIconGrid: 'musicIconInput', musicProfIconGrid: 'musicProfIconInput' };
 
   function selectIco(ico) {
     grid.querySelectorAll('.icon-opt').forEach(x => x.classList.remove('is-selected'));

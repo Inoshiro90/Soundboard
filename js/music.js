@@ -34,10 +34,10 @@
 import { APP, CMP, CMTracks }        from './state.js';
 import { uid, iconHtmlOr, fmtTime }  from './utils.js';
 import { toast }                     from './notifications.js';
-import { actx }                      from './audio.js';
+import { actx, buildEffectChain, defaultEffects } from './audio.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportMusicTrack, exportMusicProfile } from './storage.js';
-import { PENCIL_ICON_SVG, updateStatus, _applyTabAccent }   from './ui.js';
+import { PENCIL_ICON_SVG, updateStatus, _applyTabAccent, buildIconGrid, buildColorOpts } from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -106,7 +106,10 @@ function _mkTrack(name) {
     id: uid(), name: name || 'Track', artist: '', album: '',
     icon: MUSIC_ICONS[CMTracks().length % MUSIC_ICONS.length], color: 'none',
     data: null, fileName: '', duration: 0, vol: 1, order: CMTracks().length,
-    trimStart: 0, trimEnd: null
+    trimStart: 0, trimEnd: null,
+    // Prompt 3, Kap. 5: vollständiges Effekt-Modell analog zu Sound/Ambient —
+    // dieselbe defaultEffects()-Fabrik, kein eigenes Musik-Effektmodell.
+    effects: defaultEffects()
   };
 }
 
@@ -151,15 +154,16 @@ function _playOrder() {
 
 // ─── PROFILE (PLAYLIST) CRUD ─────────────────────────────────
 
-export function saveMusicProfile(id, name, icon) {
+export function saveMusicProfile(id, name, icon, color) {
   ensureMusicState();
-  const cleanName = (name || '').trim() || 'Playlist';
-  const cleanIcon = (icon || '').trim() || '🎵';
+  const cleanName  = (name || '').trim() || 'Playlist';
+  const cleanIcon  = (icon || '').trim() || '🎵';
+  const cleanColor = color || 'none';
   if (id) {
     const p = APP.music.profiles.find(x => x.id === id);
-    if (p) { p.name = cleanName; p.icon = cleanIcon; }
+    if (p) { p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor; }
   } else {
-    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: 'none', tracks: [], manualOrder: false };
+    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, tracks: [], manualOrder: false };
     APP.music.profiles.push(np);
     APP.music.activeProfileId = np.id;
   }
@@ -250,6 +254,20 @@ export function setMusicTrackIcon(trackId, icon) {
   t.icon = icon;
   _persist();
   renderMusicPanel();
+}
+
+/**
+ * Prompt 3, Kap. 5-7: weist einem Musik-Track ein vollständiges,
+ * normalisiertes Effekt-Objekt zu (aus applyPresetEffects() erzeugt, s.
+ * events.js) — niemals ein Merge in ein bestehendes Objekt. Wirkt beim
+ * nächsten Laden des Tracks in einen Player-Slot (_loadIntoSlot() →
+ * _reconnectSlotFx()); ein bereits laufender Track wird dadurch nicht
+ * unterbrochen (gleiche Zurückhaltung wie bei Icon/Farbe/Name-Edits).
+ */
+export function setMusicTrackEffects(trackId, effects) {
+  const t = _findTrack(trackId); if (!t) return;
+  t.effects = effects || defaultEffects();
+  _persist();
 }
 
 export function setMusicTrackVolume(trackId, val) {
@@ -349,9 +367,12 @@ function _ensurePlayers() {
     const source = ctx.createMediaElementSource(audio);
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    source.connect(gain);
+    // Prompt 3, Kap. 8/9: KEINE statische source→gain-Verkabelung mehr —
+    // der tatsächliche Signalweg (mit oder ohne Effektkette) wird pro
+    // geladenem Track in _reconnectSlotFx() aufgebaut, weil das Preset
+    // (effects) sich von Track zu Track unterscheidet.
     gain.connect(master);
-    const rec = { audio, source, gain, trackId: null };
+    const rec = { audio, source, gain, trackId: null, fxChain: null };
     // BUGFIX (Nutzer-Feedback): renderMusicPanel()/renderMusicPlayer() wurden
     // bisher nur an den JS-Aufrufstellen (playMusicTrack/_switchToTrack usw.)
     // aktualisiert. Da .play() bei noch ungeladenen Metadaten erst asynchron
@@ -365,6 +386,33 @@ function _ensurePlayers() {
   };
   _players = { A: mk(), B: mk(), master };
   return _players;
+}
+
+/**
+ * Prompt 3, Kap. 8/9: baut den Signalweg für einen Player-Slot neu auf —
+ * source → [Effektkette] → gain → master (gain→master bleibt statisch,
+ * s. _ensurePlayers()). Wird bei JEDEM Track-Laden in einen Slot
+ * aufgerufen (_loadIntoSlot()), weil jeder Track sein eigenes
+ * Effekt-Preset mitbringt. Trennt zuerst sauber die alte Verkabelung
+ * (source.disconnect() kappt ALLE bisherigen Ausgänge des MediaElement-
+ * Source-Node — der einzige Knoten, der pro <audio>-Element nur einmal
+ * erzeugt werden darf und daher dauerhaft wiederverwendet wird), damit
+ * beim Slot-Wechsel keine doppelten Verbindungen/Nodes hängen bleiben.
+ * Die alten Effektketten-Nodes (BiquadFilter/Compressor/Convolver/…) sind
+ * danach von niemandem mehr referenziert und werden vom Garbage Collector
+ * eingesammelt.
+ */
+function _reconnectSlotFx(rec, effects) {
+  try { rec.source.disconnect(); } catch (e) {}
+  const ctx = actx();
+  const chain = effects?.enabled ? buildEffectChain(ctx, effects) : null;
+  if (chain) {
+    rec.source.connect(chain.input);
+    chain.output.connect(rec.gain);
+  } else {
+    rec.source.connect(rec.gain);
+  }
+  rec.fxChain = chain;
 }
 
 async function _loadIntoSlot(slot, track) {
@@ -387,6 +435,9 @@ async function _loadIntoSlot(slot, track) {
 
   rec.audio.src   = url;
   rec.trackId     = track.id;
+  // Prompt 3, Kap. 8/9: Effektkette für DIESEN Track aufbauen — jeder
+  // Track kann ein anderes Preset haben, daher pro Ladevorgang neu.
+  _reconnectSlotFx(rec, track.effects);
   return rec;
 }
 
@@ -807,12 +858,12 @@ export function registerMusicEvents() {
     const tab     = e.target.closest('.profile-tab');
     if (editBtn) {
       const pid = tab?.dataset.pid;
-      if (pid) _openProfileEditPrompt(pid);
+      if (pid) _dispatchEditProfile(pid);
       return;
     }
     if (tab) switchMusicProfile(tab.dataset.pid);
   });
-  document.getElementById('btnAddMusicProfile')?.addEventListener('click', () => _openProfileEditPrompt(null));
+  document.getElementById('btnAddMusicProfile')?.addEventListener('click', () => _dispatchEditProfile(null));
 
   document.getElementById('btnMusicAdd')?.addEventListener('click', () => document.getElementById('musicFile')?.click());
   document.getElementById('musicFile')?.addEventListener('change', function () {
@@ -952,18 +1003,13 @@ export function registerMusicEvents() {
   renderMusicPlayer();
 }
 
-// ─── EINFACHE PROMPT-BASIERTE PROFIL-BEARBEITUNG ──────────────
-// Bewusst schlank gehalten (kein eigenes Modal-Markup nötig) — analog zum
-// Umfang der Ambient-Szenen-Verwaltung, aber ohne zusätzliche HTML-Modals.
-function _openProfileEditPrompt(id) {
-  const existing = id ? APP.music.profiles.find(p => p.id === id) : null;
-  const name = prompt('Name der Playlist:', existing?.name || 'Playlist');
-  if (name === null) return;
-  if (existing && !name.trim()) {
-    if (confirm('Playlist ohne Namen löschen?')) deleteMusicProfile(id);
-    return;
-  }
-  saveMusicProfile(id, name, existing?.icon || '🎵');
+// ─── PROFIL-BEARBEITEN: DIALOG-TRIGGER (Prompt 3) ─────────────
+// Öffnet KEIN eigenes Modal — das Bootstrap-Modal-Markup (#musicProfileModal)
+// lebt konsistent mit allen anderen Edit-Dialogen in index.html/events.js.
+// Gleiches CustomEvent-Prinzip wie _openTrackEditModal()/'music:editTrack',
+// um einen zirkulären Import music.js ⇄ events.js zu vermeiden.
+function _dispatchEditProfile(id) {
+  document.dispatchEvent(new CustomEvent('music:editProfile', { detail: { id } }));
 }
 
 // Track-Edit-Modal wird von events.js bereitgestellt (Bootstrap-Modal-Markup

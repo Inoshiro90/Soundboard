@@ -83,15 +83,31 @@ function _setOpen(toggle, panel, open) {
   toggle.classList.toggle('is-active', open);
   panel.hidden = !open;
   panel.dataset.open = open ? 'true' : 'false';
-  if (open) _positionPanel(toggle, panel);
+  // Prompt 2, Kap. 3: inline-Varianten (data-disclosure-inline) bleiben an
+  // ihrer Stelle im Formular (kein Portal, keine position:fixed-Berechnung)
+  // — nur echte Popover-Trigger (ohne dieses Attribut) werden weiterhin
+  // relativ zum Trigger positioniert.
+  if (open && !toggle.hasAttribute('data-disclosure-inline')) _positionPanel(toggle, panel);
 }
 
-function _closeAll(exceptPanel) {
-  document.querySelectorAll(SELECTOR_TOGGLE).forEach(toggle => {
+function _closeAll(exceptPanel, scope = document) {
+  scope.querySelectorAll(SELECTOR_TOGGLE).forEach(toggle => {
     const panel = _panelFor(toggle);
     if (!panel || panel === exceptPanel) return;
     if (toggle.getAttribute('aria-expanded') === 'true') _setOpen(toggle, panel, false);
   });
+}
+
+/**
+ * Prompt 2, Kap. 3: inline-Accordion-Gruppen (data-disclosure-inline)
+ * sollen sich nur GEGENSEITIG schließen — innerhalb derselben Gruppe
+ * (nächster Vorfahre mit .disclosure-group) — statt wie Popover-Trigger
+ * global exklusiv zu sein. Popover-Trigger (ohne dieses Attribut) behalten
+ * ihr bisheriges dokumentweites Verhalten unverändert bei.
+ */
+function _scopeFor(toggle) {
+  if (!toggle.hasAttribute('data-disclosure-inline')) return document;
+  return toggle.closest('.disclosure-group') || document;
 }
 
 /**
@@ -106,12 +122,13 @@ export function initDisclosure(root = document) {
 
     const panel = _panelFor(toggle);
     if (!panel) return;
-    portalToBody(panel);
+    const inline = toggle.hasAttribute('data-disclosure-inline');
+    if (!inline) portalToBody(panel);
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const willOpen = toggle.getAttribute('aria-expanded') !== 'true';
-      _closeAll(willOpen ? panel : null);
+      _closeAll(willOpen ? panel : null, _scopeFor(toggle));
       _setOpen(toggle, panel, willOpen);
       if (willOpen) {
         const focusable = panel.querySelector('button, input, select, textarea, [tabindex]');

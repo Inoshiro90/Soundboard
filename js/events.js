@@ -18,7 +18,7 @@ import {
   openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
   startPeakRmsMeter, stopPeakRmsMeter,
   syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex,
-  renderPresetDropdown, markTrimSaved
+  renderPresetDropdown, renderPresetOptions, markTrimSaved
 } from './ui.js';
 import {
   save, exportDataWithAudio, importData, resetAll,
@@ -36,7 +36,7 @@ import {
   setAmbientTrackIcon, setAmbientTrackEffects, renameAmbientTrack,
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
-import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack } from './music.js';
+import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects } from './music.js';
 import { generateToneBuffer } from './generators.js';
 import { audioBufferToWavBlob } from './export.js';
 import {
@@ -503,8 +503,12 @@ function _markActivePlaybackSummary() {
 function _syncAmbientLoopIntervalExclusivity() {
   const loopEl = document.getElementById('ambLoop');
   const intEl  = document.getElementById('ambIntervalMode');
-  document.getElementById('ambLoopRow')?.classList.toggle('is-active', !!loopEl?.checked);
-  document.getElementById('ambIntervalRow')?.classList.toggle('is-active', !!intEl?.checked);
+  const loopBtn = document.getElementById('ambLoopRow');
+  const intBtn  = document.getElementById('ambIntervalRow');
+  loopBtn?.classList.toggle('is-active', !!loopEl?.checked);
+  loopBtn?.setAttribute('aria-pressed', String(!!loopEl?.checked));
+  intBtn?.classList.toggle('is-active', !!intEl?.checked);
+  intBtn?.setAttribute('aria-pressed', String(!!intEl?.checked));
   const mmRow = document.getElementById('ambIntervalMinMaxRow');
   if (mmRow) {
     const on = !!intEl?.checked;
@@ -1151,11 +1155,16 @@ document.addEventListener('ambient:editEffects', e => openAmbientEffectsModal(e.
 // Kap. 24) und ein eigenes Modal minimiert das Risiko, den bestehenden
 // Sound-/Ambient-Editor versehentlich zu beschädigen (Kap. 69).
 let _musicEditId = null;
+// Prompt 3, Kap. 5-7: staged Effekt-Objekt für die aktuelle Editier-Sitzung
+// des Track-Modals — wird NUR beim Speichern in t.effects übernommen
+// (setMusicTrackEffects()), analog zum Draft-Prinzip der übrigen Editoren.
+let _musicEditEffects = null;
 
 function openMusicTrackModal(trackId) {
   const t = findMusicTrack(trackId);
   if (!t) return;
   _musicEditId = trackId;
+  _musicEditEffects = t.effects ? { ...t.effects } : defaultEffects();
 
   document.getElementById('musicEditName').value   = t.name || '';
   document.getElementById('musicEditArtist').value = t.artist || '';
@@ -1165,6 +1174,7 @@ function openMusicTrackModal(trackId) {
 
   buildIconGrid('musicIconGrid', t.icon || '🎵');
   buildColorOpts('musicClrOpts', t.color || 'none');
+  renderPresetOptions(document.getElementById('musicEditFxPreset'), _musicEditEffects.preset || '');
 
   document.getElementById('musicTrackModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#musicTrackModal .icon-picker__cats');
@@ -1183,6 +1193,40 @@ function findMusicTrack(id) {
   }
   return null;
 }
+
+// ─── MUSIC PLAYLIST MODAL ─────────────────────────────────────
+// Prompt 3, Kap. 1-4: ersetzt die frühere prompt()/confirm()-basierte
+// Playlist-Bearbeitung — gleiches Muster wie openProfileModal()/
+// openAmbientProfileModal() (Icon/Farbe über die zentralen Picker).
+// Geöffnet über 'music:editProfile' (dispatcht von music.js), um einen
+// zirkulären Import music.js ⇄ events.js zu vermeiden (gleiches Prinzip
+// wie 'music:editTrack' oben).
+let _editMusicProfileId = null;
+
+function openMusicProfileModal(id) {
+  _editMusicProfileId = id;
+  const p = id ? APP.music.profiles.find(x => x.id === id) : null;
+
+  document.getElementById('musicProfileModalTitle').textContent = id ? 'PLAYLIST BEARBEITEN' : 'NEUE PLAYLIST';
+  const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
+  set('musicProfNameInput', p ? p.name : '');
+  set('musicProfIconInput', p ? p.icon : '');
+
+  const delBtn = document.getElementById('btnDelMusicProfile');
+  if (delBtn) delBtn.style.display = (id && APP.music.profiles.length > 1) ? '' : 'none';
+  const expBtn = document.getElementById('btnExportMusicProfile');
+  if (expBtn) expBtn.style.display = id ? '' : 'none';
+
+  buildIconGrid('musicProfIconGrid', p ? p.icon : '🎵');
+  buildColorOpts('musicProfColorOpts', p ? (p.color || 'none') : 'none');
+  document.getElementById('musicProfileModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#musicProfileModal .icon-picker__cats');
+    if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
+  }, { once: true });
+  new bootstrap.Modal(document.getElementById('musicProfileModal')).show();
+}
+
+document.addEventListener('music:editProfile', e => openMusicProfileModal(e.detail?.id));
 
 // ─── MACRO MODAL ─────────────────────────────────────────────
 
@@ -1460,6 +1504,23 @@ export function registerEvents() {
   document.getElementById('musicEditVol')?.addEventListener('input', function () {
     document.getElementById('musicEditVolLbl').textContent = Math.round(parseFloat(this.value) * 100) + '%';
   });
+  // Prompt 3, Kap. 5-7: Preset-Auswahl staged in _musicEditEffects — beim
+  // Anwenden eines Presets wird applyPresetEffects() genutzt (vollständige,
+  // normalisierte Effektkonfiguration statt Merge in ein bestehendes
+  // Objekt), analog zum #fxPreset-Handler des Sound-Editors.
+  document.getElementById('musicEditFxPreset')?.addEventListener('change', function() {
+    const val = this.value;
+    if (!val) {
+      _musicEditEffects = defaultEffects();
+      return;
+    }
+    const preset = getPresetById(val);
+    if (!preset) return;
+    const merged = applyPresetEffects(preset.effects);
+    merged.enabled = true;
+    merged.preset  = val;
+    _musicEditEffects = merged;
+  });
   document.getElementById('btnMusicEditSave')?.addEventListener('click', () => {
     if (!_musicEditId) return;
     const icon  = document.getElementById('musicIconInput').value.trim();
@@ -1472,6 +1533,7 @@ export function registerEvents() {
       color:  clrEl?.dataset.color
     });
     setMusicTrackVolume(_musicEditId, parseFloat(document.getElementById('musicEditVol').value));
+    setMusicTrackEffects(_musicEditId, _musicEditEffects);
     bootstrap.Modal.getInstance(document.getElementById('musicTrackModal'))?.hide();
   });
   document.getElementById('btnMusicEditDelete')?.addEventListener('click', () => {
@@ -1482,6 +1544,29 @@ export function registerEvents() {
   });
   document.getElementById('btnMusicEditExport')?.addEventListener('click', () => {
     if (_musicEditId) exportMusicTrack(_musicEditId);
+  });
+
+  // ─── Musik-Playlist-Modal (Prompt 3, Kap. 1-4) ────────────────
+  document.getElementById('btnSaveMusicProfile')?.addEventListener('click', () => {
+    const name  = document.getElementById('musicProfNameInput').value.trim() || 'Playlist';
+    const icon  = document.getElementById('musicProfIconInput').value.trim() || '🎵';
+    const clrEl = document.querySelector('#musicProfColorOpts .color-swatch.is-selected');
+    const color = clrEl?.dataset.color || 'none';
+    saveMusicProfile(_editMusicProfileId, name, icon, color);
+    bootstrap.Modal.getInstance(document.getElementById('musicProfileModal')).hide();
+    toast('Playlist gespeichert', 'ok');
+  });
+  document.getElementById('btnDelMusicProfile')?.addEventListener('click', () => {
+    if (!_editMusicProfileId) return;
+    if (!confirm('Playlist wirklich löschen? Alle enthaltenen Musikstücke werden entfernt.')) return;
+    const ok = deleteMusicProfile(_editMusicProfileId);
+    if (ok) {
+      bootstrap.Modal.getInstance(document.getElementById('musicProfileModal')).hide();
+      toast('Playlist gelöscht');
+    }
+  });
+  document.getElementById('btnExportMusicProfile')?.addEventListener('click', () => {
+    if (_editMusicProfileId) exportMusicProfile(_editMusicProfileId);
   });
 
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
@@ -1886,12 +1971,24 @@ export function registerEvents() {
   document.getElementById('ambFadeOut')?.addEventListener('input', () => _markActivePlaybackSummary());
   document.getElementById('ambFadeInCurve')?.addEventListener('change',  () => _markActivePlaybackSummary());
   document.getElementById('ambFadeOutCurve')?.addEventListener('change', () => _markActivePlaybackSummary());
-  document.getElementById('ambLoop')?.addEventListener('change', function() {
-    if (this.checked) { const i = document.getElementById('ambIntervalMode'); if (i) i.checked = false; }
+  // Prompt 2, Kap. 5-10: Loop/Zeitversetzt sind jetzt echte Buttons
+  // (#ambLoopRow/#ambIntervalRow), keine Checkboxen mehr sichtbar — die
+  // internen Boolean-Felder (#ambLoop/#ambIntervalMode) bleiben als
+  // verstecktes Zustandsfeld erhalten (Speichern liest weiterhin .checked).
+  document.getElementById('ambLoopRow')?.addEventListener('click', function() {
+    const loopEl = document.getElementById('ambLoop');
+    const intEl  = document.getElementById('ambIntervalMode');
+    if (!loopEl) return;
+    loopEl.checked = !loopEl.checked;
+    if (loopEl.checked && intEl) intEl.checked = false;
     _syncAmbientLoopIntervalExclusivity();
   });
-  document.getElementById('ambIntervalMode')?.addEventListener('change', function() {
-    if (this.checked) { const l = document.getElementById('ambLoop'); if (l) l.checked = false; }
+  document.getElementById('ambIntervalRow')?.addEventListener('click', function() {
+    const loopEl = document.getElementById('ambLoop');
+    const intEl  = document.getElementById('ambIntervalMode');
+    if (!intEl) return;
+    intEl.checked = !intEl.checked;
+    if (intEl.checked && loopEl) loopEl.checked = false;
     _syncAmbientLoopIntervalExclusivity();
   });
 
