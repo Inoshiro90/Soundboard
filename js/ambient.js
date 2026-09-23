@@ -187,16 +187,22 @@ function _pickTrackFile(t) {
 // ─── SCENE (PROFILE) CRUD ──────────────────────────────────────
 
 /** Creates a new scene or renames/re-icons/re-colors an existing one (id === null → create). */
-export function saveAmbientProfile(id, name, icon, color) {
+export function saveAmbientProfile(id, name, icon, color, audioEffectPreset) {
   ensureAmbientState();
   const cleanName  = (name || '').trim() || 'Szene';
   const cleanIcon  = (icon || '').trim() || '🌫️';
   const cleanColor = color || 'none';
   if (id) {
     const p = APP.ambient.profiles.find(x => x.id === id);
-    if (p) { p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor; }
+    if (p) {
+      p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor;
+      // Prompt 4, Kap. 10: übergeordnetes Preset wird bei jedem Speichern
+      // mitgesichert (undefined = Aufrufer hat es nicht übergeben → Feld
+      // unangetastet lassen, statt es stillschweigend auf null zu setzen).
+      if (audioEffectPreset !== undefined) p.audioEffectPreset = audioEffectPreset;
+    }
   } else {
-    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, tracks: [] };
+    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, audioEffectPreset: audioEffectPreset ?? null, tracks: [] };
     APP.ambient.profiles.push(np);
     APP.ambient.activeProfileId = np.id;
   }

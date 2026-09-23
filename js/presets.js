@@ -127,6 +127,60 @@ export function applyPresetEffects(presetEffects) {
   return out;
 }
 
+// ─── ÜBERGEORDNETE PRESET-ANWENDUNG AUF EINE SAMMLUNG (Prompt 4) ──
+/**
+ * Wendet ein Preset auf eine Sammlung von Audio-Objekten (Sounds eines
+ * Sound-Profils, Ambient-Tracks einer Szene, Musik-Tracks einer Playlist)
+ * an — EINMALIGE zentrale Implementierung (Kap. 12), damit Sound-, Ambient-
+ * und Musik-Profile dieselbe Logik verwenden, statt sie dreimal zu
+ * duplizieren.
+ *
+ * Der Aufrufer filtert `items` bereits auf die für den jeweiligen
+ * Container relevanten Audioobjekte (z.B. nur `type === 'sound'` bei
+ * Sound-Profilen, s. Kap. 7) — diese Funktion arbeitet danach generisch
+ * über `item.effects`, unabhängig vom konkreten Container-Typ.
+ *
+ * @param {object} params
+ * @param {object[]} params.items - Audioobjekte mit einer `effects`-
+ *   Eigenschaft (wird ggf. neu gesetzt).
+ * @param {string} params.presetId - ID eines Built-in- oder User-Presets.
+ * @param {'all'|'same'|'none'} params.overwriteMode - Kap. 4:
+ *   'all'  = Alle: ersetzt IMMER, auch bereits vorhandene andere Presets.
+ *   'same' = Gleiche: Elemente ohne Preset bekommen es; Elemente mit
+ *            GENAU diesem Preset werden erneut synchronisiert; alles
+ *            andere bleibt unangetastet.
+ *   'none' = Keine (Default, Kap. 5): NUR Elemente ohne vorhandenes
+ *            Preset bekommen es; alles mit einem Preset bleibt unangetastet.
+ * @returns {{changed:number, total:number}} - für eine Erfolgsmeldung im UI.
+ */
+export function applyPresetToCollection({ items, presetId, overwriteMode }) {
+  const preset = presetId ? getPresetById(presetId) : null;
+  const list = Array.isArray(items) ? items : [];
+  if (!preset) return { changed: 0, total: list.length };
+
+  let changed = 0;
+  list.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const hasExisting = !!(item.effects && item.effects.preset);
+
+    let apply;
+    if (overwriteMode === 'all') apply = true;
+    else if (overwriteMode === 'same') apply = !hasExisting || item.effects.preset === presetId;
+    else apply = !hasExisting; // 'none' (Default)
+
+    if (!apply) return;
+    // Kap. 6: NIEMALS in ein vorhandenes Effekte-Objekt mergen —
+    // applyPresetEffects() liefert eine vollständige, normalisierte
+    // Konfiguration, die das alte Effekte-Objekt komplett ersetzt.
+    const merged = applyPresetEffects(preset.effects);
+    merged.enabled = true;
+    merged.preset  = presetId;
+    item.effects = merged;
+    changed++;
+  });
+  return { changed, total: list.length };
+}
+
 // ─── ZUGRIFF AUF PRESETS (BUILT-IN + USER, EINHEITLICH) ───────
 
 function _ensureUserPresetsArray() {

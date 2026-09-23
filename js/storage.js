@@ -76,12 +76,17 @@ function migratePlaybackSettings() {
   });
 }
 
-// ─── PROFIL-FARBEN-MIGRATION ─────────────────────────────────
+// ─── PROFIL-FARBEN-/PRESET-MIGRATION ──────────────────────────
 // Prompt 1, Kap. 5: Sound-Profile (Tabs) bekommen ein `color`-Feld.
-// Bestehende, ohne dieses Feld gespeicherte Profile erhalten automatisch
-// 'none' (keine Akzentfarbe) — keine destruktive Migration.
+// Prompt 4, Kap. 1: zusätzlich ein `audioEffectPreset`-Feld (null = kein
+// übergeordnetes Preset). Bestehende, ohne diese Felder gespeicherte
+// Profile erhalten automatisch die neutralen Defaults — keine
+// destruktive Migration.
 function migrateProfileColors() {
-  APP.profiles.forEach(p => { if (!p.color) p.color = 'none'; });
+  APP.profiles.forEach(p => {
+    if (!p.color) p.color = 'none';
+    if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
+  });
 }
 
 // ─── IDB MIGRATION ───────────────────────────────────────────
@@ -196,6 +201,8 @@ function _normalizeAmbient(raw) {
     if (!p.icon) p.icon = '🌫️';
     // Prompt 1, Kap. 5/6: Szene-Akzentfarbe — rückwärtskompatibel ergänzt.
     if (!p.color) p.color = 'none';
+    // Prompt 4, Kap. 1: übergeordnetes Audio-Effekt-Preset der Szene.
+    if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeAmbientTrack);
   });
@@ -250,6 +257,8 @@ function _normalizeMusic(raw) {
     if (!p.icon) p.icon = '🎵';
     // Prompt 1, Kap. 5: Playlist-Akzentfarbe — rückwärtskompatibel ergänzt.
     if (!p.color) p.color = 'none';
+    // Prompt 4, Kap. 1: übergeordnetes Audio-Effekt-Preset der Playlist.
+    if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeMusicTrack);
     // Spez. Kap. 54: klares Modell statt widersprüchlicher Kombination —
@@ -299,15 +308,15 @@ export async function decodeAllAudio() {
 export const STARTER_PLACEHOLDER_COUNT = 24;
 
 export function mkProfile(name, icon, color) {
-  return { id: uid(), name, icon: icon || '🎵', color: color || 'none', items: [] };
+  return { id: uid(), name, icon: icon || '🎵', color: color || 'none', audioEffectPreset: null, items: [] };
 }
 
 export function mkAmbientProfile(name, icon, color) {
-  return { id: uid(), name: name || 'Ambient', icon: icon || '🌫️', color: color || 'none', tracks: [] };
+  return { id: uid(), name: name || 'Ambient', icon: icon || '🌫️', color: color || 'none', audioEffectPreset: null, tracks: [] };
 }
 
 export function mkMusicProfile(name, icon, color) {
-  return { id: uid(), name: name || 'Musik', icon: icon || '🎵', color: color || 'none', tracks: [] };
+  return { id: uid(), name: name || 'Musik', icon: icon || '🎵', color: color || 'none', audioEffectPreset: null, tracks: [] };
 }
 
 export function mkSound(d, order) {
@@ -723,7 +732,13 @@ async function _importProfileBundle(profileData) {
       }
     }
   }
-  const newProfile = { id: uid(), name: (profileData.name || 'Profil') + ' (importiert)', icon: profileData.icon || '🎵', items };
+  const newProfile = {
+    id: uid(), name: (profileData.name || 'Profil') + ' (importiert)', icon: profileData.icon || '🎵',
+    // Prompt 1/4: color/audioEffectPreset aus dem Bundle übernehmen (alte
+    // Exports ohne diese Felder bekommen die neutralen Defaults).
+    color: profileData.color || 'none', audioEffectPreset: profileData.audioEffectPreset ?? null,
+    items
+  };
   APP.profiles.push(newProfile);
   APP.activeProfileId = newProfile.id;
   return newProfile;
@@ -744,7 +759,11 @@ async function _importAmbientProfileBundle(profileData) {
       }
     }
   }
-  const newProfile = { id: uid(), name: (profileData.name || 'Ambient') + ' (importiert)', icon: profileData.icon || '🌫️', tracks };
+  const newProfile = {
+    id: uid(), name: (profileData.name || 'Ambient') + ' (importiert)', icon: profileData.icon || '🌫️',
+    color: profileData.color || 'none', audioEffectPreset: profileData.audioEffectPreset ?? null,
+    tracks
+  };
   APP.ambient.profiles.push(newProfile);
   APP.ambient.activeProfileId = newProfile.id;
   return newProfile;
@@ -765,6 +784,7 @@ async function _importMusicProfileBundle(profileData) {
   }
   const newProfile = {
     id: uid(), name: (profileData.name || 'Playlist') + ' (importiert)', icon: profileData.icon || '🎵',
+    color: profileData.color || 'none', audioEffectPreset: profileData.audioEffectPreset ?? null,
     tracks, manualOrder: !!profileData.manualOrder
   };
   APP.music.profiles.push(newProfile);
@@ -884,6 +904,7 @@ export async function importData(file, { onSuccess }) {
       migratePresetCategories();
       migrateEffects();
       migratePlaybackSettings();
+      migrateProfileColors();
       await runIdbMigrationIfNeeded();
       onSuccess();
     } catch(err) { console.error('[storage] import error:', err); toast('Import fehlgeschlagen', 'err'); }

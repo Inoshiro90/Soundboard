@@ -83,6 +83,10 @@ export function ensureMusicState() {
 }
 
 function _persist() { try { _saveRaw(); } catch (e) { console.warn('[music] persist failed:', e); } }
+/** Prompt 4: öffentlicher Persist-Wrapper, analog zu persistAmbientNow()
+ *  in ambient.js — für Bulk-Änderungen von außerhalb dieses Moduls
+ *  (z.B. applyPresetToCollection() auf alle Tracks einer Playlist). */
+export function persistMusicNow() { _persist(); }
 
 function _findTrack(trackId) {
   for (const p of APP.music.profiles) {
@@ -154,16 +158,22 @@ function _playOrder() {
 
 // ─── PROFILE (PLAYLIST) CRUD ─────────────────────────────────
 
-export function saveMusicProfile(id, name, icon, color) {
+export function saveMusicProfile(id, name, icon, color, audioEffectPreset) {
   ensureMusicState();
   const cleanName  = (name || '').trim() || 'Playlist';
   const cleanIcon  = (icon || '').trim() || '🎵';
   const cleanColor = color || 'none';
   if (id) {
     const p = APP.music.profiles.find(x => x.id === id);
-    if (p) { p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor; }
+    if (p) {
+      p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor;
+      // Prompt 4, Kap. 10: übergeordnetes Preset wird bei jedem Speichern
+      // mitgesichert (undefined = Aufrufer hat es nicht übergeben → Feld
+      // unangetastet lassen, statt es stillschweigend auf null zu setzen).
+      if (audioEffectPreset !== undefined) p.audioEffectPreset = audioEffectPreset;
+    }
   } else {
-    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, tracks: [], manualOrder: false };
+    const np = { id: uid(), name: cleanName, icon: cleanIcon, color: cleanColor, audioEffectPreset: audioEffectPreset ?? null, tracks: [], manualOrder: false };
     APP.music.profiles.push(np);
     APP.music.activeProfileId = np.id;
   }

@@ -71,9 +71,20 @@
 	border-color: var(--color-accent);
 }
 
-/* Lucide-Icons in Loop/Zeitversetzt (und vergleichbaren Vorschau-Kontexten)
-   auf dieselbe optische Größe wie die Font-Awesome-Icons der
-   Referenzbuttons bringen (Kap. 8: "gleiche Typografie"). */
+/* Prompt 4, Kap. 4/12: aktiver Zustand der Alle/Gleiche/Keine-
+   Überschreibungsmodus-Buttons (#profModal/#ambProfModal/#musicProfileModal,
+   je 3 Buttons) — generische Regel über [data-mode], damit nicht neun
+   einzelne ID-Selektoren gepflegt werden müssen. Gleiches optisches Muster
+   wie #ambVariantRandom.is-active & Co. oben. */
+.btn[data-mode].is-active {
+	background: var(--color-accent);
+	color: #fff;
+	border-color: var(--color-accent);
+}
+
+/* Lucide-Icons in Loop/Zeitversetzt, Alle/Gleiche/Keine (und vergleichbaren
+   Vorschau-Kontexten) auf dieselbe optische Größe wie die Font-Awesome-
+   Icons der Referenzbuttons bringen (Kap. 8: "gleiche Typografie"). */
 .preview-icon {
 	width: 13px;
 	height: 13px;

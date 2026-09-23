@@ -2770,15 +2770,100 @@
           <label class="form-label" for="profNameInput">Name</label>
           <input class="form-control" id="profNameInput" placeholder="z.B. Zauberer Sammy">
 
-          <label class="form-label u-mt-3">Emoji / Icon</label>
-          <!-- Icon picker injected by buildIconGrid() -->
-          <div id="profIconGrid" class="icon-grid" aria-hidden="true"></div>
-          <input class="form-control u-mt-2" id="profIconInput" placeholder="🧙" maxlength="4"
-            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
+               Progressive-Disclosure-Gruppe (data-disclosure-inline,
+               zentrales System aus disclosure.js) — standardmäßig
+               eingeklappt, statt dauerhaft sichtbar. -->
+          <div class="disclosure-group u-mt-3" id="profDisclosureGroup">
 
-          <label class="form-label u-mt-3">Farbe</label>
-          <!-- Color picker injected by buildColorOpts() -->
-          <div id="profColorOpts" class="color-row" aria-label="Akzentfarbe des Profils"></div>
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="profSecIcon" id="profSecIconToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-face-smile" aria-hidden="true"></i> Emoji / Icon
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="profSecIcon" hidden>
+                <!-- Icon picker injected by buildIconGrid() -->
+                <div id="profIconGrid" class="icon-grid" aria-hidden="true"></div>
+                <input class="form-control u-mt-2" id="profIconInput" placeholder="🧙" maxlength="4"
+                  style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+              </div>
+            </div>
+
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="profSecColor" id="profSecColorToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-palette" aria-hidden="true"></i> Farbe
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="profSecColor" hidden>
+                <!-- Color picker injected by buildColorOpts() -->
+                <div id="profColorOpts" class="color-row" aria-label="Akzentfarbe des Profils"></div>
+              </div>
+            </div>
+
+            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für dieses
+                 Sound-Profil — Progressive Disclosure (data-disclosure-inline,
+                 wiederverwendetes System aus Prompt 2). Standardmäßig
+                 eingeklappt; Preset-Auswahl/Modus werden beim Öffnen des
+                 Modals über _profFxSection.reset() zurückgesetzt (Kap. 5). -->
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="profFxSec" id="profFxSecToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="profFxSec" hidden>
+                <label class="form-label" for="profFxPreset">Preset</label>
+                <select class="form-select form-select-sm fx-preset-select" id="profFxPreset">
+                  <option value="">— Kein Preset —</option>
+                </select>
+
+                <div class="u-mt-3">
+                  <span class="form-label u-block">Preset auf enthaltene Sounds anwenden</span>
+                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="profFxModeGroup">
+                    <button type="button" class="btn btn--sm" data-mode="all" id="profFxModeAll" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                      </svg>
+                      Alle
+                    </button>
+                    <button type="button" class="btn btn--sm" data-mode="same" id="profFxModeSame" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                        <path d="M7 10h10" />
+                        <path d="M7 14h10" />
+                      </svg>
+                      Gleiche
+                    </button>
+                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="profFxModeNone" aria-pressed="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <path d="m15 9-6 6" />
+                        <path d="m9 9 6 6" />
+                      </svg>
+                      Keine
+                    </button>
+                  </div>
+                  <button type="button" class="btn btn--accent u-mt-2" id="profFxApplyBtn">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer u-flex-between">
@@ -2820,15 +2905,97 @@
           <label class="form-label" for="ambProfNameInput">Name</label>
           <input class="form-control" id="ambProfNameInput" placeholder="z.B. Marktplatz, Höhle, Schlachtfeld">
 
-          <label class="form-label u-mt-3">Emoji / Icon</label>
-          <!-- Icon picker injected by buildIconGrid() -->
-          <div id="ambProfIconGrid" class="icon-grid" aria-hidden="true"></div>
-          <input class="form-control u-mt-2" id="ambProfIconInput" placeholder="🌫️" maxlength="4"
-            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
+               Progressive-Disclosure-Gruppe — siehe #profDisclosureGroup
+               in #profModal für die ausführliche Begründung des Musters. -->
+          <div class="disclosure-group u-mt-3" id="ambProfDisclosureGroup">
 
-          <label class="form-label u-mt-3">Farbe</label>
-          <!-- Color picker injected by buildColorOpts() -->
-          <div id="ambProfColorOpts" class="color-row" aria-label="Akzentfarbe der Szene"></div>
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="ambProfSecIcon" id="ambProfSecIconToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-face-smile" aria-hidden="true"></i> Emoji / Icon
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="ambProfSecIcon" hidden>
+                <!-- Icon picker injected by buildIconGrid() -->
+                <div id="ambProfIconGrid" class="icon-grid" aria-hidden="true"></div>
+                <input class="form-control u-mt-2" id="ambProfIconInput" placeholder="🌫️" maxlength="4"
+                  style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+              </div>
+            </div>
+
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="ambProfSecColor" id="ambProfSecColorToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-palette" aria-hidden="true"></i> Farbe
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="ambProfSecColor" hidden>
+                <!-- Color picker injected by buildColorOpts() -->
+                <div id="ambProfColorOpts" class="color-row" aria-label="Akzentfarbe der Szene"></div>
+              </div>
+            </div>
+
+            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für diese
+                 Ambient-Szene — siehe #profFxSec in #profModal für die
+                 ausführliche Begründung des Musters. -->
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="ambProfFxSec" id="ambProfFxSecToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="ambProfFxSec" hidden>
+                <label class="form-label" for="ambProfFxPreset">Preset</label>
+                <select class="form-select form-select-sm fx-preset-select" id="ambProfFxPreset">
+                  <option value="">— Kein Preset —</option>
+                </select>
+
+                <div class="u-mt-3">
+                  <span class="form-label u-block">Preset auf enthaltene Ambient-Tracks anwenden</span>
+                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="ambProfFxModeGroup">
+                    <button type="button" class="btn btn--sm" data-mode="all" id="ambProfFxModeAll" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                      </svg>
+                      Alle
+                    </button>
+                    <button type="button" class="btn btn--sm" data-mode="same" id="ambProfFxModeSame" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                        <path d="M7 10h10" />
+                        <path d="M7 14h10" />
+                      </svg>
+                      Gleiche
+                    </button>
+                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="ambProfFxModeNone" aria-pressed="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <path d="m15 9-6 6" />
+                        <path d="m9 9 6 6" />
+                      </svg>
+                      Keine
+                    </button>
+                  </div>
+                  <button type="button" class="btn btn--accent u-mt-2" id="ambProfFxApplyBtn">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer u-flex-between">
@@ -2929,14 +3096,31 @@
             <span class="u-text-badge u-text-mono" id="musicEditVolLbl">100%</span>
           </div>
 
-          <!-- Prompt 3, Kap. 5-7: Audio-Effekt-Preset für diesen Musik-Track —
+          <!-- Prompt 1: Audio-Effekte per Progressive Disclosure statt
+               dauerhaft sichtbarem Block — zentrales System aus
+               disclosure.js (data-disclosure-inline), wie in #profModal/
+               #ambProfModal/#musicProfileModal.
+               Prompt 3, Kap. 5-7: Audio-Effekt-Preset für diesen Musik-Track —
                dieselbe zentrale Preset-Infrastruktur wie Sound/Ambient
                (getAllPresets()/applyPresetEffects(), renderPresetOptions()
                statt eines zweiten Musik-Effektmodells). -->
-          <label class="form-label u-mt-3" for="musicEditFxPreset">Audio-Effekte (Preset)</label>
-          <select class="form-select form-select-sm fx-preset-select" id="musicEditFxPreset">
-            <option value="">— Kein Preset —</option>
-          </select>
+          <div class="disclosure-group u-mt-3" id="musicEditDisclosureGroup">
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="musicEditFxSec" id="musicEditFxSecToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="musicEditFxSec" hidden>
+                <label class="form-label" for="musicEditFxPreset">Preset</label>
+                <select class="form-select form-select-sm fx-preset-select" id="musicEditFxPreset">
+                  <option value="">— Kein Preset —</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
@@ -2985,15 +3169,97 @@
           <label class="form-label" for="musicProfNameInput">Name</label>
           <input class="form-control" id="musicProfNameInput" placeholder="z.B. Tavernenmusik">
 
-          <label class="form-label u-mt-3">Emoji / Icon</label>
-          <!-- Icon picker injected by buildIconGrid() -->
-          <div id="musicProfIconGrid" class="icon-grid" aria-hidden="true"></div>
-          <input class="form-control u-mt-2" id="musicProfIconInput" placeholder="🎵" maxlength="4"
-            style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
+               Progressive-Disclosure-Gruppe — siehe #profDisclosureGroup
+               in #profModal für die ausführliche Begründung des Musters. -->
+          <div class="disclosure-group u-mt-3" id="musicProfDisclosureGroup">
 
-          <label class="form-label u-mt-3">Farbe</label>
-          <!-- Color picker injected by buildColorOpts() -->
-          <div id="musicProfColorOpts" class="color-row" aria-label="Akzentfarbe der Playlist"></div>
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="musicProfSecIcon" id="musicProfSecIconToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-face-smile" aria-hidden="true"></i> Emoji / Icon
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="musicProfSecIcon" hidden>
+                <!-- Icon picker injected by buildIconGrid() -->
+                <div id="musicProfIconGrid" class="icon-grid" aria-hidden="true"></div>
+                <input class="form-control u-mt-2" id="musicProfIconInput" placeholder="🎵" maxlength="4"
+                  style="font-size:1.1rem;text-align:center" aria-label="Emoji direkt eingeben">
+              </div>
+            </div>
+
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="musicProfSecColor" id="musicProfSecColorToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-palette" aria-hidden="true"></i> Farbe
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="musicProfSecColor" hidden>
+                <!-- Color picker injected by buildColorOpts() -->
+                <div id="musicProfColorOpts" class="color-row" aria-label="Akzentfarbe der Playlist"></div>
+              </div>
+            </div>
+
+            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für diese
+                 Musik-Playlist — siehe #profFxSec in #profModal für die
+                 ausführliche Begründung des Musters. -->
+            <div class="disclosure-section">
+              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
+                aria-expanded="false" aria-controls="musicProfFxSec" id="musicProfFxSecToggle">
+                <span class="disclosure-section__label">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+                </span>
+                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+              </button>
+              <div class="disclosure-section__panel" id="musicProfFxSec" hidden>
+                <label class="form-label" for="musicProfFxPreset">Preset</label>
+                <select class="form-select form-select-sm fx-preset-select" id="musicProfFxPreset">
+                  <option value="">— Kein Preset —</option>
+                </select>
+
+                <div class="u-mt-3">
+                  <span class="form-label u-block">Preset auf enthaltene Musik-Tracks anwenden</span>
+                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="musicProfFxModeGroup">
+                    <button type="button" class="btn btn--sm" data-mode="all" id="musicProfFxModeAll" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                      </svg>
+                      Alle
+                    </button>
+                    <button type="button" class="btn btn--sm" data-mode="same" id="musicProfFxModeSame" aria-pressed="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                        <path d="M7 10h10" />
+                        <path d="M7 14h10" />
+                      </svg>
+                      Gleiche
+                    </button>
+                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="musicProfFxModeNone" aria-pressed="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <path d="m15 9-6 6" />
+                        <path d="m9 9 6 6" />
+                      </svg>
+                      Keine
+                    </button>
+                  </div>
+                  <button type="button" class="btn btn--accent u-mt-2" id="musicProfFxApplyBtn">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer u-flex-between">

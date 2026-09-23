@@ -8,7 +8,7 @@ import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './uti
 import { toast }          from './notifications.js';
 import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, EFFECT_PRESETS, defaultEffects, defaultPlayback, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
 import {
-  getPresetById, applyPresetEffects, createUserPreset, updateUserPreset,
+  getPresetById, applyPresetEffects, applyPresetToCollection, createUserPreset, updateUserPreset,
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
 } from './presets.js';
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
@@ -36,7 +36,7 @@ import {
   setAmbientTrackIcon, setAmbientTrackEffects, renameAmbientTrack,
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
-import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects } from './music.js';
+import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects, persistMusicNow, renderMusicPanel } from './music.js';
 import { generateToneBuffer } from './generators.js';
 import { audioBufferToWavBlob } from './export.js';
 import {
@@ -1219,6 +1219,7 @@ function openMusicProfileModal(id) {
 
   buildIconGrid('musicProfIconGrid', p ? p.icon : '🎵');
   buildColorOpts('musicProfColorOpts', p ? (p.color || 'none') : 'none');
+  _musicProfFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('musicProfileModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#musicProfileModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1289,6 +1290,7 @@ function openProfileModal(id) {
 
   buildIconGrid('profIconGrid', p ? p.icon : '🎵');
   buildColorOpts('profColorOpts', p ? (p.color || 'none') : 'none');
+  _profFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('profModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#profModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1316,6 +1318,7 @@ function openAmbientProfileModal(id) {
 
   buildIconGrid('ambProfIconGrid', p ? p.icon : '🌫️');
   buildColorOpts('ambProfColorOpts', p ? (p.color || 'none') : 'none');
+  _ambProfFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('ambProfModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#ambProfModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1370,6 +1373,95 @@ function handleHotkeyRecord(e) {
   return true;
 }
 
+// ─── AUDIO-EFFEKT-PRESET AUF SAMMLUNG ANWENDEN (Prompt 4) ─────
+// Kap. 12: eine einzige, gemeinsame UI-Verdrahtung für den "Audio-Effekte"-
+// Bereich in #profModal/#ambProfModal/#musicProfileModal (Preset-Dropdown +
+// Alle/Gleiche/Keine-Modusauswahl + "Anwenden"-Button), statt die Logik
+// dreimal zu duplizieren. Die eigentliche Anwendungslogik steckt zentral in
+// applyPresetToCollection() (presets.js); diese Funktion kümmert sich nur
+// um die DOM-Verdrahtung.
+function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, getItems, persist, itemLabel }) {
+  const sel      = document.getElementById(selectId);
+  const group    = document.getElementById(groupId);
+  const applyBtn = document.getElementById(applyBtnId);
+  let mode = 'none'; // Kap. 5: Default ist immer "Keine"
+
+  const setMode = (m) => {
+    mode = m;
+    group?.querySelectorAll('button[data-mode]').forEach(b => {
+      const active = b.dataset.mode === m;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-pressed', String(active));
+    });
+  };
+
+  group?.querySelectorAll('button[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+
+  applyBtn?.addEventListener('click', () => {
+    const presetId = sel?.value || null;
+    if (!presetId) { toast('Bitte zuerst ein Preset auswählen', 'err'); return; }
+    const items = getItems();
+    const { changed, total } = applyPresetToCollection({ items, presetId, overwriteMode: mode });
+    persist();
+    const modeLbl = mode === 'all' ? 'Alle' : mode === 'same' ? 'Gleiche' : 'Keine';
+    toast(`Preset auf ${changed} von ${total} ${itemLabel} angewendet (Modus „${modeLbl}“)`, 'ok');
+  });
+
+  return {
+    // Kap. 5: bei JEDEM Öffnen des Anwenden-Bereichs zurückgesetzt — sowohl
+    // die Preset-Auswahl (auf das gespeicherte audioEffectPreset, Kap. 11
+    // fällt bei einem gelöschten Preset automatisch auf "Kein Preset"
+    // zurück) als auch der Modus (immer "Keine").
+    reset(currentPresetId) {
+      renderPresetOptions(sel, currentPresetId || '');
+      setMode('none');
+    }
+  };
+}
+
+// Modulweite Instanzen (Kap. 12) — auf Modulebene statt innerhalb von
+// registerEvents() deklariert, damit openProfileModal()/
+// openAmbientProfileModal()/openMusicProfileModal() (weiter oben im Modul
+// definiert) beim Öffnen ihres jeweiligen Dialogs .reset() aufrufen können.
+// Alle referenzierten DOM-Elemente sind statisches Markup in index.html und
+// beim Auswerten dieses Moduls bereits vorhanden.
+const _profFxSection = _wireAudioEffectPresetSection({
+  selectId: 'profFxPreset', groupId: 'profFxModeGroup', applyBtnId: 'profFxApplyBtn',
+  // Kap. 7: nur `type === 'sound'` — Placeholder/Makros sind kein Audio.
+  getItems: () => {
+    const p = APP.profiles.find(x => x.id === APP.editProfileId);
+    return p ? p.items.filter(it => it.type === 'sound') : [];
+  },
+  persist: () => { _saveRaw(); renderGrid(); },
+  itemLabel: 'Sounds'
+});
+
+const _ambProfFxSection = _wireAudioEffectPresetSection({
+  selectId: 'ambProfFxPreset', groupId: 'ambProfFxModeGroup', applyBtnId: 'ambProfFxApplyBtn',
+  // Kap. 8: alle enthaltenen Ambient-Tracks, unabhängig von der Anzahl
+  // ihrer Audiodateien (t.effects ist unabhängig von t.files).
+  getItems: () => {
+    const p = APP.ambient.profiles.find(x => x.id === _editAmbientProfileId);
+    return p ? (p.tracks || []) : [];
+  },
+  persist: () => { persistAmbientNow(); renderAmbientPanel(); },
+  itemLabel: 'Ambient-Tracks'
+});
+
+const _musicProfFxSection = _wireAudioEffectPresetSection({
+  selectId: 'musicProfFxPreset', groupId: 'musicProfFxModeGroup', applyBtnId: 'musicProfFxApplyBtn',
+  // Kap. 9: nur effects wird geändert — Name/Artist/Album/Icon/Farbe/
+  // Lautstärke/Trim/Order der Tracks bleiben unangetastet.
+  getItems: () => {
+    const p = APP.music.profiles.find(x => x.id === _editMusicProfileId);
+    return p ? (p.tracks || []) : [];
+  },
+  persist: () => { persistMusicNow(); renderMusicPanel(); },
+  itemLabel: 'Musik-Tracks'
+});
+
 // ─── REGISTER ALL LISTENERS ───────────────────────────────────
 
 export function registerEvents() {
@@ -1420,16 +1512,23 @@ export function registerEvents() {
   document.getElementById('btnAddProfile')?.addEventListener('click', () => openProfileModal(null));
 
   // Profile modal
+  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
+  // _profFxSection-Instanz weiter oben.
   document.getElementById('btnSaveProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('profNameInput').value.trim() || 'Profil';
     const icon  = document.getElementById('profIconInput').value.trim() || '🎵';
     const clrEl = document.querySelector('#profColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
+    // Kap. 10: das übergeordnete Preset (nicht die Massenanwendung!) wird
+    // bei jedem Speichern des Profils mitgesichert.
+    const fxSel = document.getElementById('profFxPreset');
+    const audioEffectPreset = fxSel?.value || null;
     if (APP.editProfileId) {
       const p = APP.profiles.find(x => x.id === APP.editProfileId);
-      if (p) { p.name = name; p.icon = icon; p.color = color; }
+      if (p) { p.name = name; p.icon = icon; p.color = color; p.audioEffectPreset = audioEffectPreset; }
     } else {
       const np = mkProfile(name, icon, color);
+      np.audioEffectPreset = audioEffectPreset;
       for (let i = 0; i < STARTER_PLACEHOLDER_COUNT; i++) np.items.push(mkPH(i));
       APP.profiles.push(np);
       APP.activeProfileId = np.id;
@@ -1451,12 +1550,15 @@ export function registerEvents() {
 
   // Ambient scene modal
   document.getElementById('btnAddAmbientProfile')?.addEventListener('click', () => openAmbientProfileModal(null));
+  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
+  // _ambProfFxSection-Instanz weiter oben.
   document.getElementById('btnSaveAmbientProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('ambProfNameInput').value.trim() || 'Szene';
     const icon  = document.getElementById('ambProfIconInput').value.trim() || '🌫️';
     const clrEl = document.querySelector('#ambProfColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
-    saveAmbientProfile(_editAmbientProfileId, name, icon, color);
+    const audioEffectPreset = document.getElementById('ambProfFxPreset')?.value || null;
+    saveAmbientProfile(_editAmbientProfileId, name, icon, color, audioEffectPreset);
     bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
     toast('Szene gespeichert', 'ok');
   });
@@ -1546,13 +1648,16 @@ export function registerEvents() {
     if (_musicEditId) exportMusicTrack(_musicEditId);
   });
 
-  // ─── Musik-Playlist-Modal (Prompt 3, Kap. 1-4) ────────────────
+  // ─── Musik-Playlist-Modal (Prompt 3, Kap. 1-4 / Prompt 4, Kap. 9) ──
+  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
+  // _musicProfFxSection-Instanz weiter oben.
   document.getElementById('btnSaveMusicProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('musicProfNameInput').value.trim() || 'Playlist';
     const icon  = document.getElementById('musicProfIconInput').value.trim() || '🎵';
     const clrEl = document.querySelector('#musicProfColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
-    saveMusicProfile(_editMusicProfileId, name, icon, color);
+    const audioEffectPreset = document.getElementById('musicProfFxPreset')?.value || null;
+    saveMusicProfile(_editMusicProfileId, name, icon, color, audioEffectPreset);
     bootstrap.Modal.getInstance(document.getElementById('musicProfileModal')).hide();
     toast('Playlist gespeichert', 'ok');
   });
