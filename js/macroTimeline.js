@@ -12,8 +12,8 @@
  * Migration: on load, if step has no startTime, derive it from cumulative delay sum.
  */
 
-import { APP }    from './state.js';
-import { CItems } from './state.js';
+import { APP }    from './core/state.js';
+import { CItems } from './core/state.js';
 import { toast }  from './notifications.js';
 import { uid, bk } from './utils.js';
 

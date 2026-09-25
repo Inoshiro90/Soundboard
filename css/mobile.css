@@ -264,25 +264,6 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
-   AUTOSAVE INDICATOR
-   ══════════════════════════════════════════════════════════════ */
-
-.autosave-dot {
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: var(--color-accent);
-	margin-left: 4px;
-	opacity: 0;
-	transition: opacity 0.3s;
-}
-
-.autosave-dot.is-saving {
-	opacity: 1;
-}
-
-/* ══════════════════════════════════════════════════════════════
    PERFORMANCE: reduce paint on idle
    ══════════════════════════════════════════════════════════════ */
 

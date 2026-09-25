@@ -10,7 +10,7 @@ import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, ini
 import { ensurePitchWorklet, actx, hasAudioContext } from './audio.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
-import { APP }                         from './state.js';
+import { APP }                         from './core/state.js';
 import { registerAmbientEvents }       from './ambient.js';
 import { registerMusicEvents }         from './music.js';
 import { initDisclosure }              from './ui/disclosure.js';

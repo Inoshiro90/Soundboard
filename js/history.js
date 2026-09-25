@@ -17,11 +17,12 @@
  * Undo/Redo only restores parameters — audio data via IDB ref.
  */
 
-import { APP } from './state.js';
+import { APP } from './core/state.js';
 import { toast } from './notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL } from './db.js';
 import { decodeAudio } from './audio.js';
 import { bk } from './utils.js';
+import { findAmbientTrack } from './ambient.js';
 
 const MAX = () => APP.history.maxSize || 50;
 
@@ -91,10 +92,17 @@ async function _apply(entry, direction) {
     if (!b64) { toast('Audio-Snapshot nicht mehr verfügbar', 'err'); return; }
     const sound = _findSound(soundId);
     if (!sound) return;
-    const currentKey = audioKey(soundId, slotIdx);
+    // Prompt 2: Ambient-Dateivarianten werden unter ihrer EIGENEN id +
+    // festem Index 0 abgelegt (s. editor.js: _slotKeyParts()), nicht unter
+    // (trackId, slotIdx) — dieselbe Schlüsselbasis hier verwenden, sonst
+    // schreibt Undo/Redo an der falschen IDB-Stelle vorbei.
+    const [keyId, keyIdx] = sound._isAmbientTrack
+      ? [sound.slots?.[slotIdx]?.id || soundId, 0]
+      : [soundId, slotIdx];
+    const currentKey = audioKey(keyId, keyIdx);
     await idbSet(currentKey, b64);
     if (sound.slots[slotIdx]) sound.slots[slotIdx].data = IDB_SENTINEL;
-    decodeAudio(bk(soundId, slotIdx), b64);
+    decodeAudio(bk(keyId, keyIdx), b64);
     _triggerRender();
   }
 
@@ -144,7 +152,15 @@ function _findSound(soundId) {
     const s = (prof.items || []).find(x => x.id === soundId && x.type === 'sound');
     if (s) return s;
   }
-  return null;
+  // Prompt 2: Undo/Redo für "Dauerhaft bearbeiten" auch für Ambient-Tracks
+  // (geteilter Editor, s. editor.js: findSound()) — gleiches `.slots`-Alias
+  // auf `.files`, damit sound.slots[slotIdx] oben unverändert funktioniert.
+  const t = findAmbientTrack(soundId);
+  if (t) {
+    Object.defineProperty(t, 'slots', { value: t.files, enumerable: false, configurable: true });
+    Object.defineProperty(t, '_isAmbientTrack', { value: true, enumerable: false, configurable: true });
+  }
+  return t;
 }
 
 function _triggerRender() {

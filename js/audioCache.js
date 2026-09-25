@@ -16,7 +16,7 @@
  *   4. Fehler werden geloggt und null zurückgegeben (kein throw)
  */
 
-import { APP }   from './state.js';
+import { APP }   from './core/state.js';
 import { bk }    from './utils.js';
 import { idbGet, audioKey, IDB_SENTINEL } from './db.js';
 

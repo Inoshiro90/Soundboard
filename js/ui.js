@@ -9,7 +9,9 @@
  * - Theme icon updated on toggle
  */
 
-import { APP, CP, CItems, CMTracks, EMOJI_CATS, EMOJI_KEYWORDS, COLORS, COLOR_NAMES } from './state.js';
+import { APP, CItems } from './core/state.js';
+import { EMOJI_CATS, EMOJI_KEYWORDS } from './data/emoji-data.js';
+import { COLORS, COLOR_NAMES } from './data/color-data.js';
 import { uid, bk, isCustomIcon, iconHtml, iconGlyph, iconHtmlOr }  from './utils.js';
 import { playSound, stopItem, runMacro, refreshRotBadge, playBufferPreview } from './audio.js';
 import { mkPH }                            from './storage.js';
@@ -69,9 +71,6 @@ export function renderProfileTabs() {
       `${PENCIL_ICON_SVG}</span>`;
     bar.insertBefore(tab, addBtn);
   });
-
-  const profLbl = document.getElementById('profLbl');
-  if (profLbl) profLbl.textContent = CP() ? `${iconGlyph(CP().icon)} ${CP().name}` : '';
 }
 
 // ─── GRID ─────────────────────────────────────────────────────
@@ -123,7 +122,6 @@ export function renderGrid() {
   renderLucideIcons(grid);
 
   updateCategories();
-  updateStatus();
   setupDrag();
   CItems().filter(x => x.type === 'sound').forEach(x => refreshRotBadge(x.id));
 }
@@ -432,23 +430,6 @@ export function initTileAddChoice() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') _closeTileAddChoice();
   });
-}
-
-// ─── STATUS BAR ───────────────────────────────────────────────
-
-export function updateStatus() {
-  const n      = Object.keys(APP.activeAudio).length;
-  const sounds = CItems().filter(x => x.type === 'sound').length;
-  const macros = CItems().filter(x => x.type === 'macro').length;
-  const music  = CMTracks().length;
-  const stxt = document.getElementById('stxt');
-  const scnt = document.getElementById('scnt');
-  const sdot = document.getElementById('sdot');
-  if (stxt) stxt.textContent = n > 0 ? `${n} AKTIV` : 'BEREIT';
-  // Spez. Kap. 40: kompakt ergänzt, nicht überladen — Musik nur anhängen,
-  // wenn tatsächlich Tracks in der aktiven Playlist vorhanden sind.
-  if (scnt) scnt.textContent = `${sounds} S · ${macros} M` + (music > 0 ? ` · ${music} Musik` : '');
-  if (sdot) sdot.classList.toggle('is-active', n > 0);
 }
 
 /**

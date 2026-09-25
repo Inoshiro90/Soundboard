@@ -2,8 +2,9 @@
  * presets.js — Audio-Effekt-Preset-System (Built-in + User Presets)
  *
  * Zentralisiert alles, was NICHT reine Audio-Engine-Zuständigkeit ist
- * (audio.js bleibt Eigentümer der eingebauten Effektparameter in
- * EFFECT_PRESETS): Preset-Metadaten, generische Anwendung eines Presets
+ * (presets/effect-presets-data.js bleibt Eigentümer der eingebauten
+ * Effektparameter in EFFECT_PRESETS, verschoben aus audio.js in Phase 1
+ * der Refaktorierung): Preset-Metadaten, generische Anwendung eines Presets
  * auf ein Effekte-Objekt, User-Preset-CRUD sowie Validierung/Normalisierung
  * importierter Presets.
  *
@@ -13,8 +14,9 @@
  * importierte User-Presets exakt wie eingebaute Presets behandelt werden.
  */
 
-import { APP } from './state.js';
-import { EFFECT_PRESETS, defaultEffects, IR_IMPULSE_NAMES } from './audio.js';
+import { APP } from './core/state.js';
+import { defaultEffects, IR_IMPULSE_NAMES } from './audio.js';
+import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import { uid } from './utils.js';
 
 // ─── KATEGORIEN ───────────────────────────────────────────────
@@ -36,7 +38,7 @@ const DEFAULT_CATEGORY = 'supernatural';
 
 // ─── BUILT-IN PRESET METADATEN ────────────────────────────────
 // Nur Anzeige-/Dokumentationsdaten. Die eigentlichen Effektparameter
-// bleiben in audio.js EFFECT_PRESETS (Audio-Engine-Zuständigkeit).
+// bleiben in presets/effect-presets-data.js EFFECT_PRESETS (Audio-Engine-Daten).
 // IDs sind stabil und unverändert gegenüber der bisherigen Version.
 
 export const BUILTIN_PRESET_META = {
@@ -337,7 +339,7 @@ function _sanitizeMeta({ name, category, description }) {
 }
 
 /** Neues User-Preset. IDs sind mit 'user_' präfixt — kann nie mit einer
- *  Built-in-ID (audio.js EFFECT_PRESETS-Schlüssel) kollidieren (Kap. 8). */
+ *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren (Kap. 8). */
 export function createUserPreset({ name, category, description, effects }) {
   const meta = _sanitizeMeta({ name, category, description });
   const preset = {

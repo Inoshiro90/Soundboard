@@ -3,17 +3,18 @@
  * Phase 1: Effects UI (Preset-Dropdown, Lowpass, Highpass, Pan, Reverb, Delay)
  */
 
-import { APP, CP, CItems } from './state.js';
+import { APP, CP, CAP, CMP, CItems } from './core/state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
-import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, EFFECT_PRESETS, defaultEffects, defaultPlayback, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, defaultEffects, defaultPlayback, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import {
   getPresetById, applyPresetEffects, applyPresetToCollection, createUserPreset, updateUserPreset,
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
 } from './presets.js';
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
 import {
-  renderGrid, renderProfileTabs, applyProfileSettings, updateStatus,
+  renderGrid, renderProfileTabs, applyProfileSettings,
   buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
   openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
   startPeakRmsMeter, stopPeakRmsMeter,
@@ -33,7 +34,7 @@ import { createModalDraftGuard } from './modalGuards.js';
 import {
   renderAmbientPanel, resetAmbient, renderAmbientProfileTabs,
   switchAmbientProfile, saveAmbientProfile, deleteAmbientProfile,
-  setAmbientTrackIcon, setAmbientTrackEffects, renameAmbientTrack,
+  setAmbientTrackIcon, setAmbientTrackColor, setAmbientTrackEffects, renameAmbientTrack,
   setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
 } from './ambient.js';
 import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects, persistMusicNow, renderMusicPanel } from './music.js';
@@ -1101,6 +1102,14 @@ function openAmbientEffectsModal(trackId) {
   set('eVol',    t.vol ?? 0.7);
   set('eVolNum', Math.round((t.vol ?? 0.7) * 100));
 
+  // Prompt 2: "Darstellung & Organisation" (Icon + Akzentfarbe) ist jetzt
+  // auch im Ambient-Kontext sichtbar (s. index.html, .sm-entry-card nicht
+  // mehr sm-sound-only) — muss hier daher ebenfalls befüllt werden, analog
+  // zu openSoundModal() oben. "Kachel-Hintergrund" (eTileClrOpts) bleibt
+  // sm-sound-only und wird deshalb hier bewusst NICHT befüllt.
+  buildIconGrid('iconGrid', t.icon || '🌫️');
+  buildColorOpts('clrOpts', t.color || 'none');
+
   chk('ambLoop',         !!t.loop);
   chk('ambIntervalMode', !!t.intervalMode);
   set('ambIntervalMin',  t.intervalMin ?? 10);
@@ -1134,6 +1143,7 @@ function openAmbientEffectsModal(trackId) {
   // Sound-Editieren nicht versehentlich einen Ambient-Rest zeigen —
   // schreibt schon der nächste openSoundModal()-Aufruf frisch.
   writePlaybackToUI({ ...defaultPlayback(), crossfade: t.crossfade || defaultPlayback().crossfade });
+  _syncAppearancePreview();
 
   document.getElementById('soundModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#soundModal .icon-picker__cats');
@@ -1214,12 +1224,9 @@ function openMusicProfileModal(id) {
 
   const delBtn = document.getElementById('btnDelMusicProfile');
   if (delBtn) delBtn.style.display = (id && APP.music.profiles.length > 1) ? '' : 'none';
-  const expBtn = document.getElementById('btnExportMusicProfile');
-  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('musicProfIconGrid', p ? p.icon : '🎵');
   buildColorOpts('musicProfColorOpts', p ? (p.color || 'none') : 'none');
-  _musicProfFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('musicProfileModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#musicProfileModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1285,12 +1292,9 @@ function openProfileModal(id) {
 
   const delBtn = document.getElementById('btnDelProfile');
   if (delBtn) delBtn.style.display = (id && APP.profiles.length > 1) ? '' : 'none';
-  const expBtn = document.getElementById('btnExportProfile');
-  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('profIconGrid', p ? p.icon : '🎵');
   buildColorOpts('profColorOpts', p ? (p.color || 'none') : 'none');
-  _profFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('profModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#profModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1313,12 +1317,9 @@ function openAmbientProfileModal(id) {
 
   const delBtn = document.getElementById('btnDelAmbientProfile');
   if (delBtn) delBtn.style.display = (id && APP.ambient.profiles.length > 1) ? '' : 'none';
-  const expBtn = document.getElementById('btnExportAmbientProfile');
-  if (expBtn) expBtn.style.display = id ? '' : 'none';
 
   buildIconGrid('ambProfIconGrid', p ? p.icon : '🌫️');
   buildColorOpts('ambProfColorOpts', p ? (p.color || 'none') : 'none');
-  _ambProfFxSection.reset(p ? p.audioEffectPreset : null);
   document.getElementById('ambProfModal').addEventListener('shown.bs.modal', () => {
     const bar = document.querySelector('#ambProfModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
@@ -1399,6 +1400,15 @@ function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, getItems
     btn.addEventListener('click', () => setMode(btn.dataset.mode));
   });
 
+  // Prompt 3: das "übergeordnete" Preset dieses Profils/dieser Szene/
+  // Playlist wird jetzt live bei jeder Auswahländerung gesichert (persist()
+  // liest den aktuellen sel.value und schreibt ihn auf das AKTIVE Profil,
+  // s. die drei Instanzen unten) — nicht mehr nur indirekt über den
+  // "Speichern"-Button des (inzwischen entfernten) Tab-Menü-Bereichs. Der
+  // neue Dialog hat bewusst nur noch einen "Fertig"-Button, analog zu den
+  // Lautstärke-Dialogen.
+  sel?.addEventListener('change', () => persist());
+
   applyBtn?.addEventListener('click', () => {
     const presetId = sel?.value || null;
     if (!presetId) { toast('Bitte zuerst ein Preset auswählen', 'err'); return; }
@@ -1421,20 +1431,31 @@ function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, getItems
   };
 }
 
-// Modulweite Instanzen (Kap. 12) — auf Modulebene statt innerhalb von
-// registerEvents() deklariert, damit openProfileModal()/
-// openAmbientProfileModal()/openMusicProfileModal() (weiter oben im Modul
-// definiert) beim Öffnen ihres jeweiligen Dialogs .reset() aufrufen können.
-// Alle referenzierten DOM-Elemente sind statisches Markup in index.html und
+// Modulweite Instanzen (Kap. 12) — auf Modulebene deklariert, damit
+// openSoundFxToolbar()/openAmbientFxToolbar()/openMusicFxToolbar() (s.u.)
+// beim Öffnen ihres jeweiligen Dialogs .reset() aufrufen können. Alle
+// referenzierten DOM-Elemente sind statisches Markup in index.html und
 // beim Auswerten dieses Moduls bereits vorhanden.
+//
+// Prompt 3: getItems() liest jetzt das AKTIVE Profil/Szene/Playlist
+// (APP.activeProfileId/APP.ambient.activeProfileId/APP.music.activeProfileId,
+// via CP()/CAP()/CMP()) statt der früheren "gerade per Stift bearbeitet"-IDs
+// (APP.editProfileId/_editAmbientProfileId/_editMusicProfileId) — die
+// Audio-Effekte-Dialoge werden nicht mehr aus dem Profil-Tab-Menü heraus
+// geöffnet, sondern direkt aus der View-Toolbar für den jeweils sichtbaren
+// Kontext (s. _fxToolbarActiveProfile() unten).
 const _profFxSection = _wireAudioEffectPresetSection({
   selectId: 'profFxPreset', groupId: 'profFxModeGroup', applyBtnId: 'profFxApplyBtn',
   // Kap. 7: nur `type === 'sound'` — Placeholder/Makros sind kein Audio.
   getItems: () => {
-    const p = APP.profiles.find(x => x.id === APP.editProfileId);
+    const p = CP();
     return p ? p.items.filter(it => it.type === 'sound') : [];
   },
-  persist: () => { _saveRaw(); renderGrid(); },
+  persist: () => {
+    const p = CP();
+    if (p) p.audioEffectPreset = document.getElementById('profFxPreset')?.value || null;
+    _saveRaw(); renderGrid();
+  },
   itemLabel: 'Sounds'
 });
 
@@ -1443,10 +1464,14 @@ const _ambProfFxSection = _wireAudioEffectPresetSection({
   // Kap. 8: alle enthaltenen Ambient-Tracks, unabhängig von der Anzahl
   // ihrer Audiodateien (t.effects ist unabhängig von t.files).
   getItems: () => {
-    const p = APP.ambient.profiles.find(x => x.id === _editAmbientProfileId);
+    const p = CAP();
     return p ? (p.tracks || []) : [];
   },
-  persist: () => { persistAmbientNow(); renderAmbientPanel(); },
+  persist: () => {
+    const p = CAP();
+    if (p) p.audioEffectPreset = document.getElementById('ambProfFxPreset')?.value || null;
+    persistAmbientNow(); renderAmbientPanel();
+  },
   itemLabel: 'Ambient-Tracks'
 });
 
@@ -1455,12 +1480,51 @@ const _musicProfFxSection = _wireAudioEffectPresetSection({
   // Kap. 9: nur effects wird geändert — Name/Artist/Album/Icon/Farbe/
   // Lautstärke/Trim/Order der Tracks bleiben unangetastet.
   getItems: () => {
-    const p = APP.music.profiles.find(x => x.id === _editMusicProfileId);
+    const p = CMP();
     return p ? (p.tracks || []) : [];
   },
-  persist: () => { persistMusicNow(); renderMusicPanel(); },
+  persist: () => {
+    const p = CMP();
+    if (p) p.audioEffectPreset = document.getElementById('musicProfFxPreset')?.value || null;
+    persistMusicNow(); renderMusicPanel();
+  },
   itemLabel: 'Musik-Tracks'
 });
+
+// ─── AUDIO-EFFEKTE: VIEW-TOOLBAR-BUTTONS (Prompt 3) ────────────
+// Öffnen die (jetzt eigenständigen) Audio-Effekte-Dialoge für den jeweils
+// AKTIVEN Kontext — kein Bezug mehr zu einem per Stift ausgewählten Profil.
+// CP()/CAP()/CMP() fallen bei fehlender/ungültiger activeProfileId bereits
+// auf profiles[0] zurück (core/state.js) — ein "kein aktives Profil"-Fall kann
+// daher nur eintreten, wenn eine Sammlung komplett leer ist (sollte durch
+// ensureAmbientState()/ensureMusicState() nicht vorkommen, wird hier aber
+// dennoch defensiv abgefangen statt einen Fehler zu werfen).
+function openSoundFxToolbar() {
+  const p = CP();
+  if (!p) { toast('Kein Soundeffekt-Profil vorhanden', 'err'); return; }
+  const label = document.getElementById('soundFxToolbarActiveLabel');
+  if (label) label.textContent = `Profil: ${p.icon || ''} ${p.name}`.trim();
+  _profFxSection.reset(p.audioEffectPreset);
+  new bootstrap.Modal(document.getElementById('soundFxToolbarModal')).show();
+}
+
+function openAmbientFxToolbar() {
+  const p = CAP();
+  if (!p) { toast('Keine Ambient-Szene vorhanden', 'err'); return; }
+  const label = document.getElementById('ambientFxToolbarActiveLabel');
+  if (label) label.textContent = `Szene: ${p.icon || ''} ${p.name}`.trim();
+  _ambProfFxSection.reset(p.audioEffectPreset);
+  new bootstrap.Modal(document.getElementById('ambientFxToolbarModal')).show();
+}
+
+function openMusicFxToolbar() {
+  const p = CMP();
+  if (!p) { toast('Keine Musik-Playlist vorhanden', 'err'); return; }
+  const label = document.getElementById('musicFxToolbarActiveLabel');
+  if (label) label.textContent = `Playlist: ${p.icon || ''} ${p.name}`.trim();
+  _musicProfFxSection.reset(p.audioEffectPreset);
+  new bootstrap.Modal(document.getElementById('musicFxToolbarModal')).show();
+}
 
 // ─── REGISTER ALL LISTENERS ───────────────────────────────────
 
@@ -1511,24 +1575,30 @@ export function registerEvents() {
   });
   document.getElementById('btnAddProfile')?.addEventListener('click', () => openProfileModal(null));
 
+  // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
+  // immer das AKTIVE Profil, unabhängig davon, welches zuletzt per Stift
+  // bearbeitet wurde (exportProfile() unverändert aus storage.js).
+  document.getElementById('btnExportProfileTab')?.addEventListener('click', () => {
+    const p = CP();
+    if (p) exportProfile(p.id); else toast('Kein Soundeffekt-Profil vorhanden', 'err');
+  });
+
   // Profile modal
-  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
-  // _profFxSection-Instanz weiter oben.
+  // Prompt 3: das Audio-Effekte-Preset lebt nicht mehr in diesem Dialog
+  // (s. #soundFxToolbarModal/_profFxSection) — wird hier bewusst NICHT mehr
+  // mitgelesen/-gespeichert, um kein stilles Überschreiben mit einem
+  // veralteten Select-Wert zu riskieren (der Select existiert ja weiterhin
+  // im DOM, nur eben in einem anderen Dialog).
   document.getElementById('btnSaveProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('profNameInput').value.trim() || 'Profil';
     const icon  = document.getElementById('profIconInput').value.trim() || '🎵';
     const clrEl = document.querySelector('#profColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
-    // Kap. 10: das übergeordnete Preset (nicht die Massenanwendung!) wird
-    // bei jedem Speichern des Profils mitgesichert.
-    const fxSel = document.getElementById('profFxPreset');
-    const audioEffectPreset = fxSel?.value || null;
     if (APP.editProfileId) {
       const p = APP.profiles.find(x => x.id === APP.editProfileId);
-      if (p) { p.name = name; p.icon = icon; p.color = color; p.audioEffectPreset = audioEffectPreset; }
+      if (p) { p.name = name; p.icon = icon; p.color = color; }
     } else {
       const np = mkProfile(name, icon, color);
-      np.audioEffectPreset = audioEffectPreset;
       for (let i = 0; i < STARTER_PLACEHOLDER_COUNT; i++) np.items.push(mkPH(i));
       APP.profiles.push(np);
       APP.activeProfileId = np.id;
@@ -1544,21 +1614,21 @@ export function registerEvents() {
     bootstrap.Modal.getInstance(document.getElementById('profModal')).hide();
     renderProfileTabs(); renderGrid(); toast('Profil gelöscht');
   });
-  document.getElementById('btnExportProfile')?.addEventListener('click', () => {
-    if (APP.editProfileId) exportProfile(APP.editProfileId);
-  });
+  // Prompt 4: der Export-Button lebt jetzt am rechten Rand der Tab-Leiste
+  // (#btnExportProfileTab in #profBarRow), nicht mehr im Bearbeiten-Dialog.
 
   // Ambient scene modal
   document.getElementById('btnAddAmbientProfile')?.addEventListener('click', () => openAmbientProfileModal(null));
-  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
-  // _ambProfFxSection-Instanz weiter oben.
+  // Prompt 3: Audio-Effekte-Preset lebt nicht mehr in diesem Dialog (s.
+  // #ambientFxToolbarModal/_ambProfFxSection) — saveAmbientProfile() lässt
+  // p.audioEffectPreset bei fehlendem 5. Argument bewusst unangetastet
+  // (s. Kommentar dort), daher hier einfach nicht mehr übergeben.
   document.getElementById('btnSaveAmbientProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('ambProfNameInput').value.trim() || 'Szene';
     const icon  = document.getElementById('ambProfIconInput').value.trim() || '🌫️';
     const clrEl = document.querySelector('#ambProfColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
-    const audioEffectPreset = document.getElementById('ambProfFxPreset')?.value || null;
-    saveAmbientProfile(_editAmbientProfileId, name, icon, color, audioEffectPreset);
+    saveAmbientProfile(_editAmbientProfileId, name, icon, color);
     bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
     toast('Szene gespeichert', 'ok');
   });
@@ -1569,9 +1639,9 @@ export function registerEvents() {
     bootstrap.Modal.getInstance(document.getElementById('ambProfModal')).hide();
     toast('Szene gelöscht');
   });
-  document.getElementById('btnExportAmbientProfile')?.addEventListener('click', () => {
-    if (_editAmbientProfileId) exportAmbientProfile(_editAmbientProfileId);
-  });
+  // Prompt 4: der Export-Button lebt jetzt am rechten Rand der Tab-Leiste
+  // (#btnExportAmbientProfileTab in #ambProfBarRow), nicht mehr im
+  // Bearbeiten-Dialog.
 
   // Ambient track icon modal
   document.getElementById('btnApplyAmbientTrackIcon')?.addEventListener('click', () => {
@@ -1649,15 +1719,14 @@ export function registerEvents() {
   });
 
   // ─── Musik-Playlist-Modal (Prompt 3, Kap. 1-4 / Prompt 4, Kap. 9) ──
-  // Prompt 4, Kap. 12: Preset-Anwenden-Verdrahtung — s. modulweite
-  // _musicProfFxSection-Instanz weiter oben.
+  // Prompt 3: Audio-Effekte-Preset lebt nicht mehr in diesem Dialog (s.
+  // #musicFxToolbarModal/_musicProfFxSection) — analog zu btnSaveAmbientProfile.
   document.getElementById('btnSaveMusicProfile')?.addEventListener('click', () => {
     const name  = document.getElementById('musicProfNameInput').value.trim() || 'Playlist';
     const icon  = document.getElementById('musicProfIconInput').value.trim() || '🎵';
     const clrEl = document.querySelector('#musicProfColorOpts .color-swatch.is-selected');
     const color = clrEl?.dataset.color || 'none';
-    const audioEffectPreset = document.getElementById('musicProfFxPreset')?.value || null;
-    saveMusicProfile(_editMusicProfileId, name, icon, color, audioEffectPreset);
+    saveMusicProfile(_editMusicProfileId, name, icon, color);
     bootstrap.Modal.getInstance(document.getElementById('musicProfileModal')).hide();
     toast('Playlist gespeichert', 'ok');
   });
@@ -1670,9 +1739,9 @@ export function registerEvents() {
       toast('Playlist gelöscht');
     }
   });
-  document.getElementById('btnExportMusicProfile')?.addEventListener('click', () => {
-    if (_editMusicProfileId) exportMusicProfile(_editMusicProfileId);
-  });
+  // Prompt 4: der Export-Button lebt jetzt am rechten Rand der Tab-Leiste
+  // (#btnExportMusicProfileTab in #musicProfBarRow), nicht mehr im
+  // Bearbeiten-Dialog.
 
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
   // Umschaltung jetzt per Toolbar-Button #btnTileEditMode statt Long-Press
@@ -1712,6 +1781,12 @@ export function registerEvents() {
   document.getElementById('btnOpenSoundVolumeModal')?.addEventListener('click', () => {
     new bootstrap.Modal(document.getElementById('soundVolumeModal')).show();
   });
+
+  // Prompt 3: Audio-Effekte des aktiven Kontexts — je ein eigener
+  // Toolbar-Button pro Ansicht, neben "Lautstärke".
+  document.getElementById('btnOpenSoundFxToolbar')?.addEventListener('click', openSoundFxToolbar);
+  document.getElementById('btnOpenAmbientFxToolbar')?.addEventListener('click', openAmbientFxToolbar);
+  document.getElementById('btnOpenMusicFxToolbar')?.addEventListener('click', openMusicFxToolbar);
 
   // P2 Auto Duck (Ambient): globale Wiedergabe-Einstellung, siehe
   // audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
@@ -2472,6 +2547,15 @@ export function registerEvents() {
       if (!isNaN(vol)) setAmbientTrackVolume(_fxEditContext.id, vol);
       setAmbientTrackEffects(_fxEditContext.id, readEffectsFromUI());
 
+      // Prompt 2: Icon + Akzentfarbe ("Darstellung & Organisation") werden
+      // jetzt auch im Ambient-Kontext angezeigt (s. openAmbientEffectsModal)
+      // und müssen deshalb hier gespeichert werden — Kachel-Hintergrund
+      // (eTileClr) bleibt bewusst außen vor, da sm-sound-only.
+      const icon = g('eIcon')?.value.trim();
+      if (icon) setAmbientTrackIcon(_fxEditContext.id, icon);
+      const clrEl = document.querySelector('#clrOpts .color-swatch.is-selected');
+      setAmbientTrackColor(_fxEditContext.id, clrEl?.dataset.color || 'none');
+
       // Reconcile file variants (incl. trim) from APP.editSlots back into t.files.
       const keptIds  = new Set();
       const newFiles = [];
@@ -2804,14 +2888,39 @@ export function registerEvents() {
     return null;
   }
 
+  // Prompt 2: "Dauerhaft bearbeiten" (destruktive Slot-Bearbeitung, s.u.)
+  // wird über das GETEILTE #soundModal auch vom Ambient-Track-Editor
+  // genutzt (_setModalContext('ambient'), Titel "AMBIENT BEARBEITEN").
+  // Bug/Ursache: openAmbientEffectsModal() setzt APP.editId bewusst auf
+  // null (Ambient-Tracks sind kein Sound-Item), aber die komplette
+  // Verfügbarkeitsprüfung unten fragte bisher hart APP.editId ab und
+  // suchte nur in APP.profiles — für Ambient war "Dauerhaft bearbeiten"
+  // dadurch IMMER gesperrt ("Erst speichern, dann dauerhaft bearbeiten"),
+  // selbst mit bereits gespeicherter Audiodatei. Diese zwei Helfer lösen
+  // die ID/das Item kontextabhängig auf (_fxEditContext, s.o.); editor.js
+  // löst Ambient-Tracks bereits selbst über findAmbientTrack() + ein
+  // `.slots`-Alias auf `.files` auf (s. dort).
+  function _currentEditId() {
+    return _fxEditContext.kind === 'ambient' ? _fxEditContext.id : APP.editId;
+  }
+
+  function _findEditTargetAnyContext(id) {
+    if (_fxEditContext.kind === 'ambient') {
+      const t = findAmbientTrack(id);
+      if (t) Object.defineProperty(t, 'slots', { value: t.files, enumerable: false, configurable: true });
+      return t;
+    }
+    return _findSoundAnyProfile(id);
+  }
+
   function _persistedSlotHasAudio(soundId, slotIdx) {
     if (!soundId || slotIdx == null) return false;
-    const s = _findSoundAnyProfile(soundId);
+    const s = _findEditTargetAnyContext(soundId);
     return !!(s && s.slots && s.slots[slotIdx] && s.slots[slotIdx].data);
   }
 
   function _refreshEditorActionsAvailability() {
-    const soundId = APP.editId;
+    const soundId = _currentEditId();
     const slotIdx = getSlotEditIndex();
     const available = _persistedSlotHasAudio(soundId, slotIdx);
     const body = document.getElementById('editorActionsBody');
@@ -2824,11 +2933,19 @@ export function registerEvents() {
 
   /** Nach einer destruktiven Editor-Aktion: Caches und UI-Anzeige neu synchronisieren. */
   async function _refreshSlotAfterDestructiveEdit(soundId, slotIdx) {
-    invalidateBuffer(soundId, slotIdx);
+    const s = _findEditTargetAnyContext(soundId);
+    const persistedSlot = s?.slots?.[slotIdx];
+    // Ambient-Dateivarianten werden unter ihrer EIGENEN id + Index 0
+    // gecacht/gespeichert (s. editor.js: _slotKeyParts()) — dieselbe
+    // Schlüsselbasis hier verwenden, sonst wird der falsche Cache-Eintrag
+    // invalidiert/neu decodiert.
+    const isAmbient = _fxEditContext.kind === 'ambient';
+    const keyId  = isAmbient ? (persistedSlot?.id || soundId) : soundId;
+    const keyIdx = isAmbient ? 0 : slotIdx;
+
+    invalidateBuffer(keyId, keyIdx);
     delete APP.audioBuffers[`_ed_${slotIdx}`];
 
-    const s = _findSoundAnyProfile(soundId);
-    const persistedSlot = s?.slots?.[slotIdx];
     const draftSlot = APP.editSlots?.[slotIdx];
 
     // Trim wird von manchen Aktionen (v.a. Trim selbst) auf der persistierten
@@ -2841,7 +2958,7 @@ export function registerEvents() {
 
     let buf = null;
     if (s && persistedSlot?.data) {
-      try { buf = await getOrDecodeBuffer(soundId, slotIdx, persistedSlot.data, actx()); }
+      try { buf = await getOrDecodeBuffer(keyId, keyIdx, persistedSlot.data, actx()); }
       catch (e) { console.error('[editor] Buffer-Refresh fehlgeschlagen', e); }
     }
     if (buf) APP.audioBuffers[`_ed_${slotIdx}`] = buf;
@@ -2861,7 +2978,7 @@ export function registerEvents() {
   }
 
   async function _onEditorActionClick(action, btn) {
-    const soundId = APP.editId;
+    const soundId = _currentEditId();
     const slotIdx = getSlotEditIndex();
     if (!soundId || slotIdx == null) { toast('Kein Slot ausgewählt', 'err'); return; }
     if (!_persistedSlotHasAudio(soundId, slotIdx)) {
@@ -2916,7 +3033,7 @@ export function registerEvents() {
   document.getElementById('slotDestructiveModal')?.addEventListener('shown.bs.modal', _refreshEditorActionsAvailability);
 
   document.getElementById('btnOpenSlotDestructiveModal')?.addEventListener('click', () => {
-    if (!_persistedSlotHasAudio(APP.editId, getSlotEditIndex())) {
+    if (!_persistedSlotHasAudio(_currentEditId(), getSlotEditIndex())) {
       toast('Erst diesen Sound speichern, dann dauerhaft bearbeiten', 'err');
       return;
     }
@@ -3156,8 +3273,6 @@ function _startAutosave() {
     import('./storage.js').then(m => {
       if (m._saveRaw) m._saveRaw();
       else if (m.save) m.save();
-      const dot = document.getElementById('autosaveDot');
-      if (dot) { dot.classList.add('is-saving'); setTimeout(() => dot.classList.remove('is-saving'), 1200); }
     }).catch(() => {});
   }, INTERVAL);
 }

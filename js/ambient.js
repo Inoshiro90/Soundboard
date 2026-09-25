@@ -23,14 +23,14 @@
  *    regular localStorage save (storage.js).
  */
 
-import { APP, CAP, CATracks }                    from './state.js';
+import { APP, CAP, CATracks }                    from './core/state.js';
 import { uid, iconHtmlOr, iconGlyph }             from './utils.js';
 import { toast }                                 from './notifications.js';
 import { actx, hasAudioContext, buildEffectChain } from './audio.js';
 import { scheduleFadeCurve } from './renderPipeline.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
-import { _saveRaw, exportAmbientTrack }          from './storage.js';
+import { _saveRaw, exportAmbientTrack, exportAmbientProfile } from './storage.js';
 import { PENCIL_ICON_SVG, _applyTabAccent }       from './ui.js';
 import { buildNoiseGenerator, setNoiseGeneratorType } from './generators.js';
 
@@ -400,6 +400,17 @@ export function renameAmbientTrack(trackId, name) {
 export function setAmbientTrackIcon(trackId, icon) {
   const t = _find(trackId); if (!t) return;
   t.icon = (icon || '').trim() || t.icon;
+  _persist();
+  renderAmbientPanel();
+}
+
+// Prompt 2: Ambient-Tracks unterstützen eine Akzentfarbe (t.color, s.
+// _mkTrack()/_normalizeAmbientTrack() sowie den sichtbaren Zeilen-Akzent
+// in _rowTemplate()) — bislang gab es dafür aber keine Bearbeitungsmöglich-
+// keit; setAmbientTrackColor() analog zu setAmbientTrackIcon() ergänzt.
+export function setAmbientTrackColor(trackId, color) {
+  const t = _find(trackId); if (!t) return;
+  t.color = color || 'none';
   _persist();
   renderAmbientPanel();
 }
@@ -957,6 +968,20 @@ function _updateRowPlayState(trackId, playing) {
   }
   // Live-dot on the scene tab, since a track keeps playing across scene/mode switches.
   renderAmbientProfileTabs();
+
+  // Prompt 4: Navbar-Indikator an #btnModeAmbient — unabhängig von der
+  // sichtbaren Ansicht, gespeist aus dem tatsächlichen Wiedergabestatus
+  // (_active-Map, nicht dem zuletzt geklickten Button), analog zum
+  // bestehenden Musik-Indikator (has-live-indicator, s. music.css) und zum
+  // neuen Sound-Indikator (s. audio.js: _updateStatusDot()). #ambProfBar
+  // trägt bereits einen eigenen .profile-tab__live-Indikator pro Szene
+  // (renderAmbientProfileTabs() oben) — dieser hier ist bewusst zusätzlich
+  // und unabhängig davon: er zeigt global "irgendwo läuft Ambient", auch
+  // während die Sound- oder Musik-Ansicht sichtbar ist.
+  const n = _active.size;
+  document.getElementById('btnModeAmbient')?.classList.toggle('has-live-indicator', n > 0);
+  const liveDesc = document.getElementById('btnModeAmbientLiveDesc');
+  if (liveDesc) liveDesc.textContent = n > 0 ? `Wiedergabe aktiv (${n})` : '';
 }
 
 // ─── VIEW MODE: SOUND ⇄ AMBIENT ──────────────────────────────
@@ -969,9 +994,9 @@ export function setViewMode(mode) {
   const ambientOn = APP.viewMode === 'ambient';
   const musicOn   = APP.viewMode === 'music';
 
-  document.getElementById('profBar')?.toggleAttribute('hidden', !soundOn);
+  document.getElementById('profBarRow')?.toggleAttribute('hidden', !soundOn);
   document.getElementById('soundBoard')?.toggleAttribute('hidden', !soundOn);
-  document.getElementById('ambProfBar')?.toggleAttribute('hidden', !ambientOn);
+  document.getElementById('ambProfBarRow')?.toggleAttribute('hidden', !ambientOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', !ambientOn);
   // Stop sitzt jetzt zusammen mit der Sound-Lautstärke in #fxToolbar
   // innerhalb von #soundBoard (stoppt nur Sound-Kacheln, s. audio.js) —
@@ -1019,6 +1044,13 @@ export function registerAmbientEvents() {
       return;
     }
     if (tab) switchAmbientProfile(tab.dataset.pid);
+  });
+
+  // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
+  // immer die AKTIVE Szene (exportAmbientProfile() unverändert aus storage.js).
+  document.getElementById('btnExportAmbientProfileTab')?.addEventListener('click', () => {
+    const p = CAP();
+    if (p) exportAmbientProfile(p.id); else toast('Keine Ambient-Szene vorhanden', 'err');
   });
 
   document.getElementById('btnAmbientAdd')?.addEventListener('click', () => {

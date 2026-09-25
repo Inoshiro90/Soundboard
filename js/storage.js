@@ -3,7 +3,8 @@
  * Fixes: decodeAudioSmart uses audioCache, migrateEffects complete for all phases
  */
 
-import { APP, CItems, CATracks, CMTracks, STORAGE_KEY } from './state.js';
+import { APP, CItems, CATracks, CMTracks } from './core/state.js';
+import { STORAGE_KEY } from './core/constants.js';
 import { uid, bk }    from './utils.js';
 import { toast }      from './notifications.js';
 import { defaultEffects, defaultPlayback } from './audio.js';

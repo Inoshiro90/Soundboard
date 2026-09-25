@@ -58,8 +58,17 @@
       <!-- Sound / Ambient view-mode toggle — both icons always visible,
            the inactive icon is clickable to switch focus to that mode. -->
       <div class="mode-toggle" role="group" aria-label="Ansicht wechseln">
+        <!-- Prompt 4: has-live-indicator (::after-Punkt, s. css/music.css)
+             wird jetzt für alle drei Buttons aus dem tatsächlichen
+             Wiedergabestatus der jeweiligen Audio-Engine gesetzt (s.
+             audio.js: _updateStatusDot(), ambient.js: _updateRowPlayState(),
+             music.js: renderMusicPlayer()) — unabhängig von der sichtbaren
+             Ansicht. aria-describedby verweist auf eine leere, visuell
+             verborgene Beschreibung, die bei aktiver Wiedergabe befüllt
+             wird, damit der Status nicht ausschließlich über Farbe
+             vermittelt wird. -->
         <button class="mode-toggle__btn is-active" id="btnModeSound" title="Soundeffekte"
-          aria-label="Soundeffekte anzeigen" aria-pressed="true">
+          aria-label="Soundeffekte anzeigen" aria-pressed="true" aria-describedby="btnModeSoundLiveDesc">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6 8.32a7.43 7.43 0 0 1 0 7.36" />
@@ -68,8 +77,9 @@
             <path d="M16.37 2a20.16 20.16 0 0 1 0 20" />
           </svg>
         </button>
+        <span class="visually-hidden" id="btnModeSoundLiveDesc"></span>
         <button class="mode-toggle__btn" id="btnModeAmbient" title="Ambientszenen" aria-label="Ambientszenen anzeigen"
-          aria-pressed="false">
+          aria-pressed="false" aria-describedby="btnModeAmbientLiveDesc">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
             class="lucide lucide-waves-horizontal">
@@ -78,8 +88,9 @@
             <path d="M2 5q2.5 2 5 0t5 0 5 0 5 0" />
           </svg>
         </button>
+        <span class="visually-hidden" id="btnModeAmbientLiveDesc"></span>
         <button class="mode-toggle__btn" id="btnModeMusic" title="Musikspuren" aria-label="Musikspuren anzeigen"
-          aria-pressed="false">
+          aria-pressed="false" aria-describedby="btnModeMusicLiveDesc">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 18V5l12-2v13" />
@@ -87,6 +98,7 @@
             <circle cx="18" cy="16" r="3" />
           </svg>
         </button>
+        <span class="visually-hidden" id="btnModeMusicLiveDesc"></span>
       </div>
 
       <!-- Theme toggle: icon changes based on active theme (synced by syncThemeIcon()) -->
@@ -169,14 +181,25 @@
 
     <!-- ════════════════════════════ PROFILE TABS ════════════════════════════
        Sound-effect profiles. Hidden while in Ambient view (setViewMode()).
+       Prompt 4: #profBar selbst bleibt die scrollbare Tab-Leiste; der
+       Export-Button sitzt AUSSERHALB davon in #profBarRow, damit er bei
+       vielen Tabs nicht mit wegscrollt, sondern fest am äußersten rechten
+       Rand bleibt. hidden wandert daher auf den Wrapper (s. setViewMode()
+       in ambient.js), nicht mehr auf #profBar selbst.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="profile-bar" id="profBar" aria-label="Profile">
-      <!-- Tabs rendered by JS (renderProfileTabs) -->
-      <button class="profile-add" id="btnAddProfile" title="Neues Profil erstellen" aria-label="Neues Profil erstellen">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>
-        Profil
+    <div class="tab-bar-row" id="profBarRow">
+      <nav class="profile-bar" id="profBar" aria-label="Profile">
+        <!-- Tabs rendered by JS (renderProfileTabs) -->
+        <button class="profile-add" id="btnAddProfile" title="Neues Profil erstellen" aria-label="Neues Profil erstellen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          Profil
+        </button>
+      </nav>
+      <button class="btn btn--sm tab-bar-row__export" id="btnExportProfileTab"
+        title="Aktives Soundeffekt-Profil als Datei exportieren" aria-label="Aktives Profil exportieren">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Profil-Export
       </button>
-    </nav>
+    </div>
 
     <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
     <main class="board" id="soundBoard" aria-label="Soundboard">
@@ -261,9 +284,30 @@
           </svg>
           <span class="board-toolbar__label">Lautstärke</span>
         </button>
-      </div>
 
-      <!-- Bearbeitungsmodus-Leiste: erscheint, wenn #btnTileEditMode oben
+        <!-- Prompt 3: Audio-Effekte des AKTIVEN Sound-Profils — ersetzt den
+             bisherigen Audio-Effekte-Bereich im Profil-Tab-Menü (#profModal).
+             Exaktes lucide-sliders-horizontal-SVG wie vorgegeben. -->
+        <button class="btn board-toolbar__btn" id="btnOpenSoundFxToolbar" title="Audio-Effekte des aktiven Profils"
+          aria-label="Audio-Effekte öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               class="lucide lucide-sliders-horizontal" aria-hidden="true">
+            <line x1="21" x2="14" y1="4" y2="4"></line>
+            <line x1="10" x2="3" y1="4" y2="4"></line>
+            <line x1="21" x2="12" y1="12" y2="12"></line>
+            <line x1="8" x2="3" y1="12" y2="12"></line>
+            <line x1="21" x2="16" y1="20" y2="20"></line>
+            <line x1="12" x2="3" y1="20" y2="20"></line>
+            <line x1="14" x2="14" y1="2" y2="6"></line>
+            <line x1="10" x2="10" y1="10" y2="14"></line>
+            <line x1="16" x2="16" y1="18" y2="22"></line>
+          </svg>
+          <span class="board-toolbar__label">Audio-Effekte</span>
+        </button>
+      </div> 
+      <!-- Erscheint, wenn #btnTileEditMode oben
            aktiviert ist, siehe setTileEditMode() in ui.js. Verschieben von
            Kacheln (Long-Press auf Touch, natives Drag&Drop auf Desktop)
            funktioniert unabhängig davon jederzeit, auch außerhalb dieses
@@ -299,15 +343,23 @@
     <!-- ═══════════════════════════ AMBIENT SCENE TABS ═══════════════════════════
        Same tab pattern as the sound profiles above — each scene (Marktplatz,
        Höhle, Schlachtfeld, …) is its own tab. Hidden while in Sound view.
+       Prompt 4: hidden sitzt jetzt auf dem Wrapper #ambProfBarRow (s.
+       setViewMode() in ambient.js), analog zu #profBarRow.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="profile-bar" id="ambProfBar" aria-label="Ambient-Szenen" hidden>
-      <!-- Tabs rendered by JS (renderAmbientProfileTabs) -->
-      <button class="profile-add" id="btnAddAmbientProfile" title="Neue Ambient-Szene erstellen"
-        aria-label="Neue Ambient-Szene erstellen">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>
-        Szene
+    <div class="tab-bar-row" id="ambProfBarRow" hidden>
+      <nav class="profile-bar" id="ambProfBar" aria-label="Ambient-Szenen">
+        <!-- Tabs rendered by JS (renderAmbientProfileTabs) -->
+        <button class="profile-add" id="btnAddAmbientProfile" title="Neue Ambient-Szene erstellen"
+          aria-label="Neue Ambient-Szene erstellen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          Szene
+        </button>
+      </nav>
+      <button class="btn btn--sm tab-bar-row__export" id="btnExportAmbientProfileTab"
+        title="Aktive Ambient-Szene als Datei exportieren" aria-label="Aktive Szene exportieren">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Szenen-Export
       </button>
-    </nav>
+    </div>
 
     <!-- ═══════════════════════════════ AMBIENT BOARD ═══════════════════════════════
        Looping background sounds for the active scene. Several tracks can play
@@ -354,6 +406,27 @@
           <span class="board-toolbar__label">Lautstärke</span>
         </button>
 
+        <!-- Prompt 3: Audio-Effekte der AKTIVEN Ambient-Szene — ersetzt den
+             bisherigen Audio-Effekte-Bereich im Szenen-Tab-Menü (#ambProfModal). -->
+        <button class="btn board-toolbar__btn" id="btnOpenAmbientFxToolbar" title="Audio-Effekte der aktiven Szene"
+          aria-label="Audio-Effekte öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               class="lucide lucide-sliders-horizontal" aria-hidden="true">
+            <line x1="21" x2="14" y1="4" y2="4"></line>
+            <line x1="10" x2="3" y1="4" y2="4"></line>
+            <line x1="21" x2="12" y1="12" y2="12"></line>
+            <line x1="8" x2="3" y1="12" y2="12"></line>
+            <line x1="21" x2="16" y1="20" y2="20"></line>
+            <line x1="12" x2="3" y1="20" y2="20"></line>
+            <line x1="14" x2="14" y1="2" y2="6"></line>
+            <line x1="10" x2="10" y1="10" y2="14"></line>
+            <line x1="16" x2="16" y1="18" y2="22"></line>
+          </svg>
+          <span class="board-toolbar__label">Audio-Effekte</span>
+        </button>
+
         <input type="file" id="ambientFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
         <input type="file" id="ambientReplaceFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
@@ -369,15 +442,23 @@
        Gleiches Tab-Muster wie Sound-Profile/Ambient-Szenen — jede Playlist
        (Exploration, Battle, Town, …) ist ein eigener Tab. Hidden außerhalb
        der Musikansicht.
+       Prompt 4: hidden sitzt jetzt auf dem Wrapper #musicProfBarRow (s.
+       applyMusicViewVisibility() in music.js), analog zu #profBarRow.
   ══════════════════════════════════════════════════════════════════════════ -->
-    <nav class="profile-bar" id="musicProfBar" aria-label="Musik-Playlists" hidden>
-      <!-- Tabs rendered by JS (renderMusicProfileTabs) -->
-      <button class="profile-add" id="btnAddMusicProfile" title="Neue Playlist erstellen"
-        aria-label="Neue Playlist erstellen">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>
-        Playlist
+    <div class="tab-bar-row" id="musicProfBarRow" hidden>
+      <nav class="profile-bar" id="musicProfBar" aria-label="Musik-Playlists">
+        <!-- Tabs rendered by JS (renderMusicProfileTabs) -->
+        <button class="profile-add" id="btnAddMusicProfile" title="Neue Playlist erstellen"
+          aria-label="Neue Playlist erstellen">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          Playlist
+        </button>
+      </nav>
+      <button class="btn btn--sm tab-bar-row__export" id="btnExportMusicProfileTab"
+        title="Aktive Musik-Playlist als Datei exportieren" aria-label="Aktive Playlist exportieren">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist-Export
       </button>
-    </nav>
+    </div>
 
     <!-- ═══════════════════════════════ MUSIK-ANSICHT ═══════════════════════════════
        Eigenständige Playlist-/Player-Ansicht (kein Ambient-Klon!): normalerweise
@@ -435,11 +516,31 @@
           </svg>
           <span class="board-toolbar__label">Lautstärke</span>
         </button>
-        <button class="btn board-toolbar__btn" id="btnMusicExportProfile" title="Aktive Playlist als Datei exportieren"
-          aria-label="Aktive Playlist exportieren">
-          <i class="fa-solid fa-file-export" aria-hidden="true"></i>
-          <span class="board-toolbar__label">Playlist</span>
+
+        <!-- Prompt 3: Audio-Effekte der AKTIVEN Musik-Playlist — ersetzt den
+             bisherigen Audio-Effekte-Bereich im Playlist-Tab-Menü (#musicProfileModal). -->
+        <button class="btn board-toolbar__btn" id="btnOpenMusicFxToolbar" title="Audio-Effekte der aktiven Playlist"
+          aria-label="Audio-Effekte öffnen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               class="lucide lucide-sliders-horizontal" aria-hidden="true">
+            <line x1="21" x2="14" y1="4" y2="4"></line>
+            <line x1="10" x2="3" y1="4" y2="4"></line>
+            <line x1="21" x2="12" y1="12" y2="12"></line>
+            <line x1="8" x2="3" y1="12" y2="12"></line>
+            <line x1="21" x2="16" y1="20" y2="20"></line>
+            <line x1="12" x2="3" y1="20" y2="20"></line>
+            <line x1="14" x2="14" y1="2" y2="6"></line>
+            <line x1="10" x2="10" y1="10" y2="14"></line>
+            <line x1="16" x2="16" y1="18" y2="22"></line>
+          </svg>
+          <span class="board-toolbar__label">Audio-Effekte</span>
         </button>
+        <!-- Prompt 4: der Playlist-Export lebt jetzt als "Playlist-Export"
+             am rechten Rand der Tab-Leiste (#musicProfBar), nicht mehr hier
+             in der Toolbar — vermeidet zwei Export-Einstiegspunkte für
+             dieselbe aktive Playlist. -->
         <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
 
@@ -489,16 +590,6 @@
 
       <div class="music-list" id="musicList" role="list" aria-label="Musikstücke"></div>
     </main>
-
-
-
-    <footer class="status-bar" aria-label="Status">
-      <div class="status-dot" id="sdot" aria-hidden="true"></div>
-      <span id="stxt" aria-live="polite">BEREIT</span>
-      <span class="autosave-dot" id="autosaveDot" title="Automatisch gespeichert" aria-hidden="true"></span>
-      <span id="profLbl" class="u-text-muted u-text-mono u-text-badge"></span>
-      <span class="u-ml-auto u-text-mono u-text-badge" id="scnt" aria-live="polite">0 S · 0 M</span>
-    </footer>
 
   </div><!-- /.app-shell -->
 
@@ -646,7 +737,13 @@
                typischerweise einmal beim Anlegen gesetzt und danach kaum
                noch angefasst, lebt daher (wie Audio-Effekte) in einer
                eigenen Dialogbox statt permanent im Hauptformular. ═══════ -->
-          <div class="sm-entry-card sm-sound-only">
+          <!-- Prompt 2: nicht mehr sm-sound-only — Ambient-Tracks unterstützen
+               Name (bereits oben im Hauptformular), Icon und Akzentfarbe
+               genauso (t.icon/t.color, s. ambient.js). Innerhalb der
+               Dialogbox selbst bleiben die NICHT vom Ambient-Datenmodell
+               unterstützten Teile (Kachel-Hintergrund, Kategorie, Hotkey)
+               weiterhin sm-sound-only. -->
+          <div class="sm-entry-card">
             <div class="sm-entry-card__head">
               <span class="sm-entry-card__preview-icon" id="smAppearancePreviewIcon" aria-hidden="true">🔊</span>
               <span class="sm-entry-card__title">
@@ -1260,7 +1357,11 @@
                     <label class="form-label">Akzentfarbe</label>
                     <div class="color-row" id="clrOpts" role="radiogroup"></div>
                   </div>
-                  <div class="sm-field--half">
+                  <!-- Prompt 2: "Kachel-Hintergrund" gibt es nur für Sound-
+                       Kacheln im Grid — Ambient-Tracks sind Listenzeilen ohne
+                       eigenes Kachel-Hintergrundfeld (kein tileColor im
+                       Ambient-Datenmodell, s. ambient.js _mkTrack()). -->
+                  <div class="sm-field--half sm-sound-only">
                     <label class="form-label">Kachel-Hintergrund</label>
                     <div class="color-row" id="eTileClrOpts" role="radiogroup"></div>
                     <input type="hidden" id="eTileClr">
@@ -1269,8 +1370,11 @@
               </div>
             </div>
 
-            <!-- Bereich 3 – Organisation: Kategorie + Hotkey -->
-            <div class="disclosure-section">
+            <!-- Bereich 3 – Organisation: Kategorie + Hotkey. Prompt 2: nur
+                 für Sounds — das Ambient-Datenmodell kennt weder category
+                 noch hotkey (s. ambient.js _mkTrack()/_normalizeAmbientTrack()),
+                 daher hier bewusst NICHT für Ambient ergänzt. -->
+            <div class="disclosure-section sm-sound-only">
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="false" aria-controls="apSecOrg" id="apSecOrgToggle">
                 <span class="disclosure-section__label">
@@ -2770,10 +2874,12 @@
           <label class="form-label" for="profNameInput">Name</label>
           <input class="form-control" id="profNameInput" placeholder="z.B. Zauberer Sammy">
 
-          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
-               Progressive-Disclosure-Gruppe (data-disclosure-inline,
-               zentrales System aus disclosure.js) — standardmäßig
-               eingeklappt, statt dauerhaft sichtbar. -->
+          <!-- Prompt 1/3: Icon/Farbe als gemeinsame Progressive-Disclosure-
+               Gruppe (data-disclosure-inline, zentrales System aus
+               disclosure.js) — standardmäßig eingeklappt. Audio-Effekte
+               leben seit Prompt 3 nicht mehr hier, sondern im eigenen
+               Toolbar-Button/-Dialog (#soundFxToolbarModal, s.u. im
+               Dokument) für das jeweils AKTIVE Profil. -->
           <div class="disclosure-group u-mt-3" id="profDisclosureGroup">
 
             <div class="disclosure-section">
@@ -2805,64 +2911,6 @@
                 <div id="profColorOpts" class="color-row" aria-label="Akzentfarbe des Profils"></div>
               </div>
             </div>
-
-            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für dieses
-                 Sound-Profil — Progressive Disclosure (data-disclosure-inline,
-                 wiederverwendetes System aus Prompt 2). Standardmäßig
-                 eingeklappt; Preset-Auswahl/Modus werden beim Öffnen des
-                 Modals über _profFxSection.reset() zurückgesetzt (Kap. 5). -->
-            <div class="disclosure-section">
-              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
-                aria-expanded="false" aria-controls="profFxSec" id="profFxSecToggle">
-                <span class="disclosure-section__label">
-                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
-                </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
-              </button>
-              <div class="disclosure-section__panel" id="profFxSec" hidden>
-                <label class="form-label" for="profFxPreset">Preset</label>
-                <select class="form-select form-select-sm fx-preset-select" id="profFxPreset">
-                  <option value="">— Kein Preset —</option>
-                </select>
-
-                <div class="u-mt-3">
-                  <span class="form-label u-block">Preset auf enthaltene Sounds anwenden</span>
-                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="profFxModeGroup">
-                    <button type="button" class="btn btn--sm" data-mode="all" id="profFxModeAll" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                      </svg>
-                      Alle
-                    </button>
-                    <button type="button" class="btn btn--sm" data-mode="same" id="profFxModeSame" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                        <path d="M7 10h10" />
-                        <path d="M7 14h10" />
-                      </svg>
-                      Gleiche
-                    </button>
-                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="profFxModeNone" aria-pressed="true">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                        <path d="m15 9-6 6" />
-                        <path d="m9 9 6 6" />
-                      </svg>
-                      Keine
-                    </button>
-                  </div>
-                  <button type="button" class="btn btn--accent u-mt-2" id="profFxApplyBtn">
-                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -2870,10 +2918,6 @@
           <div class="u-flex u-gap-2">
             <button class="btn btn--danger" id="btnDelProfile" style="display:none" aria-label="Profil löschen">
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
-            </button>
-            <button class="btn" id="btnExportProfile" style="display:none" title="Dieses Profil als Datei exportieren"
-              aria-label="Profil exportieren">
-              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
             </button>
           </div>
           <div class="u-flex u-gap-2">
@@ -2905,9 +2949,10 @@
           <label class="form-label" for="ambProfNameInput">Name</label>
           <input class="form-control" id="ambProfNameInput" placeholder="z.B. Marktplatz, Höhle, Schlachtfeld">
 
-          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
-               Progressive-Disclosure-Gruppe — siehe #profDisclosureGroup
-               in #profModal für die ausführliche Begründung des Musters. -->
+          <!-- Prompt 1/3: Icon/Farbe als gemeinsame Progressive-Disclosure-
+               Gruppe — siehe #profDisclosureGroup in #profModal. Audio-
+               Effekte leben seit Prompt 3 im Toolbar-Button/-Dialog
+               (#ambientFxToolbarModal) für die jeweils AKTIVE Szene. -->
           <div class="disclosure-group u-mt-3" id="ambProfDisclosureGroup">
 
             <div class="disclosure-section">
@@ -2939,62 +2984,6 @@
                 <div id="ambProfColorOpts" class="color-row" aria-label="Akzentfarbe der Szene"></div>
               </div>
             </div>
-
-            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für diese
-                 Ambient-Szene — siehe #profFxSec in #profModal für die
-                 ausführliche Begründung des Musters. -->
-            <div class="disclosure-section">
-              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
-                aria-expanded="false" aria-controls="ambProfFxSec" id="ambProfFxSecToggle">
-                <span class="disclosure-section__label">
-                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
-                </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
-              </button>
-              <div class="disclosure-section__panel" id="ambProfFxSec" hidden>
-                <label class="form-label" for="ambProfFxPreset">Preset</label>
-                <select class="form-select form-select-sm fx-preset-select" id="ambProfFxPreset">
-                  <option value="">— Kein Preset —</option>
-                </select>
-
-                <div class="u-mt-3">
-                  <span class="form-label u-block">Preset auf enthaltene Ambient-Tracks anwenden</span>
-                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="ambProfFxModeGroup">
-                    <button type="button" class="btn btn--sm" data-mode="all" id="ambProfFxModeAll" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                      </svg>
-                      Alle
-                    </button>
-                    <button type="button" class="btn btn--sm" data-mode="same" id="ambProfFxModeSame" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                        <path d="M7 10h10" />
-                        <path d="M7 14h10" />
-                      </svg>
-                      Gleiche
-                    </button>
-                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="ambProfFxModeNone" aria-pressed="true">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                        <path d="m15 9-6 6" />
-                        <path d="m9 9 6 6" />
-                      </svg>
-                      Keine
-                    </button>
-                  </div>
-                  <button type="button" class="btn btn--accent u-mt-2" id="ambProfFxApplyBtn">
-                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -3002,10 +2991,6 @@
           <div class="u-flex u-gap-2">
             <button class="btn btn--danger" id="btnDelAmbientProfile" style="display:none" aria-label="Szene löschen">
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
-            </button>
-            <button class="btn" id="btnExportAmbientProfile" style="display:none"
-              title="Diese Szene als Datei exportieren" aria-label="Szene exportieren">
-              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
             </button>
           </div>
           <div class="u-flex u-gap-2">
@@ -3169,9 +3154,10 @@
           <label class="form-label" for="musicProfNameInput">Name</label>
           <input class="form-control" id="musicProfNameInput" placeholder="z.B. Tavernenmusik">
 
-          <!-- Prompt 1: Icon/Farbe/Audio-Effekte als gemeinsame
-               Progressive-Disclosure-Gruppe — siehe #profDisclosureGroup
-               in #profModal für die ausführliche Begründung des Musters. -->
+          <!-- Prompt 1/3: Icon/Farbe als gemeinsame Progressive-Disclosure-
+               Gruppe — siehe #profDisclosureGroup in #profModal. Audio-
+               Effekte leben seit Prompt 3 im Toolbar-Button/-Dialog
+               (#musicFxToolbarModal) für die jeweils AKTIVE Playlist. -->
           <div class="disclosure-group u-mt-3" id="musicProfDisclosureGroup">
 
             <div class="disclosure-section">
@@ -3203,62 +3189,6 @@
                 <div id="musicProfColorOpts" class="color-row" aria-label="Akzentfarbe der Playlist"></div>
               </div>
             </div>
-
-            <!-- Prompt 4: übergeordnetes Audio-Effekt-Preset für diese
-                 Musik-Playlist — siehe #profFxSec in #profModal für die
-                 ausführliche Begründung des Musters. -->
-            <div class="disclosure-section">
-              <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
-                aria-expanded="false" aria-controls="musicProfFxSec" id="musicProfFxSecToggle">
-                <span class="disclosure-section__label">
-                  <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
-                </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
-              </button>
-              <div class="disclosure-section__panel" id="musicProfFxSec" hidden>
-                <label class="form-label" for="musicProfFxPreset">Preset</label>
-                <select class="form-select form-select-sm fx-preset-select" id="musicProfFxPreset">
-                  <option value="">— Kein Preset —</option>
-                </select>
-
-                <div class="u-mt-3">
-                  <span class="form-label u-block">Preset auf enthaltene Musik-Tracks anwenden</span>
-                  <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="musicProfFxModeGroup">
-                    <button type="button" class="btn btn--sm" data-mode="all" id="musicProfFxModeAll" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                      </svg>
-                      Alle
-                    </button>
-                    <button type="button" class="btn btn--sm" data-mode="same" id="musicProfFxModeSame" aria-pressed="false">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-equal preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" />
-                        <path d="M7 10h10" />
-                        <path d="M7 14h10" />
-                      </svg>
-                      Gleiche
-                    </button>
-                    <button type="button" class="btn btn--sm is-active" data-mode="none" id="musicProfFxModeNone" aria-pressed="true">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="lucide lucide-square-x preview-icon" aria-hidden="true">
-                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                        <path d="m15 9-6 6" />
-                        <path d="m9 9 6 6" />
-                      </svg>
-                      Keine
-                    </button>
-                  </div>
-                  <button type="button" class="btn btn--accent u-mt-2" id="musicProfFxApplyBtn">
-                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -3267,10 +3197,6 @@
             <button class="btn btn--danger" id="btnDelMusicProfile" style="display:none" aria-label="Playlist löschen">
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
             </button>
-            <button class="btn" id="btnExportMusicProfile" style="display:none"
-              title="Diese Playlist als Datei exportieren" aria-label="Playlist exportieren">
-              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export
-            </button>
           </div>
           <div class="u-flex u-gap-2">
             <button class="btn" data-bs-dismiss="modal">Abbrechen</button>
@@ -3278,6 +3204,229 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ PROMPT 3: AUDIO-EFFEKTE (AKTIVER KONTEXT) ══════════════════════════
+       Ersetzt die bisherigen, tief in den Tab-Menüs verschachtelten
+       Audio-Effekte-Bereiche (#profFxSec/#ambProfFxSec/#musicProfFxSec) durch
+       jeweils einen eigenen, direkt aus der View-Toolbar erreichbaren Dialog.
+       Markup/IDs (profFxPreset/profFxModeGroup/profFxApplyBtn usw.) 1:1 aus
+       den alten Tab-Menüs übernommen — die bestehende, zentrale Verdrahtung
+       (_wireAudioEffectPresetSection() in events.js) bleibt dadurch
+       unverändert funktionsfähig, nur der Öffnen-Trigger und das Ziel des
+       "aktiven Kontexts" ändern sich (aktives Profil/Szene/Playlist statt
+       des zuletzt per Stift bearbeiteten). Kein zusätzlicher
+       Disclosure-Toggle nötig — der Dialog selbst ist bereits die
+       Progressive-Disclosure-Hülle (erst beim Öffnen sichtbar). -->
+  <div class="modal fade" id="soundFxToolbarModal" tabindex="-1" aria-labelledby="soundFxToolbarModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="soundFxToolbarModalTitle">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <p class="u-text-muted u-mb-2" id="soundFxToolbarActiveLabel">Profil: —</p>
+
+          <label class="form-label" for="profFxPreset">Preset</label>
+          <select class="form-select form-select-sm fx-preset-select" id="profFxPreset">
+            <option value="">— Kein Preset —</option>
+          </select>
+
+          <div class="u-mt-3">
+            <span class="form-label u-block">Preset auf enthaltene Sounds anwenden</span>
+            <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="profFxModeGroup">
+              <button type="button" class="btn btn--sm" data-mode="all" id="profFxModeAll" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                </svg>
+                Alle
+              </button>
+              <button type="button" class="btn btn--sm" data-mode="same" id="profFxModeSame" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M7 10h10" />
+                  <path d="M7 14h10" />
+                </svg>
+                Gleiche
+              </button>
+              <button type="button" class="btn btn--sm is-active" data-mode="none" id="profFxModeNone" aria-pressed="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                  <path d="m15 9-6 6" />
+                  <path d="m9 9 6 6" />
+                </svg>
+                Keine
+              </button>
+            </div>
+            <button type="button" class="btn btn--accent u-mt-2" id="profFxApplyBtn">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="ambientFxToolbarModal" tabindex="-1" aria-labelledby="ambientFxToolbarModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ambientFxToolbarModalTitle">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <p class="u-text-muted u-mb-2" id="ambientFxToolbarActiveLabel">Szene: —</p>
+
+          <label class="form-label" for="ambProfFxPreset">Preset</label>
+          <select class="form-select form-select-sm fx-preset-select" id="ambProfFxPreset">
+            <option value="">— Kein Preset —</option>
+          </select>
+
+          <div class="u-mt-3">
+            <span class="form-label u-block">Preset auf enthaltene Ambient-Tracks anwenden</span>
+            <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="ambProfFxModeGroup">
+              <button type="button" class="btn btn--sm" data-mode="all" id="ambProfFxModeAll" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                </svg>
+                Alle
+              </button>
+              <button type="button" class="btn btn--sm" data-mode="same" id="ambProfFxModeSame" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M7 10h10" />
+                  <path d="M7 14h10" />
+                </svg>
+                Gleiche
+              </button>
+              <button type="button" class="btn btn--sm is-active" data-mode="none" id="ambProfFxModeNone" aria-pressed="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                  <path d="m15 9-6 6" />
+                  <path d="m9 9 6 6" />
+                </svg>
+                Keine
+              </button>
+            </div>
+            <button type="button" class="btn btn--accent u-mt-2" id="ambProfFxApplyBtn">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="musicFxToolbarModal" tabindex="-1" aria-labelledby="musicFxToolbarModalTitle"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content sm-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="musicFxToolbarModalTitle">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i> Audio-Effekte
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+        <div class="modal-body sm-body">
+          <p class="u-text-muted u-mb-2" id="musicFxToolbarActiveLabel">Playlist: —</p>
+
+          <label class="form-label" for="musicProfFxPreset">Preset</label>
+          <select class="form-select form-select-sm fx-preset-select" id="musicProfFxPreset">
+            <option value="">— Kein Preset —</option>
+          </select>
+
+          <div class="u-mt-3">
+            <span class="form-label u-block">Preset auf enthaltene Musik-Tracks anwenden</span>
+            <div class="u-flex u-gap-2 u-wrap" role="group" aria-label="Überschreibungsmodus" id="musicProfFxModeGroup">
+              <button type="button" class="btn btn--sm" data-mode="all" id="musicProfFxModeAll" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                </svg>
+                Alle
+              </button>
+              <button type="button" class="btn btn--sm" data-mode="same" id="musicProfFxModeSame" aria-pressed="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-equal preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M7 10h10" />
+                  <path d="M7 14h10" />
+                </svg>
+                Gleiche
+              </button>
+              <button type="button" class="btn btn--sm is-active" data-mode="none" id="musicProfFxModeNone" aria-pressed="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="lucide lucide-square-x preview-icon" aria-hidden="true">
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                  <path d="m15 9-6 6" />
+                  <path d="m9 9 6 6" />
+                </svg>
+                Keine
+              </button>
+            </div>
+            <button type="button" class="btn btn--accent u-mt-2" id="musicProfFxApplyBtn">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Anwenden
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <button class="btn btn--sm btn--accent" data-bs-dismiss="modal">
+            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+          </button>
+        </div>
       </div>
     </div>
   </div>

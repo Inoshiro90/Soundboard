@@ -31,13 +31,13 @@
  *   Track darf nicht mehr nachträglich starten).
  */
 
-import { APP, CMP, CMTracks }        from './state.js';
+import { APP, CMP, CMTracks }        from './core/state.js';
 import { uid, iconHtmlOr, fmtTime }  from './utils.js';
 import { toast }                     from './notifications.js';
 import { actx, buildEffectChain, defaultEffects } from './audio.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw, exportMusicTrack, exportMusicProfile } from './storage.js';
-import { PENCIL_ICON_SVG, updateStatus, _applyTabAccent, buildIconGrid, buildColorOpts } from './ui.js';
+import { PENCIL_ICON_SVG, _applyTabAccent, buildIconGrid, buildColorOpts } from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -779,7 +779,8 @@ export function renderMusicPanel() {
   // Toolbar entfernt — _orderedTracks()/tracks.length bleiben in Gebrauch
   // (Leerzustand-Erkennung, Listen-Rendering oben), nur die reine
   // DOM-Zähler-Ausgabe entfällt.
-  updateStatus();
+  // Prompt 5: dito für die (jetzt entfernte) untere Statusleiste —
+  // updateStatus() gab es nur für #stxt/#scnt/#sdot.
 }
 
 export function renderMusicPlayer() {
@@ -828,6 +829,11 @@ export function renderMusicPlayer() {
   _updateProgressUI();
   // Live-Indikator am Mode-Toggle-Button (Kap. 39) — analog zum Ambient-Muster.
   document.getElementById('btnModeMusic')?.classList.toggle('has-live-indicator', playing);
+  // Prompt 4: ergänzende, nicht rein farbliche Statusvermittlung (analog zu
+  // den neuen Sound-/Ambient-Indikatoren, s. audio.js/ambient.js) — bislang
+  // trug nur der Punkt (::after) die Information.
+  const liveDesc = document.getElementById('btnModeMusicLiveDesc');
+  if (liveDesc) liveDesc.textContent = playing ? 'Wiedergabe aktiv' : '';
   renderMusicProfileTabs();
 }
 
@@ -853,7 +859,7 @@ export function resetMusic() {
 // Funktion schaltet nur die DOM-Sichtbarkeit, nie Play/Pause.
 
 export function applyMusicViewVisibility(isMusicView) {
-  document.getElementById('musicProfBar')?.toggleAttribute('hidden', !isMusicView);
+  document.getElementById('musicProfBarRow')?.toggleAttribute('hidden', !isMusicView);
   document.getElementById('musicBoard')?.toggleAttribute('hidden', !isMusicView);
   if (isMusicView) { renderMusicPanel(); renderMusicPlayer(); }
 }
@@ -875,14 +881,21 @@ export function registerMusicEvents() {
   });
   document.getElementById('btnAddMusicProfile')?.addEventListener('click', () => _dispatchEditProfile(null));
 
+  // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
+  // immer die AKTIVE Playlist (exportMusicProfile() unverändert aus storage.js).
+  document.getElementById('btnExportMusicProfileTab')?.addEventListener('click', () => {
+    const p = CMP();
+    if (p) exportMusicProfile(p.id); else toast('Keine Musik-Playlist vorhanden', 'err');
+  });
+
   document.getElementById('btnMusicAdd')?.addEventListener('click', () => document.getElementById('musicFile')?.click());
   document.getElementById('musicFile')?.addEventListener('change', function () {
     if (this.files?.length) addMusicFiles(this.files);
     this.value = '';
   });
-  document.getElementById('btnMusicExportProfile')?.addEventListener('click', () => {
-    if (APP.music.activeProfileId) exportMusicProfile(APP.music.activeProfileId);
-  });
+  // Prompt 4: Export-Button lebt jetzt am rechten Rand von #musicProfBar
+  // (s. events.js: btnExportMusicProfileTab), nicht mehr hier in der
+  // Toolbar — exportMusicProfile() bleibt unverändert die zentrale Logik.
 
   // Prompt 3, Kap. 7/10: Dialog-Trigger statt permanent sichtbarer Player-Leisten.
   document.getElementById('btnOpenMusicPlaybackModal')?.addEventListener('click', () => {

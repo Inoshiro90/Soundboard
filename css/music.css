@@ -8,10 +8,15 @@
  * Wiedergabemodell ist, kein Ambient-Klon.
  */
 
-/* ─── MODE-TOGGLE: LIVE-INDIKATOR (Kap. 39) ──────────────────
-   Kleiner pulsierender Punkt am Musik-Button, sichtbar aus jeder Ansicht,
-   solange im Hintergrund Musik läuft. Wiederverwendet die vorhandene
-   ambient-pulse-Animation/Optik des Szenen-Tab-Indikators. */
+/* ─── MODE-TOGGLE: LIVE-INDIKATOR (Kap. 39 / Prompt 4) ──────────────────
+   Kleiner pulsierender Punkt an den Ansicht-Buttons der Navbar, sichtbar
+   aus jeder Ansicht, solange im Hintergrund dort Audio läuft. Ursprünglich
+   nur für Musik (Kap. 39); seit Prompt 4 identisch für Sound
+   (#btnModeSound, s. audio.js: _updateStatusDot()) und Ambient
+   (#btnModeAmbient, s. ambient.js: _updateRowPlayState()) wiederverwendet —
+   eine einzige, gemeinsame Regel statt drei Kopien. Der jeweils
+   zugehörige, per aria-describedby verknüpfte <span class="visually-hidden">
+   trägt dieselbe Information non-visuell (nicht ausschließlich Farbe). */
 .mode-toggle__btn {
   position: relative;
 }

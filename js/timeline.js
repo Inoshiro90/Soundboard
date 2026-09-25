@@ -1,7 +1,7 @@
 /**
  * timeline.js — Multi-Track Timeline / Mixer (Phase 4)
  *
- * State lives in APP.timeline (state.js).
+ * State lives in APP.timeline (core/state.js).
  * Canvas rendering for the timeline view.
  * Audio scheduling via Web Audio API (sample-accurate).
  *
@@ -11,7 +11,7 @@
  * Clip: references a sound's slot audio buffer.
  */
 
-import { APP, CItems }   from './state.js';
+import { APP, CItems }   from './core/state.js';
 import { uid, bk }       from './utils.js';
 import { toast }         from './notifications.js';
 import { actx, stopAll } from './audio.js';

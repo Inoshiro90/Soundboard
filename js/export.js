@@ -6,7 +6,7 @@
  * Supports: single sound export + timeline mixdown export.
  */
 
-import { APP }  from './state.js';
+import { APP }  from './core/state.js';
 import { toast } from './notifications.js';
 import { bk }   from './utils.js';
 import { actx } from './audio.js';
