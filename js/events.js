@@ -6,7 +6,10 @@
 import { APP, CP, CAP, CMP, CItems } from './core/state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
-import { actx, stopAll, stopItem, runMacro, previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, defaultEffects, defaultPlayback, exportSoundToWav, startAnalyzerLoop, stopAnalyzer, EQ10_FREQS } from './audio.js';
+import { actx } from './audio/context.js';
+import { stopAll, stopItem, runMacro, exportSoundToWav } from './audio/playback.js';
+import { previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, startAnalyzerLoop, stopAnalyzer } from './audio/preview.js';
+import { defaultEffects, defaultPlayback, EQ10_FREQS } from './audio/effect-graph.js';
 import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import {
   getPresetById, applyPresetEffects, applyPresetToCollection, createUserPreset, updateUserPreset,
@@ -22,13 +25,13 @@ import {
   renderPresetDropdown, renderPresetOptions, markTrimSaved
 } from './ui.js';
 import {
-  save, exportDataWithAudio, importData, resetAll,
+  exportDataWithAudio, importData,
   exportProfile, exportAmbientProfile, exportMusicProfile,
   exportSoundItem, exportAmbientTrack, exportMusicTrack,
-  exportPreset, exportUserPresets,
-  mkProfile, mkSound, mkMacro, mkPH, saveSlotAudio, STARTER_PLACEHOLDER_COUNT,
-  _saveRaw
-} from './storage.js';
+  exportPreset, exportUserPresets
+} from './storage/import-export.js';
+import { save, resetAll, saveSlotAudio, _saveRaw } from './storage/persistence.js';
+import { mkProfile, mkSound, mkMacro, mkPH, STARTER_PLACEHOLDER_COUNT } from './storage/factories.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey, normalizeSlotAudioStorage } from './db.js';
 import { createModalDraftGuard } from './modalGuards.js';
 import {
@@ -1577,7 +1580,7 @@ export function registerEvents() {
 
   // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
   // immer das AKTIVE Profil, unabhängig davon, welches zuletzt per Stift
-  // bearbeitet wurde (exportProfile() unverändert aus storage.js).
+  // bearbeitet wurde (exportProfile() unverändert aus storage/import-export.js).
   document.getElementById('btnExportProfileTab')?.addEventListener('click', () => {
     const p = CP();
     if (p) exportProfile(p.id); else toast('Kein Soundeffekt-Profil vorhanden', 'err');
@@ -1789,7 +1792,7 @@ export function registerEvents() {
   document.getElementById('btnOpenMusicFxToolbar')?.addEventListener('click', openMusicFxToolbar);
 
   // P2 Auto Duck (Ambient): globale Wiedergabe-Einstellung, siehe
-  // audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+  // audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
   document.getElementById('setAutoDuck')?.addEventListener('change', e => {
     APP.globalSettings.autoDuck.enabled = e.target.checked;
     _syncPlaybackSettingsIndicator();
@@ -1807,7 +1810,7 @@ export function registerEvents() {
   // hier nur noch die fachliche Aktion je Button; Undo/Redo-Klicks werden
   // weiter unten im Datei-Setup registriert).
   document.getElementById('btnExport')?.addEventListener('click', () => {
-    import('./storage.js').then(m => m.exportData());
+    import('./storage/import-export.js').then(m => m.exportData());
   });
   document.getElementById('btnImportTrigger')?.addEventListener('click', () => document.getElementById('importFile').click());
   document.getElementById('importFile')?.addEventListener('change', function() {
@@ -2176,7 +2179,7 @@ export function registerEvents() {
   // BUGFIX (Kap. 6): die alte Merge-Logik hier übertrug beim Anwenden eines
   // Presets nur einen fest codierten Teil der Effektfelder (lowpass/
   // highpass/pan/reverb/delay/eq/compressor/limiter/distortion) — obwohl
-  // die Preset-Objekte selbst (EFFECT_PRESETS in audio.js) bereits u.a.
+  // die Preset-Objekte selbst (EFFECT_PRESETS in presets/effect-presets-data.js) bereits u.a.
   // pitchShift/irReverb/envelope/spatial/noiseGate mitliefern UND die
   // Audio-Engine zusätzlich notch/wahwah/chorus/flanger/tremolo/ringmod
   // beherrscht. Diese Felder wurden beim Anwenden eines Presets bisher
@@ -2408,7 +2411,7 @@ export function registerEvents() {
     // Save current UI state to sound before exporting
     const effects = readEffectsFromUI();
     s.effects = effects;
-    import('./audio.js').then(m => m.exportSoundToWav(s));
+    import('./audio/playback.js').then(m => m.exportSoundToWav(s));
   });
 
   // ── PHASE 3 LISTENERS ─────────────────────────────────────
@@ -2494,7 +2497,7 @@ export function registerEvents() {
 
   // Full export (with audio)
   document.getElementById('btnExportFull')?.addEventListener('click', () => {
-    import('./storage.js').then(m => m.exportDataWithAudio());
+    import('./storage/import-export.js').then(m => m.exportDataWithAudio());
   });
 
   // ── PHASE 4 LISTENERS ─────────────────────────────────────
@@ -2722,7 +2725,7 @@ export function registerEvents() {
     if (_fxEditContext.kind === 'ambient') { toggleAmbientPlay(_fxEditContext.id); return; }
 
     // Abschnitt 5/14: ein Klick während einer laufenden ODER ladenden
-    // Preview stoppt sie — previewSound() togglet das intern (audio.js).
+    // Preview stoppt sie — previewSound() togglet das intern (audio/preview.js).
     if (APP.audioPreview.playing || APP.audioPreview.loading) { await previewSound(); return; }
 
     const slots = APP.editSlots;
@@ -3144,7 +3147,7 @@ export function registerEvents() {
     const tag = e.target.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
     const match = CItems().find(x => x.hotkey && hotkeyMatch(x.hotkey, e));
-    if (match) { e.preventDefault(); import('./audio.js').then(m => m.playItem(match.id)); }
+    if (match) { e.preventDefault(); import('./audio/playback.js').then(m => m.playItem(match.id)); }
   });
 
   // Wake AudioContext on first interaction
@@ -3270,7 +3273,7 @@ let _autosaveTimer = null;
 function _startAutosave() {
   const INTERVAL = 60_000; // 60 seconds
   setInterval(() => {
-    import('./storage.js').then(m => {
+    import('./storage/persistence.js').then(m => {
       if (m._saveRaw) m._saveRaw();
       else if (m.save) m.save();
     }).catch(() => {});

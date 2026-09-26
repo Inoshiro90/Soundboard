@@ -11,7 +11,7 @@ export const APP = {
     overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
     // P2 Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
     // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
-    // Siehe audio.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+    // Siehe audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
     autoDuck: { enabled: false, amount: 0.7, attack: 150, release: 500 }
   },
   audioBuffers: {},
@@ -30,7 +30,7 @@ export const APP = {
   // Soundboard-Wiedergabe (activeAudio/_setPlaying/Ducking/Rotation)
   // vollständig isolierter Lifecycle-State. `token` schützt gegen Race
   // Conditions zwischen einem laufenden async Decode/Graph-Aufbau und
-  // einem zwischenzeitlichen Stop/Neustart (s. audio.js startEffectPreview()).
+  // einem zwischenzeitlichen Stop/Neustart (s. audio/preview.js startEffectPreview()).
   audioPreview: {
     playing: false, loading: false,
     soundId: null, slotIdx: null,

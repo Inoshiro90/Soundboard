@@ -20,17 +20,19 @@
  *  - Decoded AudioBuffers are cached via audioCache.js's getOrDecodeBuffer,
  *    using (trackId, 0) as the (soundId, slotIdx) pair.
  *  - Track/scene metadata is persisted as part of APP.ambient inside the
- *    regular localStorage save (storage.js).
+ *    regular localStorage save (storage/persistence.js).
  */
 
 import { APP, CAP, CATracks }                    from './core/state.js';
 import { uid, iconHtmlOr, iconGlyph }             from './utils.js';
 import { toast }                                 from './notifications.js';
-import { actx, hasAudioContext, buildEffectChain } from './audio.js';
+import { actx, hasAudioContext } from './audio/context.js';
+import { buildEffectChain } from './audio/effect-graph.js';
 import { scheduleFadeCurve } from './renderPipeline.js';
 import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
-import { _saveRaw, exportAmbientTrack, exportAmbientProfile } from './storage.js';
+import { _saveRaw } from './storage/persistence.js';
+import { exportAmbientTrack, exportAmbientProfile } from './storage/import-export.js';
 import { PENCIL_ICON_SVG, _applyTabAccent }       from './ui.js';
 import { buildNoiseGenerator, setNoiseGeneratorType } from './generators.js';
 
@@ -45,7 +47,7 @@ const AMBIENT_ICONS = ['🎐','🌧️','🌊','🔥','🌬️','🐦','🐴','�
 const _active = new Map();
 
 // P2 Auto Duck: globaler Ducking-Multiplikator (1.0 = kein Ducking, s.
-// duckAmbient()/audio.js notifyDuckTrigger()). Bewusst NICHT in APP.ambient
+// duckAmbient()/audio/playback.js notifyDuckTrigger()). Bewusst NICHT in APP.ambient
 // persistiert — reiner Laufzeitzustand, analog zu _active.
 let _duckFactor = 1.0;
 
@@ -643,7 +645,7 @@ async function _startLoopPlayback(trackId) {
  * NÄCHSTE Variante nicht erst im onended der aktuellen gestartet (kein
  * Overlap möglich), sondern vorzeitig per Timer — s. leadMs unten —
  * während die aktuelle noch läuft; beide Gain-Nodes werden dann gegenläufig
- * überblendet (identische Rampen-Technik wie audio.js playSelectedSlot()
+ * überblendet (identische Rampen-Technik wie audio/playback.js playSelectedSlot()
  * Sound-Crossfade, hier auf den Ambient-Kettenwechsel übertragen statt aus
  * js/music.js kopiert — beide haben einen eigenen Lebenszyklus).
  */
@@ -708,7 +710,7 @@ async function _playChainCycle(trackId) {
     // Alte Variante parallel ausblenden und danach stoppen — sie läuft
     // technisch noch bis zu ihrem eigenen geplanten Ende weiter, wird aber
     // durch die Rampe schon vorher unhörbar; explizites stop() danach
-    // räumt den Knoten zuverlässig auf (analog audio.js Sound-Crossfade).
+    // räumt den Knoten zuverlässig auf (analog audio/playback.js Sound-Crossfade).
     const d = Math.min(cf.duration, dur);
     try {
       prevGain.gain.cancelScheduledValues(now);
@@ -973,7 +975,7 @@ function _updateRowPlayState(trackId, playing) {
   // sichtbaren Ansicht, gespeist aus dem tatsächlichen Wiedergabestatus
   // (_active-Map, nicht dem zuletzt geklickten Button), analog zum
   // bestehenden Musik-Indikator (has-live-indicator, s. music.css) und zum
-  // neuen Sound-Indikator (s. audio.js: _updateStatusDot()). #ambProfBar
+  // neuen Sound-Indikator (s. audio/playback.js: _updateStatusDot()). #ambProfBar
   // trägt bereits einen eigenen .profile-tab__live-Indikator pro Szene
   // (renderAmbientProfileTabs() oben) — dieser hier ist bewusst zusätzlich
   // und unabhängig davon: er zeigt global "irgendwo läuft Ambient", auch
@@ -999,7 +1001,7 @@ export function setViewMode(mode) {
   document.getElementById('ambProfBarRow')?.toggleAttribute('hidden', !ambientOn);
   document.getElementById('ambientBoard')?.toggleAttribute('hidden', !ambientOn);
   // Stop sitzt jetzt zusammen mit der Sound-Lautstärke in #fxToolbar
-  // innerhalb von #soundBoard (stoppt nur Sound-Kacheln, s. audio.js) —
+  // innerhalb von #soundBoard (stoppt nur Sound-Kacheln, s. audio/playback.js) —
   // wird durch das hidden-Attribut auf #soundBoard bereits mitversteckt;
   // dieser Toggle bleibt zusätzlich als explizite Absicherung bestehen.
   document.getElementById('btnStop')?.toggleAttribute('hidden', !soundOn);
@@ -1047,7 +1049,7 @@ export function registerAmbientEvents() {
   });
 
   // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
-  // immer die AKTIVE Szene (exportAmbientProfile() unverändert aus storage.js).
+  // immer die AKTIVE Szene (exportAmbientProfile() unverändert aus storage/import-export.js).
   document.getElementById('btnExportAmbientProfileTab')?.addEventListener('click', () => {
     const p = CAP();
     if (p) exportAmbientProfile(p.id); else toast('Keine Ambient-Szene vorhanden', 'err');

@@ -20,7 +20,7 @@
 import { APP } from './core/state.js';
 import { toast } from './notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL } from './db.js';
-import { decodeAudio } from './audio.js';
+import { decodeAudio } from './audio/playback.js';
 import { bk } from './utils.js';
 import { findAmbientTrack } from './ambient.js';
 

@@ -13,7 +13,7 @@ const NOISE_TYPE_MAP = { white: 0, pink: 1, brown: 2 };
 const NOISE_WORKLET_URL = './js/worklets/noise-generator-processor.js';
 
 // Pro AudioContext einzeln verfolgt (Worklet-Module sind context-gebunden,
-// siehe audio.js ensurePitchWorkletFor() für dasselbe Muster).
+// siehe audio/context.js ensurePitchWorkletFor() für dasselbe Muster).
 const _readyContexts = new WeakSet();
 const _loadingContexts = new WeakMap();
 

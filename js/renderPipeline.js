@@ -2,7 +2,7 @@
  * renderPipeline.js — Einheitliche Render-Pipeline (P1).
  *
  * Ersetzt NICHT buildEffectChain()/buildPitchNode()/_buildPanner() usw. aus
- * audio.js — diese bleiben als Bausteine bestehen. renderSoundGraph() ist
+ * audio/effect-graph.js — diese bleiben als Bausteine bestehen. renderSoundGraph() ist
  * die EINZIGE Stelle, die diese Bausteine für jeden Verwendungszweck
  * (Live-Playback, Preview, WAV-/MP3-Export) in derselben Reihenfolge
  * zusammensetzt. Vorher bauten `playSound()`, `exportSoundToWav()` und
@@ -26,7 +26,9 @@
  * mit erledigt, um das Risiko dieses Durchgangs nicht unnötig zu erhöhen.
  */
 
-import { buildPitchNode, buildEffectChain, ensurePitchWorkletFor, createAnalyzerSplit } from './audio.js';
+import { buildPitchNode, buildEffectChain } from './audio/effect-graph.js';
+import { ensurePitchWorkletFor } from './audio/context.js';
+import { createAnalyzerSplit } from './audio/preview.js';
 
 /**
  * ADSR-Hüllkurve auf einen Gain-Node anwenden. Kurvenamplitude ist IMMER
@@ -89,7 +91,7 @@ function _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
 
 /**
  * Exportierte Variante von _scheduleFadeCurve() für Aufrufer außerhalb
- * dieses Moduls (audio.js: Crossfade-Ausblenden bereits laufender
+ * dieses Moduls (audio/playback.js: Crossfade-Ausblenden bereits laufender
  * Instanzen desselben Sounds, s. playSelectedSlot()). Bewusst dieselbe
  * Kurvenlogik wie die Sound-internen Fades — keine zweite Implementierung.
  */
@@ -153,7 +155,7 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
  * (s.fade/slot.fadeIn/slot.fadeOut), ohne konkurrierende Automation auf
  * demselben AudioParam (P3-Prinzip, s.o.).
  *
- * `crossfadeIn` (optional) wird von playSelectedSlot() (audio.js) gesetzt,
+ * `crossfadeIn` (optional) wird von playSelectedSlot() (audio/playback.js) gesetzt,
  * wenn diese Wiedergabe technisch ein Crossfade-Übergang zwischen zwei
  * gleichzeitig laufenden Instanzen DESSELBEN Sounds ist (Retrigger bei
  * aktiviertem Overlap) — in diesem Fall ersetzt die Crossfade-Dauer/-Kurve

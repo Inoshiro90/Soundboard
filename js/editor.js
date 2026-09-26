@@ -12,7 +12,7 @@
 import { APP }      from './core/state.js';
 import { toast }    from './notifications.js';
 import { bk }       from './utils.js';
-import { actx }     from './audio.js';
+import { actx }     from './audio/context.js';
 import { idbSet, idbGet, audioKey, IDB_SENTINEL } from './db.js';
 import { historyPush } from './history.js';
 import { fft, hannWindow } from './dsp/fft.js';

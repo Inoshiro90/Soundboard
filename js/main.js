@@ -4,10 +4,10 @@
  * BUGFIX: AudioContext is NEVER created on load.
  * _startMasterMeter() is deferred until first user interaction.
  */
-import { load }                        from './storage.js';
+import { load }                        from './storage/persistence.js';
 import { registerEvents }              from './events.js';
 import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, initTileAddChoice, initSlotEditModal } from './ui.js';
-import { ensurePitchWorklet, actx, hasAudioContext } from './audio.js';
+import { ensurePitchWorklet, actx, hasAudioContext } from './audio/context.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
 import { APP }                         from './core/state.js';

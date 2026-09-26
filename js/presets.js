@@ -15,7 +15,8 @@
  */
 
 import { APP } from './core/state.js';
-import { defaultEffects, IR_IMPULSE_NAMES } from './audio.js';
+import { defaultEffects } from './audio/effect-graph.js';
+import { IR_IMPULSE_NAMES } from './audio/ir-data.js';
 import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import { uid } from './utils.js';
 
@@ -91,7 +92,7 @@ export const BUILTIN_PRESET_META = {
 };
 
 // ─── EFFEKTMODULE, DIE EIN PRESET SETZEN KANN ─────────────────
-// Muss synchron mit defaultEffects()/buildEffectChain() in audio.js
+// Muss synchron mit defaultEffects()/buildEffectChain() in audio/effect-graph.js
 // gehalten werden. 'analyzer' bewusst ausgeschlossen: reine
 // Visualisierungseinstellung ohne akustische Wirkung, kein Teil eines
 // Audio-Effekt-Presets. 'enabled'/'preset' sind Sound-Laufzeitfelder,
@@ -217,7 +218,7 @@ export function getPresetsByCategory(category) {
 
 // ─── VALIDIERUNG / NORMALISIERUNG (Kap. 18, 19, 26) ───────────
 // Wertebereiche gespiegelt aus den bestehenden Clamp-Grenzen in
-// audio.js (buildEffectChain()/_buildX()-Funktionen) bzw. den
+// audio/effect-graph.js (buildEffectChain()/_buildX()-Funktionen) bzw. den
 // Slider-min/max-Attributen in index.html. Verhindert NaN/Infinity/
 // ungültige Strings/Werte außerhalb des sinnvollen Bereichs in
 // importierten Presets, bevor sie in die Audio-Engine gelangen.
@@ -317,7 +318,7 @@ export function normalizeEffectsObject(raw) {
   out.noiseGate = filt('noiseGate');
 
   const eq10Src = (src.eq10 && typeof src.eq10 === 'object') ? src.eq10 : {};
-  // eq10.bands ist laut audio.js (_buildEQ10/EQ10_FREQS) immer ein flaches
+  // eq10.bands ist laut audio/effect-graph.js (_buildEQ10/EQ10_FREQS) immer ein flaches
   // Array aus 10 reinen Gain-Werten (dB) für feste Frequenzen — keine
   // Objekte. Jeden Eintrag auf eine gültige Zahl im zulässigen Bereich
   // normalisieren, fehlende/ungültige Einträge auf 0 dB.
@@ -397,7 +398,7 @@ export function isUserPreset(id) {
  * neues 6er-Schema). Jede Kategorie, die nicht (mehr) in
  * PRESET_CATEGORIES existiert, fällt auf DEFAULT_CATEGORY zurück, statt
  * beim Rendern stillschweigend aus dem Dropdown zu verschwinden. Von
- * storage.js load() direkt nach dem Einlesen von APP.userPresets
+ * storage/persistence.js load() direkt nach dem Einlesen von APP.userPresets
  * aufgerufen; idempotent und ohne Wirkung, wenn nichts zu migrieren ist.
  */
 const LEGACY_CATEGORY_MAP = { character: 'supernatural' };
@@ -413,18 +414,18 @@ export function migratePresetCategories() {
   return changed;
 }
 
-// ─── IMPORT (aufgerufen von storage.js importData(), Kap. 12-13, 19) ──
+// ─── IMPORT (aufgerufen von storage/import-export.js importData(), Kap. 12-13, 19) ──
 // Format-Entscheidung (Kap. 19, dokumentiert): eine importierte Preset-
 // Datei mit unbekannten Zusatzfeldern wird NICHT abgelehnt (Felder werden
 // ignoriert); eine Datei mit fehlenden Pflichtfeldern (kein `effects`-
-// Objekt) WIRD abgelehnt (siehe validatePresetShape unten, von storage.js
+// Objekt) WIRD abgelehnt (siehe validatePresetShape unten, von storage/import-export.js
 // vor dem Aufruf dieser Funktionen genutzt). Eine unbekannte/neuere
 // `version` wird nicht hart abgelehnt (Vorwärtskompatibilität) — es wird
 // lediglich versucht, effects/Metadaten bestmöglich zu übernehmen; alle
 // Werte laufen ohnehin durch normalizeEffectsObject().
 // IDs aus der Importdatei werden NIE übernommen (Kap. 13 "Doppelte ID") —
 // jeder Import erzeugt immer eine frische ID, genau wie bei den
-// bestehenden _importXBundle()-Funktionen in storage.js. Ein gleicher
+// bestehenden _importXBundle()-Funktionen in storage/import-export.js. Ein gleicher
 // Anzeigename führt dadurch nie zu Datenverlust (Kap. 13 "Gleicher Name"):
 // das bestehende Preset bleibt unter seiner eigenen ID unangetastet.
 

@@ -34,9 +34,11 @@
 import { APP, CMP, CMTracks }        from './core/state.js';
 import { uid, iconHtmlOr, fmtTime }  from './utils.js';
 import { toast }                     from './notifications.js';
-import { actx, buildEffectChain, defaultEffects } from './audio.js';
+import { actx } from './audio/context.js';
+import { buildEffectChain, defaultEffects } from './audio/effect-graph.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
-import { _saveRaw, exportMusicTrack, exportMusicProfile } from './storage.js';
+import { _saveRaw } from './storage/persistence.js';
+import { exportMusicTrack, exportMusicProfile } from './storage/import-export.js';
 import { PENCIL_ICON_SVG, _applyTabAccent, buildIconGrid, buildColorOpts } from './ui.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -830,7 +832,7 @@ export function renderMusicPlayer() {
   // Live-Indikator am Mode-Toggle-Button (Kap. 39) — analog zum Ambient-Muster.
   document.getElementById('btnModeMusic')?.classList.toggle('has-live-indicator', playing);
   // Prompt 4: ergänzende, nicht rein farbliche Statusvermittlung (analog zu
-  // den neuen Sound-/Ambient-Indikatoren, s. audio.js/ambient.js) — bislang
+  // den neuen Sound-/Ambient-Indikatoren, s. audio/playback.js/ambient.js) — bislang
   // trug nur der Punkt (::after) die Information.
   const liveDesc = document.getElementById('btnModeMusicLiveDesc');
   if (liveDesc) liveDesc.textContent = playing ? 'Wiedergabe aktiv' : '';
@@ -882,7 +884,7 @@ export function registerMusicEvents() {
   document.getElementById('btnAddMusicProfile')?.addEventListener('click', () => _dispatchEditProfile(null));
 
   // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
-  // immer die AKTIVE Playlist (exportMusicProfile() unverändert aus storage.js).
+  // immer die AKTIVE Playlist (exportMusicProfile() unverändert aus storage/import-export.js).
   document.getElementById('btnExportMusicProfileTab')?.addEventListener('click', () => {
     const p = CMP();
     if (p) exportMusicProfile(p.id); else toast('Keine Musik-Playlist vorhanden', 'err');

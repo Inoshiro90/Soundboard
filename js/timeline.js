@@ -14,7 +14,8 @@
 import { APP, CItems }   from './core/state.js';
 import { uid, bk }       from './utils.js';
 import { toast }         from './notifications.js';
-import { actx, stopAll } from './audio.js';
+import { actx } from './audio/context.js';
+import { stopAll } from './audio/playback.js';
 import { historyPush, snapshotTimeline } from './history.js';
 
 // ─── TRACK MANAGEMENT ────────────────────────────────────────

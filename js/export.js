@@ -9,10 +9,10 @@
 import { APP }  from './core/state.js';
 import { toast } from './notifications.js';
 import { bk }   from './utils.js';
-import { actx } from './audio.js';
+import { actx } from './audio/context.js';
 import { renderSoundGraph } from './renderPipeline.js';
 import { idbGet, audioKey, isIdbRef } from './db.js';
-import { decodeAudio } from './audio.js';
+import { decodeAudio } from './audio/playback.js';
 import { timelineMixdown } from './timeline.js';
 
 // ─── WAV ENCODING ─────────────────────────────────────────────

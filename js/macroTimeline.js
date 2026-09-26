@@ -232,7 +232,7 @@ export function previewPlay(audioCtx) {
     const buf   = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
     if (!buf)   return;
 
-    // Respect trim — same as playSound() in audio.js
+    // Respect trim — same as playSound() in audio/playback.js
     const slot = sound.slots?.[slotIdx] || sound.slots?.[0];
     const ts   = slot?.trimStart || 0;
     let   te   = slot?.trimEnd ?? buf.duration;
@@ -401,7 +401,7 @@ function _stepDuration(step) {
       const slotIdx = sound.curSlot || 0;
       const buf     = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
       if (buf) {
-        // Respect trimming — same logic as playSound() in audio.js
+        // Respect trimming — same logic as playSound() in audio/playback.js
         const slot = sound.slots?.[slotIdx] || sound.slots?.[0];
         const ts   = slot?.trimStart || 0;
         const te   = (slot?.trimEnd != null && slot.trimEnd > ts) ? slot.trimEnd : buf.duration;
