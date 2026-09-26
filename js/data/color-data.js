@@ -20,7 +20,7 @@ export const COLORS = [
 
 /**
  * Anzeige-Namen der Palette (Prompt 1, Kap. 1) — dienen als Metadaten für
- * `title`/ARIA-Label im Farbpicker (buildColorOpts() in ui.js). Gespeichert
+ * `title`/ARIA-Label im Farbpicker (buildColorOpts() in ui/color-picker.js). Gespeichert
  * wird weiterhin ausschließlich der Hex-Wert; dieses Mapping ist rein
  * kosmetisch und niemals Teil des persistierten Datenmodells.
  */

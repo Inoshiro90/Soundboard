@@ -39,7 +39,9 @@ import { buildEffectChain, defaultEffects } from './audio/effect-graph.js';
 import { idbSet, idbGet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw } from './storage/persistence.js';
 import { exportMusicTrack, exportMusicProfile } from './storage/import-export.js';
-import { PENCIL_ICON_SVG, _applyTabAccent, buildIconGrid, buildColorOpts } from './ui.js';
+import { PENCIL_ICON_SVG, _applyTabAccent } from './ui/tabs.js';
+import { buildIconGrid } from './ui/icon-picker.js';
+import { buildColorOpts } from './ui/color-picker.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 

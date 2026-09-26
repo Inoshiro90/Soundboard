@@ -167,7 +167,7 @@ function _triggerRender() {
   // Use setTimeout to break potential circular dependency chain
   setTimeout(() => {
     if (typeof window !== 'undefined' && window.__sbRenderGrid) window.__sbRenderGrid();
-    else import('./ui.js').then(m => { if (m.renderGrid) m.renderGrid(); });
+    else import('./ui/grid.js').then(m => { if (m.renderGrid) m.renderGrid(); });
   }, 0);
 }
 

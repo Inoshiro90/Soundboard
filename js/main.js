@@ -6,7 +6,11 @@
  */
 import { load }                        from './storage/persistence.js';
 import { registerEvents }              from './events.js';
-import { renderGrid, renderProfileTabs, applyProfileSettings, syncThemeIcon, initTileAddChoice, initSlotEditModal } from './ui.js';
+import { renderGrid, initTileAddChoice } from './ui/grid.js';
+import { renderProfileTabs, applyProfileSettings } from './ui/tabs.js';
+import { syncThemeIcon } from './ui/icon-picker.js';
+import { initSlotEditModal } from './ui/slot-editor.js';
+import {normaliseOrders} from './ui/drag-drop.js';
 import { ensurePitchWorklet, actx, hasAudioContext } from './audio/context.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';

@@ -16,14 +16,15 @@ import {
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
 } from './presets.js';
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
-import {
-  renderGrid, renderProfileTabs, applyProfileSettings,
-  buildIconGrid, buildColorOpts, renderSlotList, renderMacroSteps,
-  openTrimModal, drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel, normaliseOrders,
-  startPeakRmsMeter, stopPeakRmsMeter,
-  syncThemeIcon, isTileEditMode, setTileEditMode, getSlotEditIndex,
-  renderPresetDropdown, renderPresetOptions, markTrimSaved
-} from './ui.js';
+import { renderGrid } from './ui/grid.js';
+import { renderProfileTabs, applyProfileSettings, renderPresetDropdown, renderPresetOptions } from './ui/tabs.js';
+import { isTileEditMode, setTileEditMode, normaliseOrders } from './ui/drag-drop.js';
+import { buildIconGrid, syncThemeIcon } from './ui/icon-picker.js';
+import { buildColorOpts } from './ui/color-picker.js';
+import { renderSlotList, openTrimModal, getSlotEditIndex, markTrimSaved } from './ui/slot-editor.js';
+import { drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel } from './ui/trim-canvas.js';
+import { startPeakRmsMeter, stopPeakRmsMeter } from './ui/meters.js';
+import { renderMacroSteps } from './ui/macro-steps.js';
 import {
   exportDataWithAudio, importData,
   exportProfile, exportAmbientProfile, exportMusicProfile,
@@ -1748,7 +1749,7 @@ export function registerEvents() {
 
   // ─── Bearbeitungsmodus (Kacheln) — Fertig-Button + Tap-außerhalb ──
   // Umschaltung jetzt per Toolbar-Button #btnTileEditMode statt Long-Press
-  // (Long-Press verschiebt jetzt direkt die Kachel, siehe ui.js
+  // (Long-Press verschiebt jetzt direkt die Kachel, siehe ui/drag-drop.js
   // setupTileEditGestures). #btnTileEditMode muss von der "Klick außerhalb
   // schließt den Modus"-Erkennung ausgenommen werden — sonst würde das
   // pointerdown-Ereignis des eigenen Klicks den Modus schon VOR dem
@@ -1767,7 +1768,7 @@ export function registerEvents() {
   document.getElementById('btnToolbarAddMacro')?.addEventListener('click', () => openMacroModal(null));
 
   // Makro-Erstellung lebt außerdem weiterhin im "+"-Menü leerer Kacheln
-  // (ui.js: _openTileAddChoice → openMacroModal(null, placeholderId))
+  // (ui/grid.js: _openTileAddChoice → openMacroModal(null, placeholderId))
   // für den Fall, dass eine bestimmte leere Kachel befüllt werden soll.
 
   // Wiedergabe-Einstellungen: Dialogbox statt Popover (Prompt 2, Kap. 4) —
@@ -2023,7 +2024,7 @@ export function registerEvents() {
           for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
           const decoded = await actx().decodeAudioData(arr.buffer.slice(0));
           // Slot könnte inzwischen per Drag-and-Drop verschoben worden
-          // sein — _ed_N folgt dem Slot-Objekt über ui.js' Reorder-Resync,
+          // sein — _ed_N folgt dem Slot-Objekt über ui/slot-editor.js' Reorder-Resync,
           // daher hier bewusst weiterhin über den ursprünglich reservierten
           // slotIdx schreiben: renderSlotList()/der Resync-Mechanismus
           // hält _ed_N synchron zur aktuellen Position des Objekts.
@@ -2659,7 +2660,7 @@ export function registerEvents() {
       // Keys) ist POSITIONSBEZOGEN. Da Slots reordert/ersetzt/entfernt
       // worden sein können, wird er für den gesamten (alten UND neuen)
       // Index-Bereich zunächst komplett invalidiert und danach NUR mit
-      // sicher korrekten Buffern (aus _ed_N, das ui.js bei jedem Reorder
+      // sicher korrekten Buffern (aus _ed_N, das ui/slot-editor.js bei jedem Reorder
       // synchron zur jeweiligen Slot-Objekt-Identität hält) neu befüllt.
       // Für alle übrigen Slots lädt getOrDecodeBuffer() beim nächsten
       // Abspielen zuverlässig aus dem gerade normalisierten IndexedDB
@@ -2783,13 +2784,13 @@ export function registerEvents() {
   document.getElementById('btnPreviewFx')?.addEventListener('click', _handlePreviewClick);
 
   // ── TRIM MODAL ─────────────────────────────────────────────
-  // NOTE: canvas mousedown/mousemove/wheel handled by _initTrimCanvasDrag() in ui.js,
+  // NOTE: canvas mousedown/mousemove/wheel handled by _initTrimCanvasDrag() in ui/trim-canvas.js,
   // which is called from openTrimModal on 'shown.bs.modal'.
 
   document.getElementById('trimStart')?.addEventListener('input', () => { updateTrimDurLabel(); drawTrimWaveform(); });
   document.getElementById('trimEnd')?.addEventListener('input',   () => { updateTrimDurLabel(); drawTrimWaveform(); });
   // P3: Fade-Felder lösen ebenfalls updateTrimDurLabel() aus, damit der
-  // Clamp-Hinweis (s. ui.js) sofort auf Eingaben reagiert.
+  // Clamp-Hinweis (s. ui/slot-editor.js) sofort auf Eingaben reagiert.
   document.getElementById('trimFadeIn')?.addEventListener('input',  updateTrimDurLabel);
   document.getElementById('trimFadeOut')?.addEventListener('input', updateTrimDurLabel);
   // Aufräumen beim Schließen: laufende Vorschau + Meter-Loop nicht über
@@ -3111,7 +3112,7 @@ export function registerEvents() {
       Object.assign(m, { name, repeat, repeatDelay, hotkey, icon, color, tileColor, tileW, tileH, playMode, steps: _finalSteps });
     } else {
       const nm = mkMacro({ name, repeat, repeatDelay, hotkey, icon, color, tileColor, tileW, tileH, playMode, steps: _finalSteps });
-      // Add in the exact tile the user clicked "+" on (see ui.js
+      // Add in the exact tile the user clicked "+" on (see ui/grid.js
       // _openTileAddChoice), falling back to the first free slot.
       const phId  = APP._macroPhReplacingId;
       const phIdx = phId ? items.findIndex(x => x.id === phId) : -1;

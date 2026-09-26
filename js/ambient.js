@@ -33,7 +33,7 @@ import { getOrDecodeBuffer, invalidateBuffer }   from './audioCache.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from './db.js';
 import { _saveRaw } from './storage/persistence.js';
 import { exportAmbientTrack, exportAmbientProfile } from './storage/import-export.js';
-import { PENCIL_ICON_SVG, _applyTabAccent }       from './ui.js';
+import { PENCIL_ICON_SVG, _applyTabAccent }       from './ui/tabs.js';
 import { buildNoiseGenerator, setNoiseGeneratorType } from './generators.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
