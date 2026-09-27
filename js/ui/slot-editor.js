@@ -3,14 +3,13 @@
  * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
-import { APP } from '../core/state.js';
-import { bk } from '../utils.js';
+import { APP, CItems } from '../core/state.js';
 import { playBufferPreview } from '../audio/playback.js';
 import { toast } from '../notifications.js';
 import { detectClipping } from '../analysis.js';
 import { createModalDraftGuard } from '../modalGuards.js';
 import { renderLucideIcons } from './icon-picker.js';
-import { drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel } from './trim-canvas.js';
+import { drawTrimWaveform, updateTrimDurLabel, _initTrimCanvasDrag, _initTrimZoom } from './trim-canvas.js';
 
 // ─── SLOT LIST ────────────────────────────────────────────────
 

@@ -8,7 +8,6 @@
 import { APP }              from '../core/state.js';
 import { STORAGE_KEY }      from '../core/constants.js';
 import { toast }            from '../notifications.js';
-import { hasAudioContext, actx } from '../audio/context.js';
 import { openDB, idbDelete, audioKey, idbSet, IDB_SENTINEL } from '../db.js';
 import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
 import { migratePresetCategories } from '../presets.js';

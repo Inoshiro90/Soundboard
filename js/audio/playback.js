@@ -8,14 +8,13 @@
 import { APP, CItems } from '../core/state.js';
 import { bk, sleep }   from '../utils.js';
 import { toast }       from '../notifications.js';
-import { idbGet, audioKey, IDB_SENTINEL, isIdbRef, openDB } from '../db.js';
-import { getOrDecodeBuffer, invalidateBuffer } from '../audioCache.js';
+import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
-// P2 Auto Duck: zirkulärer Import (ambient.js importiert umgekehrt actx/
+// P2 Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
 // hasAudioContext aus audio/context.js und buildEffectChain aus
 // audio/effect-graph.js) — funktioniert für reine Funktionsreferenzen, die
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
-import { duckAmbient } from '../ambient.js';
+import { duckAmbient } from '../ambient/ambient-playback.js';
 import { actx, hasAudioContext } from './context.js';
 // Analyzer-Steuerung lebt in audio/preview.js (Effekt-Vorschau + Analyzer);
 // playSelectedSlot() startet/stoppt den Analyzer aber auch bei normaler

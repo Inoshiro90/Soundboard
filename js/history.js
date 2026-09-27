@@ -22,7 +22,7 @@ import { toast } from './notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL } from './db.js';
 import { decodeAudio } from './audio/playback.js';
 import { bk } from './utils.js';
-import { findAmbientTrack } from './ambient.js';
+import { findAmbientTrack } from './ambient/ambient-model.js';
 
 const MAX = () => APP.history.maxSize || 50;
 

@@ -6,7 +6,7 @@
 import { CItems } from '../core/state.js';
 // Zirkulärer Import (grid.js importiert umgekehrt isTileEditMode/setupDrag
 // aus diesem Modul) — unkritisch, s. Kommentar in ui/grid.js.
-import { makeSoundTile, makeMacroTile, renderGrid } from './grid.js';
+import { renderGrid } from './grid.js';
 
 // ─── DRAG & DROP ──────────────────────────────────────────────
 

@@ -4,11 +4,10 @@
  */
 
 import { APP } from '../core/state.js';
-import { detectClipping } from '../analysis.js';
 import { clampFadeDurations } from '../renderPipeline.js';
 import { fft, hannWindow } from '../dsp/fft.js';
 
-function _initTrimZoom() {
+export function _initTrimZoom() {
   const zoomSlider = document.getElementById('trimZoom');
   if (!zoomSlider) return;
   zoomSlider.oninput = function() {
@@ -36,7 +35,7 @@ function _eventPoint(e) {
 }
 
 /** Initialise canvas mouse/touch drag — called once per modal open */
-function _initTrimCanvasDrag() {
+export function _initTrimCanvasDrag() {
   const canvas = document.getElementById('trimCanvas');
   if (!canvas) return;
 

@@ -4,7 +4,7 @@
  * Kapselt das Laden/Instanziieren des noise-generator-processor.js
  * AudioWorklets. Lautstärke wird bewusst NICHT hier gesteuert (siehe
  * Worklet-Kommentar) — der zurückgegebene Node liefert rohes Rauschen bei
- * Einheitslautstärke; ambient.js verbindet ihn wie jeden anderen
+ * Einheitslautstärke; ambient/ambient-playback.js verbindet ihn wie jeden anderen
  * Track-Typ über einen externen GainNode (_ambientTargetGain()), damit
  * Master-Volume und Auto Duck einheitlich greifen.
  */

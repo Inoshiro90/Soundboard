@@ -7,10 +7,9 @@ import { APP, CP, CAP, CMP, CItems } from './core/state.js';
 import { uid, hotkeyStr, hotkeyMatch, bk, iconHtmlOr, isCustomIcon } from './utils.js';
 import { toast }          from './notifications.js';
 import { actx } from './audio/context.js';
-import { stopAll, stopItem, runMacro, exportSoundToWav } from './audio/playback.js';
-import { previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, startAnalyzerLoop, stopAnalyzer } from './audio/preview.js';
+import { stopAll, stopItem, runMacro } from './audio/playback.js';
+import { previewSound, stopEffectPreview, syncPreviewAnalyzer, updateAnalyzerIdleHint, stopAnalyzer } from './audio/preview.js';
 import { defaultEffects, defaultPlayback, EQ10_FREQS } from './audio/effect-graph.js';
-import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import {
   getPresetById, applyPresetEffects, applyPresetToCollection, createUserPreset, updateUserPreset,
   deleteUserPreset, duplicatePreset, isUserPreset, PRESET_CATEGORIES
@@ -18,30 +17,23 @@ import {
 import { invalidateBuffer, getOrDecodeBuffer } from './audioCache.js';
 import { renderGrid } from './ui/grid.js';
 import { renderProfileTabs, applyProfileSettings, renderPresetDropdown, renderPresetOptions } from './ui/tabs.js';
-import { isTileEditMode, setTileEditMode, normaliseOrders } from './ui/drag-drop.js';
+import { isTileEditMode, setTileEditMode } from './ui/drag-drop.js';
 import { buildIconGrid, syncThemeIcon } from './ui/icon-picker.js';
 import { buildColorOpts } from './ui/color-picker.js';
-import { renderSlotList, openTrimModal, getSlotEditIndex, markTrimSaved } from './ui/slot-editor.js';
+import { renderSlotList, getSlotEditIndex, markTrimSaved } from './ui/slot-editor.js';
 import { drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel } from './ui/trim-canvas.js';
 import { startPeakRmsMeter, stopPeakRmsMeter } from './ui/meters.js';
 import { renderMacroSteps } from './ui/macro-steps.js';
-import {
-  exportDataWithAudio, importData,
-  exportProfile, exportAmbientProfile, exportMusicProfile,
-  exportSoundItem, exportAmbientTrack, exportMusicTrack,
-  exportPreset, exportUserPresets
-} from './storage/import-export.js';
+import { importData, exportProfile, exportSoundItem, exportMusicTrack, exportPreset, exportUserPresets } from './storage/import-export.js';
 import { save, resetAll, saveSlotAudio, _saveRaw } from './storage/persistence.js';
-import { mkProfile, mkSound, mkMacro, mkPH, STARTER_PLACEHOLDER_COUNT } from './storage/factories.js';
+import { mkProfile, mkMacro, mkPH, STARTER_PLACEHOLDER_COUNT } from './storage/factories.js';
 import { IDB_SENTINEL, idbGet, idbSet, idbDelete, isIdbRef, audioKey, normalizeSlotAudioStorage } from './db.js';
 import { createModalDraftGuard } from './modalGuards.js';
-import {
-  renderAmbientPanel, resetAmbient, renderAmbientProfileTabs,
-  switchAmbientProfile, saveAmbientProfile, deleteAmbientProfile,
-  setAmbientTrackIcon, setAmbientTrackColor, setAmbientTrackEffects, renameAmbientTrack,
-  setAmbientTrackVolume, toggleAmbientPlay, findAmbientTrack, persistAmbientNow
-} from './ambient.js';
-import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects, persistMusicNow, renderMusicPanel } from './music.js';
+import { resetAmbient, saveAmbientProfile, deleteAmbientProfile, setAmbientTrackIcon, setAmbientTrackColor, setAmbientTrackEffects, renameAmbientTrack, setAmbientTrackVolume, findAmbientTrack, persistAmbientNow } from './ambient/ambient-model.js';
+import { toggleAmbientPlay } from './ambient/ambient-playback.js';
+import { renderAmbientPanel, renderAmbientProfileTabs } from './ambient/ambient-render.js';
+import { editMusicTrackMeta, setMusicTrackVolume, removeMusicTrack, saveMusicProfile, deleteMusicProfile, setMusicTrackEffects, persistMusicNow } from './music/music-model.js';
+import { renderMusicPanel } from './music/music-render.js';
 import { generateToneBuffer } from './generators.js';
 import { audioBufferToWavBlob } from './export.js';
 import {
@@ -1212,8 +1204,8 @@ function findMusicTrack(id) {
 // Prompt 3, Kap. 1-4: ersetzt die frühere prompt()/confirm()-basierte
 // Playlist-Bearbeitung — gleiches Muster wie openProfileModal()/
 // openAmbientProfileModal() (Icon/Farbe über die zentralen Picker).
-// Geöffnet über 'music:editProfile' (dispatcht von music.js), um einen
-// zirkulären Import music.js ⇄ events.js zu vermeiden (gleiches Prinzip
+// Geöffnet über 'music:editProfile' (dispatcht von music/music-events.js), um einen
+// zirkulären Import music/music-events.js ⇄ events.js zu vermeiden (gleiches Prinzip
 // wie 'music:editTrack' oben).
 let _editMusicProfileId = null;
 
@@ -1793,7 +1785,7 @@ export function registerEvents() {
   document.getElementById('btnOpenMusicFxToolbar')?.addEventListener('click', openMusicFxToolbar);
 
   // P2 Auto Duck (Ambient): globale Wiedergabe-Einstellung, siehe
-  // audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+  // audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient/ambient-playback.js duckAmbient().
   document.getElementById('setAutoDuck')?.addEventListener('change', e => {
     APP.globalSettings.autoDuck.enabled = e.target.checked;
     _syncPlaybackSettingsIndicator();
@@ -1820,7 +1812,7 @@ export function registerEvents() {
       onSuccess: () => {
         applyProfileSettings(); renderProfileTabs(); renderGrid();
         renderAmbientProfileTabs(); renderAmbientPanel();
-        import('./music.js').then(m => { m.renderMusicProfileTabs(); m.renderMusicPanel(); m.renderMusicPlayer(); });
+        import('./music/music-render.js').then(m => { m.renderMusicProfileTabs(); m.renderMusicPanel(); m.renderMusicPlayer(); });
         toast('Import ✓', 'ok');
       }
     });
@@ -1829,7 +1821,7 @@ export function registerEvents() {
     resetAll({
       onDone: () => {
         applyProfileSettings(); renderProfileTabs(); renderGrid(); resetAmbient();
-        import('./music.js').then(m => m.resetMusic());
+        import('./music/music-model.js').then(m => m.resetMusic());
       }
     });
   });

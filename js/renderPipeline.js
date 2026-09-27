@@ -19,7 +19,7 @@
  * "1. Zielarchitektur: Einheitliche Render-Pipeline".
  *
  * Bewusst NICHT einbezogen in diesem Durchgang: timeline.js (Mixdown) und
- * ambient.js nutzen weiterhin ihre eigene, bestehende Graph-Logik — das
+ * ambient/ambient-playback.js nutzt weiterhin seine eigene, bestehende Graph-Logik — das
  * Umstellen dieser beiden Module auf renderSoundGraph() ist eine separate,
  * für sich genommen risikoreiche Änderung (andere Aufrufsemantik: mehrere
  * gleichzeitige Quellen, Dauerschleifen-Layer) und wird hier bewusst nicht

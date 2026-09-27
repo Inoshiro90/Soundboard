@@ -3,7 +3,6 @@
  * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
-import { APP } from '../core/state.js';
 import { EMOJI_CATS, EMOJI_KEYWORDS } from '../data/emoji-data.js';
 import { isCustomIcon, iconHtml } from '../utils.js';
 import { toast } from '../notifications.js';

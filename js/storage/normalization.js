@@ -139,7 +139,7 @@ export function _normalizeMusic(raw) {
     // Spez. Kap. 54: klares Modell statt widersprüchlicher Kombination —
     // solange KEINE bewusste manuelle Reihenfolge existiert, wird
     // alphabetisch sortiert angezeigt; erst nach der ersten manuellen
-    // Umsortierung (siehe music.js: reorderMusicTrack) zählt .order.
+    // Umsortierung (siehe music/music-model.js: reorderMusicTrack) zählt .order.
     if (typeof p.manualOrder !== 'boolean') p.manualOrder = false;
   });
 

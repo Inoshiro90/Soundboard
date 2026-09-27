@@ -13,7 +13,7 @@ import { idbSet, migrateAudioToIdb, audioKey, IDB_SENTINEL, isBase64Data } from 
 // Zirkulärer Import (persistence.js importiert umgekehrt migrateEffects/
 // migratePlaybackSettings/migrateProfileColors/runIdbMigrationIfNeeded aus
 // diesem Modul) — funktioniert wie das bereits bestehende audio/playback.js/
-// ambient.js-Muster, da _saveRaw() erst zur Laufzeit (nicht beim
+// ambient/ambient-playback.js-Muster, da _saveRaw() erst zur Laufzeit (nicht beim
 // Modul-Ladevorgang) aufgerufen wird.
 import { _saveRaw }                         from './persistence.js';
 

@@ -10,13 +10,12 @@ import { renderGrid, initTileAddChoice } from './ui/grid.js';
 import { renderProfileTabs, applyProfileSettings } from './ui/tabs.js';
 import { syncThemeIcon } from './ui/icon-picker.js';
 import { initSlotEditModal } from './ui/slot-editor.js';
-import {normaliseOrders} from './ui/drag-drop.js';
-import { ensurePitchWorklet, actx, hasAudioContext } from './audio/context.js';
+import { ensurePitchWorklet, actx } from './audio/context.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
 import { APP }                         from './core/state.js';
-import { registerAmbientEvents }       from './ambient.js';
-import { registerMusicEvents }         from './music.js';
+import { registerAmbientEvents }       from './ambient/ambient-events.js';
+import { registerMusicEvents }         from './music/music-events.js';
 import { initDisclosure }              from './ui/disclosure.js';
 
 async function init() {

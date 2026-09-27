@@ -7,8 +7,8 @@ import { APP, CItems } from '../core/state.js';
 // `uid` und `stopItem` (Zeile darunter) waren bereits im ursprünglichen
 // ui.js importiert, aber nie aufgerufen (toter Import) — mechanisch mit
 // übernommen.
-import { uid, iconHtmlOr } from '../utils.js';
-import { playSound, stopItem, runMacro, refreshRotBadge } from '../audio/playback.js';
+import { iconHtmlOr } from '../utils.js';
+import { playSound, runMacro, refreshRotBadge } from '../audio/playback.js';
 import { mkPH } from '../storage/factories.js';
 // Zirkulärer Import (drag-drop.js importiert umgekehrt makeSoundTile/
 // makeMacroTile/renderGrid aus diesem Modul; tabs.js importiert umgekehrt
@@ -16,10 +16,10 @@ import { mkPH } from '../storage/factories.js';
 // deklarationen sind, die erst zur Laufzeit aufgerufen werden (analog zum
 // bereits bestehenden audio/playback.js/ambient.js-Muster).
 import { isTileEditMode, setupDrag } from './drag-drop.js';
-import { renderPresetDropdown, updateCategories } from './tabs.js';
+import { updateCategories } from './tabs.js';
 import { renderLucideIcons } from './icon-picker.js';
 import {normaliseOrders} from './drag-drop.js';
-import {PENCIL_ICON_SVG} from '../ui.js';
+import {PENCIL_ICON_SVG} from './tabs.js';
 
 // ─── GRID ─────────────────────────────────────────────────────
 // Reines CSS-Grid seit der Einführung des Spalten-Systems

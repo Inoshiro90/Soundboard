@@ -11,7 +11,7 @@ export const APP = {
     overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
     // P2 Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
     // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
-    // Siehe audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient.js duckAmbient().
+    // Siehe audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient/ambient-playback.js duckAmbient().
     autoDuck: { enabled: false, amount: 0.7, attack: 150, release: 500 }
   },
   audioBuffers: {},
@@ -59,7 +59,7 @@ export const APP = {
   masterBus:    { limiterEnabled: true, threshold: -1, peakL: 0, peakR: 0, rafId: null },
   noiseProfile: null,          // Float32Array spectral floor for noise reduction
   // Sound-Effekte vs. Ambient-Szenen vs. Musikspuren — drei Ansichten,
-  // per Mode-Toggle umschaltbar (siehe ambient.js: setViewMode()).
+  // per Mode-Toggle umschaltbar (siehe ambient/ambient-render.js: setViewMode()).
   viewMode: 'sound',           // 'sound' | 'ambient' | 'music'
   // Ambient: separate, independently looping background layer.
   // Organised into scene-profiles (Marktplatz, Höhle, …) — same tab pattern
@@ -73,7 +73,7 @@ export const APP = {
   // Musikspuren: dritte, eigenständige Ansicht — im Unterschied zu Ambient
   // (mehrere parallele Loops) läuft hier normalerweise genau EIN Track
   // gleichzeitig, mit Playlist-Logik (Next/Previous/Shuffle/Repeat/
-  // Crossfade/Seek), siehe js/music.js. Playback läuft unabhängig von der
+  // Crossfade/Seek), siehe js/music/music-playback.js. Playback läuft unabhängig von der
   // sichtbaren Ansicht weiter (wie Ambient).
   music: {
     profiles:        [],   // [{ id, name, icon, tracks: [{ id, name, artist, album, icon, color, data, fileName, duration, vol, order }] }]

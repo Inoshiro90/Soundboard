@@ -14,8 +14,7 @@
 
 import { APP }    from './core/state.js';
 import { CItems } from './core/state.js';
-import { toast }  from './notifications.js';
-import { uid, bk } from './utils.js';
+import { bk } from './utils.js';
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const TRACK_H    = 36;   // px per row

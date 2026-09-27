@@ -22,7 +22,7 @@ class NoiseGeneratorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     // 0=white, 1=pink, 2=brown — als Zahl, da AudioParam keine Strings kennt.
     // Lautstärke wird BEWUSST NICHT hier, sondern über einen externen
-    // GainNode gesteuert (siehe generators.js/ambient.js) — konsistent mit
+    // GainNode gesteuert (siehe generators.js/ambient/ambient-playback.js) — konsistent mit
     // allen anderen Ambient-Track-Typen (_ambientTargetGain()), damit
     // Master-Volume UND Auto Duck (P2) einheitlich über denselben
     // Mechanismus greifen, ohne den Worklet-Code kennen zu müssen.

@@ -18,7 +18,7 @@ export const PENCIL_ICON_SVG =
 /**
  * Prompt 1, Kap. 5: gemeinsame Hilfsfunktion für die dezente Akzent-
  * markierung eingefärbter Tabs — von allen drei Tab-Leisten verwendet
- * (#profBar in ui/tabs.js, #ambProfBar in ambient.js, #musicProfBar in music.js),
+ * (#profBar in ui/tabs.js, #ambProfBar in ambient/ambient-render.js, #musicProfBar in music/music-render.js),
  * damit keine drei separaten Umsetzungen entstehen. Setzt KEINE
  * Vollfarbe als Hintergrund, sondern einen farbigen oberen Rand über eine
  * CSS-Custom-Property, die von .profile-tab per box-shadow ausgelesen wird

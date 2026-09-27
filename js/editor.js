@@ -18,7 +18,7 @@ import { historyPush } from './history.js';
 import { fft, hannWindow } from './dsp/fft.js';
 import { reduceNoiseSpectral } from './dsp/noiseReduction.js';
 import { getPeakDb, getRmsDb, getWeightedRmsDb, findSilenceRegions } from './analysis.js';
-import { findAmbientTrack } from './ambient.js';
+import { findAmbientTrack } from './ambient/ambient-model.js';
 
 const P4 = 'p4_'; // IDB key prefix for undo snapshots
 
@@ -88,7 +88,7 @@ function findSound(soundId) {
 /**
  * Cache-/Storage-Schlüsselbasis für einen Slot. Sounds nutzen klassisch
  * (soundId, slotIdx); Ambient-Dateivarianten werden dagegen — wie beim
- * Abspielen (s. ambient.js: getOrDecodeBuffer(file.id, 0, …)) — unter der
+ * Abspielen (s. ambient/ambient-playback.js: getOrDecodeBuffer(file.id, 0, …)) — unter der
  * EIGENEN id jeder Datei + festem Index 0 abgelegt. Ohne diese Umrechnung
  * würde eine destruktive Bearbeitung unter einem Schlüssel landen, den
  * niemand zum Abspielen wieder ausliest.
