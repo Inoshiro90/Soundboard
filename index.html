@@ -195,10 +195,6 @@
           Profil
         </button>
       </nav>
-      <button class="btn btn--sm tab-bar-row__export" id="btnExportProfileTab"
-        title="Aktives Soundeffekt-Profil als Datei exportieren" aria-label="Aktives Profil exportieren">
-        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Profil-Export
-      </button>
     </div>
 
     <!-- ════════════════════════════════ BOARD ═══════════════════════════════ -->
@@ -296,6 +292,10 @@
           </svg>
           <span class="board-toolbar__label">Audio-Effekte</span>
         </button>
+        <button class="btn board-toolbar__btn" id="btnExportProfileTab"
+          title="Aktives Soundeffekt-Profil als Datei exportieren" aria-label="Aktives Profil exportieren">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Profil-Export
+        </button>
       </div>
       <div class="edit-mode-bar" id="editModeBar" hidden>
         <span class="edit-mode-bar__label">
@@ -340,10 +340,6 @@
           Szene
         </button>
       </nav>
-      <button class="btn btn--sm tab-bar-row__export" id="btnExportAmbientProfileTab"
-        title="Aktive Ambient-Szene als Datei exportieren" aria-label="Aktive Szene exportieren">
-        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Szenen-Export
-      </button>
     </div>
 
     <!-- ═══════════════════════════════ AMBIENT BOARD ═══════════════════════════════
@@ -403,9 +399,12 @@
           </svg>
           <span class="board-toolbar__label">Audio-Effekte</span>
         </button>
-
         <input type="file" id="ambientFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
         <input type="file" id="ambientReplaceFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
+        <button class="btn board-toolbar__btn" id="btnExportAmbientProfileTab"
+          title="Aktive Ambient-Szene als Datei exportieren" aria-label="Aktive Szene exportieren">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Szenen-Export
+        </button>
       </div>
 
       <p class="ambient-empty" id="ambientEmpty">
@@ -431,10 +430,6 @@
           Playlist
         </button>
       </nav>
-      <button class="btn btn--sm tab-bar-row__export" id="btnExportMusicProfileTab"
-        title="Aktive Musik-Playlist als Datei exportieren" aria-label="Aktive Playlist exportieren">
-        <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist-Export
-      </button>
     </div>
 
     <!-- ═══════════════════════════════ MUSIK-ANSICHT ═══════════════════════════════
@@ -487,7 +482,6 @@
           </svg>
           <span class="board-toolbar__label">Lautstärke</span>
         </button>
-
         <!-- Audio-Effekte der AKTIVEN Musik-Playlist (#musicProfileModal). -->
         <button class="btn board-toolbar__btn" id="btnOpenMusicFxToolbar" disabled data-await-fragments
           title="Audio-Effekte der aktiven Playlist" aria-label="Audio-Effekte öffnen">
@@ -505,6 +499,10 @@
             <line x1="16" x2="16" y1="18" y2="22"></line>
           </svg>
           <span class="board-toolbar__label">Audio-Effekte</span>
+        </button>
+        <button class="btn board-toolbar__btn" id="btnExportMusicProfileTab"
+          title="Aktive Musik-Playlist als Datei exportieren" aria-label="Aktive Playlist exportieren">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist-Export
         </button>
         <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
