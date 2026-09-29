@@ -15,10 +15,6 @@
 	display: none !important;
 }
 
-/* Prompt 2, Kap. 2/3: #soundMenubar wurde entfernt (index.html) — "Wiedergabe"
-   lebt jetzt als normaler Button in #fxToolbar, kein zweiter, separat
-   positionierter Menüband-Block mehr nötig. */
-
 /* ─── MODE TOGGLE (navbar) ───────────────────────────────────
    Segmented two-icon control. Both icons always visible; clicking
    the inactive one switches focus/active mode to it. */
@@ -35,7 +31,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	/* Spez. Kap. 13/66: eigenständiges Icon-only-Target -> var(--h-btn) */
+	/* Eigenständiges Icon-only-Target -> var(--h-btn) */
 	width: var(--h-btn);
 	height: var(--h-btn);
 	border-radius: var(--radius-pill);
@@ -59,9 +55,9 @@
 
 /* ─── AMBIENT-ONLY MODAL FIELDS (Grundeinstellungen) ──────────
    Variant-mode toggle buttons inside the shared sound/ambient editor modal.
-   Prompt 2, Kap. 8: Loop/Zeitversetzt (#ambLoopRow/#ambIntervalRow) folgen
-   exakt demselben Referenzmuster wie Zufällig/Rotierend — gleiche Klasse,
-   gleicher Active-State, nur Icon/Label unterscheiden sich. */
+   Loop/Zeitversetzt (#ambLoopRow/#ambIntervalRow) folgen exakt demselben
+   Referenzmuster wie Zufällig/Rotierend — gleiche Klasse, gleicher
+   Active-State, nur Icon/Label unterscheiden sich. */
 #ambVariantRandom.is-active,
 #ambVariantRotate.is-active,
 #ambLoopRow.is-active,
@@ -71,11 +67,11 @@
 	border-color: var(--color-accent);
 }
 
-/* Prompt 4, Kap. 4/12: aktiver Zustand der Alle/Gleiche/Keine-
-   Überschreibungsmodus-Buttons (#profModal/#ambProfModal/#musicProfileModal,
-   je 3 Buttons) — generische Regel über [data-mode], damit nicht neun
-   einzelne ID-Selektoren gepflegt werden müssen. Gleiches optisches Muster
-   wie #ambVariantRandom.is-active & Co. oben. */
+/* Aktiver Zustand der Alle/Gleiche/Keine-Überschreibungsmodus-Buttons
+   (#profModal/#ambProfModal/#musicProfileModal, je 3 Buttons) —
+   generische Regel über [data-mode], damit nicht neun einzelne
+   ID-Selektoren gepflegt werden müssen. Gleiches optisches Muster wie
+   #ambVariantRandom.is-active & Co. oben. */
 .btn[data-mode].is-active {
 	background: var(--color-accent);
 	color: #fff;
@@ -84,7 +80,7 @@
 
 /* Lucide-Icons in Loop/Zeitversetzt, Alle/Gleiche/Keine (und vergleichbaren
    Vorschau-Kontexten) auf dieselbe optische Größe wie die Font-Awesome-
-   Icons der Referenzbuttons bringen (Kap. 8: "gleiche Typografie"). */
+   Icons der Referenzbuttons bringen. */
 .preview-icon {
 	width: 13px;
 	height: 13px;
@@ -127,12 +123,6 @@
    gemeinsam mit #fxToolbar/.music-toolbar) — hier bewusst keine eigene
    Toolbar-Implementierung mehr. */
 
-/* Prompt 4, Kap. 4/6/15: .ambient-board__count-badge (#ambientCount) und
-   .ambient-board__master/-slider (Inline-Lautstärke im Player) wurden
-   final entfernt — beide sind seit Prompt 2 nicht mehr aus dem Markup
-   referenziert (Zähler entfernt, Lautstärke lebt in #ambientVolumeModal)
-   und erfüllen keine Funktion mehr. */
-
 .ambient-empty {
 	color: var(--text-muted);
 	font-size: var(--text-caption);
@@ -143,11 +133,11 @@
 /* ─── LIST ─── */
 .ambient-list {
 	display: grid;
-	/* Spez. Kap. 9/47: rasterbasierte Mindestbreite statt einer
-     eigenständigen 320px-Konstante — an var(--grid-row-h) gekoppelt.
-     min(...,100%) verhindert Overflow, falls ein Container schmaler
-     als die berechnete Mindestbreite ist (nur oberhalb 767px aktiv,
-     s. Media Query unten, die XS/SM ohnehin auf 1fr zwingt). */
+	/* Rasterbasierte Mindestbreite statt einer eigenständigen 320px-Konstante
+     — an var(--grid-row-h) gekoppelt. min(...,100%) verhindert Overflow,
+     falls ein Container schmaler als die berechnete Mindestbreite ist (nur
+     oberhalb 767px aktiv, s. Media Query unten, die XS/SM ohnehin auf 1fr
+     zwingt). */
 	grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--grid-row-h) * 6), 100%), 1fr));
 	gap: var(--grid-gutter);
 }
@@ -177,8 +167,8 @@
 	box-shadow: none;
 }
 
-/* Prompt 1, Kap. 6: Akzent-Rand entsprechend t.color (gesetzt via
-   --row-accent, siehe _rowTemplate() in js/ambient.js). Eigene Regeln pro
+/* Akzent-Rand entsprechend t.color (gesetzt via --row-accent, siehe
+   _rowTemplate() in js/ambient/ambient-render.js). Eigene Regeln pro
    Play-Zustand, damit der Akzent IMMER sichtbar bleibt, ohne die
    bestehende box-shadow-Kennzeichnung von .is-playing zu verdrängen bzw.
    das box-shadow:none von .is-waiting zu überschreiben. */
@@ -208,7 +198,7 @@
 }
 
 .ambient-row__play {
-	/* Spez. Kap. 32: Ambient Play/Stop -> var(--h-btn) */
+	/* Ambient Play/Stop -> var(--h-btn) */
 	width: var(--h-btn);
 	height: var(--h-btn);
 	border-radius: var(--radius-circle);
@@ -237,7 +227,7 @@
 }
 
 .ambient-row__icon {
-	/* Spez. Kap. 32: Ambient Icon/Edit Target -> var(--h-btn) */
+	/* Ambient Icon/Edit Target -> var(--h-btn) */
 	width: var(--h-btn);
 	height: var(--h-btn);
 	font-size: 1.05rem;
@@ -288,7 +278,7 @@
 	padding: 1px var(--space-1);
 }
 
-/* Spez. Kap. 32: Ambient Volume Group — auf XS/SM flexibel/volle Breite,
+/* Ambient Volume Group — auf XS/SM flexibel/volle Breite,
    ab MD rasterbasiert (~1/3 der Zeile). */
 .ambient-row__vol {
 	display: flex;
@@ -318,7 +308,7 @@
 }
 
 .ambient-row__opt {
-	/* Spez. Kap. 32: Ambient Option Buttons -> var(--h-btn) */
+	/* Ambient Option Buttons -> var(--h-btn) */
 	width: var(--h-btn);
 	height: var(--h-btn);
 	border-radius: var(--radius-micro);
@@ -408,8 +398,8 @@
 	flex-shrink: 0;
 }
 .ambient-row__num {
-	/* Spez. Kap. 34: Breite Kategorie-C (kurzes Zahlenfeld), Höhe folgt
-     dem gemeinsamen Control-System. */
+	/* Breite Kategorie-C (kurzes Zahlenfeld), Höhe folgt dem gemeinsamen
+     Control-System. */
 	width: 52px;
 	height: var(--h-btn);
 	background: var(--bg-surface);
@@ -513,9 +503,9 @@
 	padding: 3px var(--space-2);
 	font-size: var(--text-badge);
 	color: var(--text-secondary);
-	/* Spez. Kap. 33: die nichtinteraktive Namens-Ellipsis (unten) trägt
-     die max-width, nicht der Chip selbst — sonst würde der Remove-
-     Button (eigenständiges Target) mit abgeschnitten. */
+	/* Die nichtinteraktive Namens-Ellipsis (unten) trägt die max-width, nicht
+     der Chip selbst — sonst würde der Remove-Button (eigenständiges
+     Target) mit abgeschnitten. */
 	max-width: none;
 }
 .ambient-row__file-chip.is-missing {
@@ -529,8 +519,8 @@
 	max-width: 130px;
 }
 .ambient-row__file-chip-btn {
-	/* Spez. Kap. 33: eigenständiges Remove-Target -> var(--h-btn) Hit Area.
-     Der sichtbare ✕-Kreis bleibt klein (siehe ::before). */
+	/* Eigenständiges Remove-Target -> var(--h-btn) Hit Area. Der sichtbare
+     ✕-Kreis bleibt klein (siehe ::before). */
 	width: var(--h-btn);
 	height: var(--h-btn);
 	display: flex;
@@ -550,11 +540,8 @@
 }
 
 /* ─── RESPONSIVE ───
-   Spez. Kap. 56: auf sanktionierten Breakpoint migriert (767px)
-   statt eigenem 600px-Wert. Die vormaligen .mode-toggle__btn-
-   Größenoverrides entfallen — var(--h-btn) ist bereits an jedem
-   Breakpoint fluide korrekt, ein zusätzlicher 380px-Sonderfall
-   (Kap. 56) ist nicht mehr nötig. */
+   Breakpoint 767px — var(--h-btn) ist bereits an jedem Breakpoint fluide
+   korrekt, keine zusätzlichen .mode-toggle__btn-Größenoverrides nötig. */
 @media (max-width: 767px) {
 	/* .board-toolbar { gap: var(--space-2); } gilt bereits gemeinsam für
 	   alle drei Boards, siehe css/layout.css. */

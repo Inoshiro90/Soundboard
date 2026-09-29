@@ -1,7 +1,6 @@
 /**
  * audio/effect-graph.js — Effekt-Graph-Konstruktion (zustandslos)
- * Ausgelagert aus audio.js (Phase 3 der Refaktorierung). Enthält die reinen
- * Knoten-Builder (_build*), buildEffectChain/buildPitchNode sowie die
+ * Enthält die reinen Knoten-Builder (_build*), buildEffectChain/buildPitchNode sowie die
  * Default-Datenmodelle für Effekte/Wiedergabeparameter.
  */
 
@@ -27,10 +26,8 @@ export function defaultEffects() {
     eq10:     { enabled: false, bands: [0,0,0,0,0,0,0,0,0,0] },
     compressor: { enabled: false, threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 },
     limiter:    { enabled: false, threshold: -1,  knee: 0,  ratio: 20, attack: 0.001, release: 0.08 },
-    // mode: P2-Erweiterung (softClip = bisheriges, unverändertes Verhalten;
-    // hardClip/bitcrush neu). Presets ohne "mode"-Feld fallen über den
-    // switch-default in _buildDistortionCurve() weiterhin auf softClip
-    // zurück — kein Migrationsschritt für bestehende Presets nötig.
+    // mode: softClip (Standard), hardClip oder bitcrush. Presets ohne "mode"-Feld fallen über den
+    // switch-default in _buildDistortionCurve() auf softClip zurück — kein Migrationsschritt nötig.
     distortion: { enabled: false, mode: 'softClip', amount: 40, oversample: '4x' },
     ringmod:    { enabled: false, frequency: 440, mix: 1 },
     pitchShift: { enabled: false, semitones: 0 },
@@ -38,9 +35,8 @@ export function defaultEffects() {
     envelope:   { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 },
     analyzer:   { enabled: false },
     spatial:    { enabled: false, x: 0, y: 0, z: -1, rolloff: 1, maxDistance: 10000, refDistance: 1, coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0 },
-    // attack/release: Stufe-A-Compressor-Approximation (siehe buildEffectChain).
-    // Bestehende Presets ohne diese Felder funktionieren unverändert weiter,
-    // da buildEffectChain() sie mit `?? 5`/`?? 150` defaultet.
+    // attack/release: Compressor-Approximation (siehe buildEffectChain). Presets ohne diese
+    // Felder funktionieren unverändert, da buildEffectChain() sie mit `?? 5`/`?? 150` defaultet.
     noiseGate:  { enabled: false, threshold: -50, attack: 5, release: 150 }
   };
 }
@@ -67,11 +63,9 @@ export function defaultPlayback() {
 export const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 /**
- * P3: bands[i] kann sowohl das alte Format (reine Zahl = Gain, fester
- * Q=1.4) als auch das neue Format ({freq, gain, Q}) sein — volle
- * Rückwärtskompatibilität mit alten Presets/gespeicherten Sounds, die
- * noch das Flat-Array-Format nutzen (u.a. alle 17 mitgelieferten
- * FX-Presets).
+ * bands[i] kann sowohl das alte Format (reine Zahl = Gain, fester Q=1.4) als auch das
+ * neue Format ({freq, gain, Q}) sein — Rückwärtskompatibilität mit älteren Presets/gespeicherten
+ * Sounds im Flat-Array-Format (u.a. alle mitgelieferten FX-Presets).
  */
 function _buildEQ10(ctx, p) {
   const bands = p.bands || new Array(10).fill(0);
@@ -111,13 +105,10 @@ function _buildCompressor(ctx, p) {
 }
 
 /**
- * P2-Erweiterung: mehrere Verzerrungs-Kurvenformen statt nur der einen
- * bisherigen weichen Sättigungskurve.
- * WICHTIG: der 'softClip'/default-Zweig verwendet BEWUSST die exakte,
- * bereits bestehende Formel (Math.PI-basiert, nicht die im Plan
- * vorgeschlagene vereinfachte (1+k)-Variante) — alle 17 FX-Presets sind
- * auf genau diese Kurve abgestimmt; ein Formelwechsel hätte deren Klang
- * unbeabsichtigt verändert.
+ * Mehrere Verzerrungs-Kurvenformen (softClip, hardClip, bitcrush).
+ * WICHTIG: der 'softClip'/default-Zweig verwendet BEWUSST die exakte Math.PI-basierte Formel
+ * (nicht eine vereinfachte (1+k)-Variante) — alle mitgelieferten FX-Presets sind auf genau diese
+ * Kurve abgestimmt; ein Formelwechsel würde deren Klang unbeabsichtigt verändern.
  */
 function _buildDistortionCurve(mode, amount) {
   const n = 512; const curve = new Float32Array(n);
@@ -145,7 +136,7 @@ function _buildDistortionCurve(mode, amount) {
   return curve;
 }
 
-/** P2: schmalbandige Frequenzunterdrückung, primär gegen Netzbrummen (50/60Hz). */
+/** Schmalbandige Frequenzunterdrückung, primär gegen Netzbrummen (50/60Hz). */
 function _buildNotch(ctx, p) {
   const n = ctx.createBiquadFilter();
   n.type = 'notch';
@@ -155,9 +146,9 @@ function _buildNotch(ctx, p) {
 }
 
 /**
- * P2: klassische Lautstärke-Modulation. Gain = dcOffset + LFO*lfoGain,
+ * Klassische Lautstärke-Modulation. Gain = dcOffset + LFO*lfoGain,
  * pendelt zwischen [1-depth, 1] (depth=0 → konstant 1, kein Effekt;
- * depth=1 → pendelt zwischen 0 und 1). Siehe Plan-Funktionsbeispiel.
+ * depth=1 → pendelt zwischen 0 und 1).
  */
 function _buildTremolo(ctx, p) {
   const lfo = ctx.createOscillator();
@@ -180,7 +171,7 @@ function _buildTremolo(ctx, p) {
 }
 
 /**
- * P2: modulierte Delay-Line, gemeinsame Basis für Chorus (lang, kein
+ * Modulierte Delay-Line, gemeinsame Basis für Chorus (lang, kein
  * Feedback) und Flanger (kurz, mit Feedback) — siehe _buildChorus/
  * _buildFlanger. `maxDelay` (Sekunden) begrenzt den DelayNode-Puffer und
  * muss baseDelay+depth mit Sicherheitsabstand abdecken, sonst würde die
@@ -226,11 +217,10 @@ function _buildChorus(ctx, p)  { return _buildModulatedDelay(ctx, p, { withFeedb
 function _buildFlanger(ctx, p) { return _buildModulatedDelay(ctx, p, { withFeedback: true,  maxDelay: 0.04 }); }
 
 /**
- * P3: Wahwah — LFO-modulierter Bandpass, klassischer "Wah"-Sweep-Klang.
- * depthHz proportional zur Basisfrequenz skaliert (siehe Plan-Formel),
- * damit "depth" bei jeder Basisfrequenz einen vergleichbar hörbaren
- * Sweep-Bereich ergibt (ein fixer Hz-Wert würde bei niedrigem baseFreq
- * unverhältnismäßig groß wirken).
+ * Wahwah — LFO-modulierter Bandpass, klassischer "Wah"-Sweep-Klang.
+ * depthHz wird proportional zur Basisfrequenz skaliert, damit "depth" bei jeder
+ * Basisfrequenz einen vergleichbar hörbaren Sweep-Bereich ergibt (ein fixer Hz-Wert
+ * würde bei niedrigem baseFreq unverhältnismäßig groß wirken).
  */
 function _buildWahwah(ctx, p) {
   const filter = ctx.createBiquadFilter();
@@ -250,13 +240,11 @@ function _buildWahwah(ctx, p) {
 }
 
 /**
- * P3: Ring Modulation — Träger-Oszillator moduliert direkt den Gain
- * des Eingangssignals (Web-Audio-Parameter-Modulation als pragmatische
- * Näherung an echte Signal-Multiplikation, siehe Plan-Hinweis: bei
- * Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer
- * Multiplikation Input×Träger — technisch keine exakte Ring-Modulation
- * wie mit einem dedizierten AudioWorklet, klanglich aber der
- * charakteristische metallische/oktavierte Effekt).
+ * Ring Modulation — Träger-Oszillator moduliert direkt den Gain des Eingangssignals
+ * (Web-Audio-Parameter-Modulation als pragmatische Näherung an echte Signal-Multiplikation:
+ * bei Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer Multiplikation
+ * Input×Träger — technisch keine exakte Ring-Modulation wie mit einem dedizierten
+ * AudioWorklet, klanglich aber der charakteristische metallische/oktavierte Effekt).
  */
 function _buildRingMod(ctx, p) {
   const carrier = ctx.createOscillator();
@@ -316,17 +304,14 @@ function _buildDelay(ctx, p) {
 
 /**
  * Baut einen Pitch-Shift-Node für GENAU den übergebenen Context.
- * BUGFIX (Pitch-Export-Konsistenz): prüft die Context-spezifische
- * Worklet-Readiness (`_pitchWorkletReadyContexts`) statt des globalen,
- * nur für den Live-Context gültigen `APP.pitchWorkletReady`-Flags. Damit
- * liefert dieselbe Funktion für Live-AudioContext UND OfflineAudioContext
- * (Export) ein konsistentes Ergebnis, sofern der Aufrufer zuvor
- * `ensurePitchWorkletFor(ctx)` ausgeführt hat.
- * Exportiert, damit export.js denselben Baustein wiederverwenden kann
- * (keine zweite, abweichende Pitch-Node-Implementierung für den Export).
+ * Prüft die Context-spezifische Worklet-Readiness (`_pitchWorkletReadyContexts`) statt des
+ * globalen, nur für den Live-Context gültigen `APP.pitchWorkletReady`-Flags. Damit liefert
+ * dieselbe Funktion für Live-AudioContext UND OfflineAudioContext (Export) ein konsistentes
+ * Ergebnis, sofern der Aufrufer zuvor `ensurePitchWorkletFor(ctx)` ausgeführt hat.
+ * Exportiert, damit export.js denselben Baustein wiederverwenden kann.
  *
  * @param {number} [numChannels=2] Kanalzahl der Quelle (buffer.numberOfChannels).
- *   Stereo-fähiger Worklet (P1): `channelCountMode:'explicit'` +
+ *   Stereo-fähiger Worklet: `channelCountMode:'explicit'` +
  *   `channelInterpretation:'discrete'` verhindert, dass der Browser bei
  *   Mono-Quellen automatisch hoch- bzw. bei Multi-Channel-Quellen
  *   heruntermischt, BEVOR der Worklet die Kanäle sieht — jeder Kanal
@@ -371,7 +356,7 @@ function _buildPanner(ctx, effects) {
 /**
  * Build the full effect chain for a given context.
  * Returns { input, output } or null.
- * BUGFIX: used in both playback AND preview — same engine for both.
+ * Used in both playback AND preview — same engine for both.
  */
 export function buildEffectChain(ctx, effects) {
   if (!effects || !effects.enabled) return null;
@@ -418,19 +403,15 @@ export function buildEffectChain(ctx, effects) {
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay));
 
-  // Tremolo: bewusst NACH dem Delay-Block platziert (Plan-Vorgabe) —
+  // Tremolo: bewusst NACH dem Delay-Block platziert —
   // moduliert damit auch die Delay-Wiederholungen mit, nicht nur das
   // Trockensignal.
   if (effects.tremolo?.enabled)    segs.push(_buildTremolo(ctx, effects.tremolo));
 
-  // BUGFIX (Noise-Gate P0, Stufe A): `effects.noiseGate` wurde bisher an
-  // keiner Stelle in buildEffectChain() ausgelesen — der UI-Regler
-  // (fxNoiseGateEnabled/-Threshold) hatte dadurch NULL Audiowirkung.
-  // Sofortmaßnahme: Compressor-Approximation. Das ist AUSDRÜCKLICH kein
-  // echtes Gate (ein DynamicsCompressorNode dämpft oberhalb, nicht
-  // unterhalb des Thresholds) — nur "irgendeine hörbare Wirkung", damit
-  // der Regler nicht mehr wirkungslos ist. Zielarchitektur (P1): echter
-  // Envelope-Follower-Gate als AudioWorkletNode (analog pitch-processor.js).
+  // Noise-Gate: Compressor-Approximation. Das ist AUSDRÜCKLICH kein echtes Gate
+  // (ein DynamicsCompressorNode dämpft oberhalb, nicht unterhalb des Thresholds) —
+  // nur eine hörbare Näherung. Ein echter Envelope-Follower-Gate als AudioWorkletNode
+  // (analog pitch-processor.js) wäre die exakte Lösung.
   if (effects.noiseGate?.enabled) {
     const g = ctx.createDynamicsCompressor();
     g.threshold.value = Math.max(-100, Math.min(0, effects.noiseGate.threshold ?? -45));
@@ -449,11 +430,6 @@ export function buildEffectChain(ctx, effects) {
   return { input: segs[0].input, output: segs[segs.length - 1].output };
 }
 
-// ─── ENVELOPE ────────────────────────────────────────────────
-// BUGFIX (P1 Render-Pipeline): Envelope-/Fade-Kurvenberechnung lebt jetzt
-// zentral in renderPipeline.js (renderSoundGraph()), auf getrennten,
-// in Serie geschalteten Gain-Nodes statt konkurrierend auf demselben Node
-// (siehe Plan Abschnitt 1.5). Die frühere _applyEnvelope()/_applyFades()/
-// _wire() hier in audio.js sind damit überflüssig geworden und entfallen
-// — playSound()/playSoundAndWait() rufen jetzt renderSoundGraph() auf.
+// Envelope-/Fade-Kurven werden zentral in renderPipeline.js (renderSoundGraph()) berechnet,
+// auf getrennten, in Serie geschalteten Gain-Nodes.
 

@@ -1,10 +1,10 @@
 /**
- * mobile.css — Phase 5 Mobile-First Styles
+ * mobile.css — Mobile-First Styles
  * Sound Modal Accordion, Sticky Basics Bar, Macro Timeline
  */
 
 /* ══════════════════════════════════════════════════════════════
-   SOUND MODAL — PHASE 5 REDESIGN
+   SOUND MODAL
    ══════════════════════════════════════════════════════════════ */
 
 /* Modal sizing: tall, internal scroll */
@@ -28,20 +28,17 @@
 	position: sticky;
 	top: 0;
 	z-index: 10;
-	/* Spez. Kap. 31: min-height statt starrer Höhe — wächst bei
-     notwendigem Textumbruch statt Inhalte abzuschneiden. */
+	/* min-height statt starrer Höhe — wächst bei notwendigem
+     Textumbruch statt Inhalte abzuschneiden. */
 	min-height: var(--h-menubar);
 }
 
-/* BUGFIX (rote Aktionsleiste): .sm-basics-row war `display:grid` OHNE
-   grid-template-columns — dadurch lief das hier stehende `flex-wrap:wrap`
-   komplett ins Leere (flex-wrap wirkt nur auf einen flex-Container, nicht
-   auf grid), UND .sm-basics-name/.sm-basics-actions ihrerseits nutzten
-   flex-Eigenschaften (`flex:1`, `flex-shrink:0`) die als Kind eines
-   grid-Containers ebenfalls wirkungslos sind. .sm-basics-actions hatte
-   dazu noch eine feste, winzige Breite (`calc(var(--w-1col)/2)` — die
-   HÄLFTE einer einzelnen Rasterspalte!) für eine Gruppe mit bis zu fünf
-   Icon+Text-Buttons. Ergebnis: die Buttons wurden auf diese winzige,
+/* .sm-basics-row braucht display:flex statt display:grid, damit das hier
+   stehende `flex-wrap:wrap` sowie die flex-Eigenschaften von
+   .sm-basics-name/.sm-basics-actions (`flex:1`, `flex-shrink:0`) greifen —
+   als Kind eines grid-Containers wären sie wirkungslos. .sm-basics-actions
+   braucht außerdem genug Breite für eine Gruppe mit bis zu fünf
+   Icon+Text-Buttons statt einer winzigen, festen Breite; sonst würden die
    nicht schrumpf- und nicht umbruchfähige Breite gepresst statt sauber
    umzubrechen — exakt das im Screenshot sichtbare Icon-only-Gedränge.
    Echtes Flexbox (mit tatsächlich wirksamem flex-wrap) ersetzt das jetzt
@@ -58,9 +55,9 @@
 }
 
 .sm-name-input {
-	/* Spez. Kap. 30: Name-Input -> volle Formularbreite, Höhe var(--h-btn).
+	/* Name-Input -> volle Formularbreite, Höhe var(--h-btn).
      min-height statt height, damit bei 200%-Textvergrößerung nichts
-     abgeschnitten wird (Kap. 46). */
+     abgeschnitten wird. */
 	font-size: 1rem;
 	font-weight: var(--fw-semibold);
 	min-height: var(--h-btn);
@@ -93,7 +90,7 @@
 	color: var(--text-primary);
 }
 
-/* BUGFIX: .sm-body is intentionally zero-padding so accordion rows
+/* .sm-body is intentionally zero-padding so accordion rows
    (.sm-section-toggle/.sm-section-body) can go edge-to-edge with their
    own background. But content that sits DIRECTLY in the body — not
    inside an .sm-section — has no padding source at all then, so it
@@ -131,7 +128,7 @@
 	color: var(--text-primary);
 	transition: background var(--dur-base);
 	gap: var(--space-2);
-	/* Spez. Kap. 30: Accordion Header -> var(--h-menubar) */
+	/* Accordion Header -> var(--h-menubar) */
 	min-height: var(--h-menubar);
 }
 
@@ -279,10 +276,8 @@
    ══════════════════════════════════════════════════════════════ */
 
 @media (hover: none) {
-	/* Spez. Kap. 9: keine zweite, unabhängige Touch-Größenlogik mehr —
-     var(--h-btn)/var(--h-menubar) erfüllen die 24×24-Mindestgröße
-     bereits an jedem Breakpoint. .slot-item ist totes Markup (die
-     reale Klasse heißt .slot-row/.slot-btn, bereits 44×44 Kategorie C). */
+	/* var(--h-btn)/var(--h-menubar) erfüllen die 24×24-Mindestgröße bereits an
+     jedem Breakpoint — keine zweite, unabhängige Touch-Größenlogik nötig. */
 	.fx-check-label {
 		padding: 4px 0;
 	}

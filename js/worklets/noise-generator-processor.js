@@ -1,8 +1,7 @@
 /**
- * noise-generator-processor.js — AudioWorklet Processor (P2)
+ * noise-generator-processor.js — AudioWorklet Processor
  * Erzeugt White-, Pink- oder Brown-Noise in Echtzeit, pro Aufruf neu
- * generiert (kein vorab erzeugter, geloopter AudioBuffer) — siehe
- * Plan-Begründung "Realtime vs. AudioBuffer-Generierung": Rauschen ist per
+ * generiert (kein vorab erzeugter, geloopter AudioBuffer): Rauschen ist per
  * Definition nicht-periodisch, ein Loop würde bei jedem Übergang eine
  * (wenn auch subtile) hörbare Wiederholung erzeugen und unnötig RAM binden.
  *
@@ -21,11 +20,11 @@
 class NoiseGeneratorProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     // 0=white, 1=pink, 2=brown — als Zahl, da AudioParam keine Strings kennt.
-    // Lautstärke wird BEWUSST NICHT hier, sondern über einen externen
-    // GainNode gesteuert (siehe generators.js/ambient/ambient-playback.js) — konsistent mit
-    // allen anderen Ambient-Track-Typen (_ambientTargetGain()), damit
-    // Master-Volume UND Auto Duck (P2) einheitlich über denselben
-    // Mechanismus greifen, ohne den Worklet-Code kennen zu müssen.
+    // Lautstärke wird BEWUSST NICHT hier, sondern über einen externen GainNode
+    // gesteuert (siehe generators.js/ambient/ambient-playback.js) — konsistent mit
+    // allen anderen Ambient-Track-Typen (_ambientTargetGain()), damit Master-Volume
+    // UND Auto Duck einheitlich über denselben Mechanismus greifen, ohne den
+    // Worklet-Code kennen zu müssen.
     return [{ name: 'type', defaultValue: 1, minValue: 0, maxValue: 2 }];
   }
 

@@ -1,6 +1,5 @@
 /**
  * ui/tabs.js — Profil-Tab-Leiste, Kategorie-Filter, Preset-Dropdown
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { APP, CItems } from '../core/state.js';
@@ -16,7 +15,7 @@ export const PENCIL_ICON_SVG =
   'aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
 
 /**
- * Prompt 1, Kap. 5: gemeinsame Hilfsfunktion für die dezente Akzent-
+ * Gemeinsame Hilfsfunktion für die dezente Akzent-
  * markierung eingefärbter Tabs — von allen drei Tab-Leisten verwendet
  * (#profBar in ui/tabs.js, #ambProfBar in ambient/ambient-render.js, #musicProfBar in music/music-render.js),
  * damit keine drei separaten Umsetzungen entstehen. Setzt KEINE
@@ -48,8 +47,8 @@ export function renderProfileTabs() {
     const tab = document.createElement('button');
     tab.className = 'profile-tab' + (p.id === APP.activeProfileId ? ' is-active' : '');
     tab.dataset.pid = p.id;
-    // Prompt 1, Kap. 5: dezente, dauerhafte Akzentmarkierung statt
-    // Vollfarben-Hintergrund — siehe _applyTabAccent() weiter unten.
+    // Dezente, dauerhafte Akzentmarkierung statt Vollfarben-Hintergrund —
+    // siehe _applyTabAccent() weiter unten.
     _applyTabAccent(tab, p.color);
     tab.innerHTML =
       `<span class="profile-tab__name">${iconHtmlOr(p.icon, '🎵', 'profile-tab__icon-img')} ${p.name}</span>` +
@@ -66,9 +65,9 @@ export function renderPresetOptions(sel, currentId) {
 
   // WICHTIG: sel.options ist eine FLACHE Liste aller <option>-Elemente,
   // auch derer innerhalb von <optgroup>s. sel.remove(1) entfernt daher nur
-  // das <option> selbst — die dadurch leer werdende <optgroup> bleibt als
-  // leere Hülle im DOM zurück. Bei jedem Re-Render (nach Preset erstellen/
-  // duplizieren/bearbeiten/löschen/importieren) sammelten sich so pro
+  // das <option> selbst — die dadurch leer werdende <optgroup> bliebe als
+  // leere Hülle im DOM zurück, und bei jedem Re-Render (nach Preset erstellen/
+  // duplizieren/bearbeiten/löschen/importieren) sammelten sich pro
   // Kategorie immer mehr leere <optgroup>-Einträge an. Stattdessen direkt
   // alle Kind-Elemente außer der ersten Option ("— Kein Preset —") aus dem
   // <select> entfernen — das räumt auch verwaiste <optgroup>s zuverlässig weg.
@@ -116,14 +115,11 @@ export function renderPresetOptions(sel, currentId) {
 }
 
 // ─── AUDIO-EFFEKT-PRESET-DROPDOWN (Sound-Editor) ──────────────
-// Ersetzt die früher statisch in index.html hinterlegten <optgroup>-Blöcke
-// ("Phase 1"/"Phase 2", technisch nach Entwicklungsphase gruppiert). Baut
-// die Optionsliste jetzt dynamisch nach akustischer Kategorie (Kap. 9) auf
-// und hängt eine eigene Gruppe für benutzerdefinierte Presets an — dadurch
-// erscheinen neu erstellte/importierte User-Presets sofort im Dropdown,
-// ohne dass HTML angefasst werden muss (Kap. 17: generisch, keine
-// Sonderfälle je Preset-ID). Dünner Wrapper um renderPresetOptions() für
-// die einzige feste Aufrufstelle #fxPreset (Prompt 4, Kap. 3).
+// Baut die Optionsliste dynamisch nach akustischer Kategorie auf und hängt
+// eine eigene Gruppe für benutzerdefinierte Presets an — dadurch erscheinen
+// neu erstellte/importierte User-Presets sofort im Dropdown, ohne dass HTML
+// angefasst werden muss (generisch, keine Sonderfälle je Preset-ID). Dünner
+// Wrapper um renderPresetOptions() für die einzige feste Aufrufstelle #fxPreset.
 export function renderPresetDropdown() {
   renderPresetOptions(document.getElementById('fxPreset'));
 }
@@ -164,7 +160,7 @@ export function applyProfileSettings() {
   const so = document.getElementById('setOverlap');    if (so) so.checked = APP.globalSettings.overlap;
   const sr = document.getElementById('setStopReplay'); if (sr) sr.checked = APP.globalSettings.stopReplay;
   const sm = document.getElementById('setMultiClick'); if (sm) sm.checked = APP.globalSettings.multiClick;
-  // P2 Auto Duck
+  // Auto Duck
   const ad = document.getElementById('setAutoDuck'); if (ad) ad.checked = !!APP.globalSettings.autoDuck?.enabled;
   const adAmt = document.getElementById('setAutoDuckAmount');
   if (adAmt) adAmt.value = APP.globalSettings.autoDuck?.amount ?? 0.7;

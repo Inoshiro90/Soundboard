@@ -1,12 +1,9 @@
 /**
  * dsp/noiseReduction.js — Spektralsubtraktions-Rauschunterdrückung.
  *
- * Algorithmus siehe AUDACITY_SOUNDBOARD_IMPLEMENTATION_PLAN.md,
- * Abschnitt "Echte spektrale Noise Reduction" → "Algorithmus-Spezifikation".
- * Läuft bewusst auf dem Haupt-Thread statt in einem Web Worker (siehe
- * Abweichungs-Hinweis im Antworttext) — für typische Soundboard-Clip-
- * längen (Sekunden bis niedrige Zehnersekunden) bleibt die Blockierung
- * kurz; bei sehr langen Clips ist ein Web Worker die im Plan empfohlene
+ * Läuft bewusst auf dem Haupt-Thread statt in einem Web Worker — für typische
+ * Soundboard-Clip-Längen (Sekunden bis niedrige Zehnersekunden) bleibt die
+ * Blockierung kurz; bei sehr langen Clips wäre ein Web Worker die sinnvolle
  * spätere Ausbaustufe.
  */
 
@@ -36,7 +33,7 @@ export function reduceNoiseSpectral(buffer, noiseProfile, params = {}) {
   const smoothingN  = Math.round(clamp(params.smoothing ?? 2, 0, 10));
   const minGainFloor = 0.05; // ≈ -26 dB, verhindert Total-Mute-Artefakte
 
-  // sensitivity (1–10 UI-Skala) → overSubtraction (1.0–3.0), s. Plan-Spezifikation
+  // sensitivity (1–10 UI-Skala) → overSubtraction (1.0–3.0)
   const overSubtraction = 1 + (sensitivity - 1) * (2 / 9);
 
   const half = fftSize / 2;

@@ -1,11 +1,11 @@
 /**
- * main.js — App Entry Point (Stable Edition)
+ * main.js — App Entry Point
  *
- * BUGFIX: AudioContext is NEVER created on load.
+ * AudioContext is never created on load.
  * _startMasterMeter() is deferred until first user interaction.
  */
 import { load }                        from './storage/persistence.js';
-import { registerEvents }              from './events.js';
+import { registerEvents }              from './events/index.js';
 import { renderGrid, initTileAddChoice } from './ui/grid.js';
 import { renderProfileTabs, applyProfileSettings } from './ui/tabs.js';
 import { syncThemeIcon } from './ui/icon-picker.js';
@@ -17,10 +17,36 @@ import { APP }                         from './core/state.js';
 import { registerAmbientEvents }       from './ambient/ambient-events.js';
 import { registerMusicEvents }         from './music/music-events.js';
 import { initDisclosure }              from './ui/disclosure.js';
+import { loadFragments }               from './fragmentLoader.js';
+import { toast }                       from './notifications.js';
+
+// Modal-Fragmente: alle beim Start laden und abwarten
+const FRAGMENT_URLS = [
+  'fragments/modals/sound-core.html',
+  'fragments/modals/sound-fx.html',
+  'fragments/modals/slot-editing.html',
+  'fragments/modals/ambient.html',
+  'fragments/modals/music.html',
+  'fragments/modals/shared.html',
+];
 
 async function init() {
   await openDB();
   await load();  // No AudioContext created here
+
+  // Fragmente vollständig laden, BEVOR irgendein Code auf Modal-Markup zugreift.
+  const { failed } = await loadFragments(FRAGMENT_URLS, '#fragment-root');
+  // Ladefenster beendet: Modal-öffnende Toolbar-Buttons (in index.html per
+  // [data-await-fragments] vorläufig gesperrt) wieder freigeben.
+  document.querySelectorAll('[data-await-fragments]').forEach(b => {
+    b.disabled = false;
+    b.removeAttribute('data-await-fragments');
+  });
+  document.body.removeAttribute('aria-busy');
+  if (failed.length) {
+    // Details (Name, Pfad, Ursache) hat der Loader bereits in die Konsole geloggt.
+    toast(`Teile der Oberfläche konnten nicht geladen werden (${failed.map(u => u.split('/').pop()).join(', ')})`, 'err');
+  }
 
   renderProfileTabs();
   applyProfileSettings();
@@ -61,7 +87,7 @@ async function init() {
     });
   });
 
-  // BUGFIX: AudioContext + master meter only after first user gesture
+  // AudioContext + master meter only after first user gesture
   const _onFirstInteraction = async () => {
     const ctx = actx(); // safe to create now
     await ensurePitchWorklet();

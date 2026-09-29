@@ -20,7 +20,7 @@
  *
  * This module only handles open/close + a11y. It never touches the
  * app/audio state and never removes or renames the IDs that
- * events.js already binds to — existing behaviour for the wrapped
+ * events/*.js already binds to — existing behaviour for the wrapped
  * controls (Export/Import/Reset, Speichern, Undo/Redo, playback
  * checkboxes …) keeps working unmodified.
  */
@@ -83,7 +83,7 @@ function _setOpen(toggle, panel, open) {
   toggle.classList.toggle('is-active', open);
   panel.hidden = !open;
   panel.dataset.open = open ? 'true' : 'false';
-  // Prompt 2, Kap. 3: inline-Varianten (data-disclosure-inline) bleiben an
+  // Inline-Varianten (data-disclosure-inline) bleiben an
   // ihrer Stelle im Formular (kein Portal, keine position:fixed-Berechnung)
   // — nur echte Popover-Trigger (ohne dieses Attribut) werden weiterhin
   // relativ zum Trigger positioniert.
@@ -99,7 +99,7 @@ function _closeAll(exceptPanel, scope = document) {
 }
 
 /**
- * Prompt 2, Kap. 3: inline-Accordion-Gruppen (data-disclosure-inline)
+ * Inline-Accordion-Gruppen (data-disclosure-inline)
  * sollen sich nur GEGENSEITIG schließen — innerhalb derselben Gruppe
  * (nächster Vorfahre mit .disclosure-group) — statt wie Popover-Trigger
  * global exklusiv zu sein. Popover-Trigger (ohne dieses Attribut) behalten

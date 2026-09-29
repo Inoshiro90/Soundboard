@@ -1,8 +1,8 @@
 /**
  * ui/icon-picker.js — Lucide-Icon-Picker (v2) + Theme-Icon-Sync + Custom-Icon-Upload
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
+import '../core/state.js';
 import { EMOJI_CATS, EMOJI_KEYWORDS } from '../data/emoji-data.js';
 import { isCustomIcon, iconHtml } from '../utils.js';
 import { toast } from '../notifications.js';
@@ -198,10 +198,10 @@ export function buildIconGrid(containerId, current) {
   grid.setAttribute('aria-label', 'Emojis');
   wrap.appendChild(grid);
 
-  // FIX #1: Insert into the live DOM BEFORE calling lucide.createIcons().
-  // Modern Lucide checks node.isConnected and silently skips detached nodes.
-  // Calling createIcons() on detached nodes was the primary root cause of
-  // icons never rendering — especially on mobile Safari.
+  // Insert into the live DOM BEFORE calling lucide.createIcons().
+  // Modern Lucide checks node.isConnected and silently skips detached nodes —
+  // calling createIcons() on detached nodes leaves icons unrendered, especially
+  // on mobile Safari.
   parent.insertBefore(wrap, ig);
 
   // NOW safe: all [data-lucide] nodes are document-connected.

@@ -1,16 +1,16 @@
 /**
  * audio/playback.js — Wiedergabe-Steuerung (zustandsbehaftet)
- * Ausgelagert aus audio.js (Phase 3 der Refaktorierung). Enthält Start/Stop
- * von Sounds/Makros (inkl. Auto-Duck, Crossfade, Rotation), Legacy-Decode,
- * den Makro-Runner, WAV-Export sowie die zugehörige Tile-UI-Synchronisation.
+ * Enthält Start/Stop von Sounds/Makros (inkl. Auto-Duck, Crossfade, Rotation), den
+ * Decode-Wrapper, den Makro-Runner, WAV-Export sowie die zugehörige Tile-UI-Synchronisation.
  */
 
 import { APP, CItems } from '../core/state.js';
 import { bk, sleep }   from '../utils.js';
 import { toast }       from '../notifications.js';
+import '../db.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
-// P2 Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
+// Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
 // hasAudioContext aus audio/context.js und buildEffectChain aus
 // audio/effect-graph.js) — funktioniert für reine Funktionsreferenzen, die
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
@@ -21,16 +21,12 @@ import { actx, hasAudioContext } from './context.js';
 // Live-Wiedergabe (nicht nur bei der Effekt-Vorschau), daher hier importiert.
 import { startAnalyzerLoop, stopAnalyzer } from './preview.js';
 
-// ─── DECODE (legacy compat) ───────────────────────────────────
+// ─── DECODE ───────────────────────────────────────────────
 
 /** @deprecated Use getOrDecodeBuffer from audioCache.js instead. */
 export function decodeAudio(key, b64) {
-  // Phase-3-Anpassung (Datei-Split): `_ctx` ist jetzt modul-privat in
-  // audio/context.js. hasAudioContext()===(_ctx!==null), also identische
-  // Bedingung; actx() liefert denselben, bereits existierenden Context
-  // (löst hier nur zusätzlich das ohnehin übliche resume() aus, falls
-  // suspendiert — keine Verhaltensänderung). BUGFIX bleibt bestehen:
-  // niemals einen neuen Context erzeugen, wenn noch keiner existiert.
+  // actx() liefert den bereits existierenden Context (löst nur das übliche resume() aus,
+  // falls suspendiert). Es wird niemals ein neuer Context erzeugt, wenn noch keiner existiert.
   if (!hasAudioContext()) return;
   const ctx = actx();
   try {
@@ -46,12 +42,11 @@ export async function decodeAudioSmart(soundId, slotIdx, slotData) {
   return getOrDecodeBuffer(soundId, slotIdx, slotData, actx());
 }
 
-// ─── AUTO DUCK (P2) ──────────────────────────────────────────
-// Senkt die Ambient-Ebene automatisch ab, sobald ein Soundboard-Sound
-// aktiv ist. Wirkungsbereich bewusst GLOBAL (ein "mindestens ein Sound
-// läuft"-Zustand), NICHT pro Sound/Szene — siehe Plan-Begründung:
-// Pro-Sound-Ducking würde bei vielen kurzen, häufig getriggerten Sounds
-// zu unruhigem Auf-und-Ab-Pumpen führen.
+// ─── AUTO DUCK ───────────────────────────────────────────
+// Senkt die Ambient-Ebene automatisch ab, sobald ein Soundboard-Sound aktiv ist.
+// Wirkungsbereich bewusst GLOBAL (ein "mindestens ein Sound läuft"-Zustand), NICHT pro
+// Sound/Szene: Pro-Sound-Ducking würde bei vielen kurzen, häufig getriggerten Sounds zu
+// unruhigem Auf-und-Ab-Pumpen führen.
 
 /** Bei Start eines Sounds: Ambient duckt Richtung (1-amount). */
 export function notifyDuckTrigger() {
@@ -84,10 +79,9 @@ export function playItem(id, callStack = []) {
 
 export async function playSound(s, opts = {}) {
   const slots = s.slots || [];
-  // Abschnitt 11: ein Sound kann jetzt gültig ganz ohne Audioslot existieren
-  // (letzter Slot im Editor entfernt) — ohne diese Prüfung würde `% slots.length`
-  // hier zu `% 0` (NaN) führen, statt der bereits an anderer Stelle etablierten
-  // "Keine Audio-Dateien geladen"-Meldung (siehe btnPreviewSound).
+  // Ein Sound kann gültig ganz ohne Audioslot existieren (letzter Slot im Editor entfernt) —
+  // ohne diese Prüfung würde `% slots.length` hier zu `% 0` (NaN) führen, statt der
+  // etablierten "Keine Audio-Dateien geladen"-Meldung (siehe btnPreviewSound).
   if (!slots.length) { toast('Keine Audio-Dateien geladen', 'err'); return; }
   let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
   if (!s.random) s.curSlot = (idx + 1) % slots.length;
@@ -95,18 +89,13 @@ export async function playSound(s, opts = {}) {
 }
 
 /**
- * Bugfix (Ursache 3 / Testfälle C, D, J): Spielt EXPLIZIT den übergebenen
- * Slot-Index ab, unabhängig davon, was `s.curSlot` inzwischen ist.
+ * Spielt EXPLIZIT den übergebenen Slot-Index ab, unabhängig davon, was `s.curSlot` inzwischen ist.
  *
- * Vorher rief playSound() bei einem Cache-Miss nach dem Lazy-Decode
- * erneut `playSound(s, opts)` auf — das wählt den Slot aber NEU (über
- * s.curSlot/Zufall), der zuvor bereits für nicht-Zufall-Wiedergabe auf
- * idx+1 weitergeschaltet worden war. Der lazy-geladene Slot idx wurde
- * dadurch nie tatsächlich abgespielt, sondern ein anderer (evtl. wieder
- * ungeladener) Slot — sichtbar als endloses "Audio lädt…" oder als
- * Wiedergabe des falschen Slots. playSelectedSlot() behält die
- * Slot-Identität über den kompletten Lazy-Load hinweg bei, indem der
- * Retry nach dem Decode erneut GENAU denselben `idx` anfordert.
+ * Nach einem Lazy-Decode darf nicht erneut `playSound(s, opts)` aufgerufen werden — das würde
+ * den Slot NEU wählen (über s.curSlot/Zufall), obwohl curSlot bereits auf idx+1 weitergeschaltet
+ * wurde. Es würde dann ein anderer (evtl. ungeladener) Slot abgespielt bzw. "Audio lädt…"
+ * liefe endlos. playSelectedSlot() behält die Slot-Identität über den kompletten Lazy-Load
+ * hinweg bei, indem der Retry nach dem Decode erneut GENAU denselben `idx` anfordert.
  */
 export async function playSelectedSlot(s, idx, opts = {}) {
   const slots = s.slots || [];
@@ -153,10 +142,8 @@ export async function playSelectedSlot(s, idx, opts = {}) {
     });
   }
 
-  // P1 Render-Pipeline (renderPipeline.js): identischer Graph-Aufbau wie
-  // Export — behebt strukturell die im P0-Audit beschriebenen Divergenzen
-  // (Pitch/Noise-Gate) und eine bei der Vereinheitlichung zusätzlich
-  // entdeckte: Fades/Envelope fehlten bisher komplett im Export-Pfad.
+  // Identischer Graph-Aufbau wie beim Export (renderPipeline.js): Live-Wiedergabe, Preview und
+  // Export teilen sich dieselbe Pipeline (Pitch, Noise-Gate, Fades/Envelope).
   const graph = await renderSoundGraph(ctx, buf, slot, s, {
     mode: opts.isPreview ? 'preview' : 'live',
     destination: ctx.destination,
@@ -167,7 +154,7 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 
   if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
   APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
-  notifyDuckTrigger(); // P2 Auto Duck
+  notifyDuckTrigger(); // Auto Duck
 
   graph.start(0);
   src.onended = () => {
@@ -177,7 +164,7 @@ export async function playSelectedSlot(s, idx, opts = {}) {
     }
     _updateSoundLiveIndicator(); refreshRotBadge(s.id);
     if (analyser && !APP.activeAudio[s.id]?.length) stopAnalyzer();
-    notifyDuckRelease(); // P2 Auto Duck — no-op, falls noch andere Sounds aktiv sind
+    notifyDuckRelease(); // Auto Duck — no-op, falls noch andere Sounds aktiv sind
   };
 
   _setPlaying(s.id, true); _updateSoundLiveIndicator();
@@ -192,25 +179,22 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 export function playSoundAndWait(s) {
   return new Promise(async resolve => {
     const slots = s.slots || [];
-    // Wie playSound() oben: ein Sound ganz ohne Audioslot ist seit Abschnitt 11
-    // ein gültiger Zustand — hier einfach überspringen (gleiches Verhalten wie
-    // ein leerer Einzel-Slot weiter unten: resolve() ohne Wiedergabe).
+    // Ein Sound ganz ohne Audioslot ist ein gültiger Zustand — hier einfach überspringen
+    // (gleiches Verhalten wie ein leerer Einzel-Slot weiter unten: resolve() ohne Wiedergabe).
     if (!slots.length) { resolve(); return; }
     let idx = s.random ? Math.floor(Math.random() * slots.length) : (s.curSlot || 0) % slots.length;
     if (!s.random) s.curSlot = (idx + 1) % slots.length;
     const slot = slots[idx]; if (!slot?.data) { resolve(); return; }
-    // Bugfix (Konsistenz aller Playback-Wege, Abschnitt 6): auch die
-    // sequenzielle Makro-Wiedergabe muss denselben Lazy-Load-Pfad wie
-    // normales Playback nutzen, statt bei einem Cache-Miss den Slot
-    // stillschweigend zu überspringen (führte zu "fehlenden" Sounds in
-    // Makros direkt nach einem Bulk-Import, bevor der Cache warmgelaufen war).
+    // Auch die sequenzielle Makro-Wiedergabe nutzt denselben Lazy-Load-Pfad wie normales
+    // Playback, statt bei einem Cache-Miss den Slot stillschweigend zu überspringen (sonst
+    // fehlen Sounds in Makros direkt nach einem Bulk-Import, bevor der Cache warm ist).
     actx();
     let buf = APP.audioBuffers[bk(s.id, idx)];
     if (!buf) buf = await decodeAudioSmart(s.id, idx, slot.data);
     if (!buf) { resolve(); return; }
     const gs = APP.globalSettings; const ctx = actx();
 
-    // allowLoop:false — Bestandsverhalten bewusst beibehalten: sequenzielle
+    // allowLoop:false — sequenzielle
     // Makro-Wiedergabe darf NIE loopen, sonst würde `onended` nie feuern
     // und die await-Kette der Makro-Sequenz für immer hängen bleiben.
     const graph = await renderSoundGraph(ctx, buf, slot, s, {
@@ -223,7 +207,7 @@ export function playSoundAndWait(s) {
 
     if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
     APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
-    notifyDuckTrigger(); // P2 Auto Duck
+    notifyDuckTrigger(); // Auto Duck
     graph.start(0);
     src.onended = () => {
       if (APP.activeAudio[s.id]) {
@@ -231,7 +215,7 @@ export function playSoundAndWait(s) {
         if (!APP.activeAudio[s.id].length) { delete APP.activeAudio[s.id]; _setPlaying(s.id, false); }
       }
       _updateSoundLiveIndicator(); refreshRotBadge(s.id);
-      notifyDuckRelease(); // P2 Auto Duck
+      notifyDuckRelease(); // Auto Duck
       resolve();
     };
     _setPlaying(s.id, true); _updateSoundLiveIndicator(); animProg(s.id, dur); refreshRotBadge(s.id);
@@ -392,8 +376,6 @@ export async function exportSoundToWav(s) {
   const slotIdx = (s.curSlot || 0) % Math.max(1, (s.slots || []).length);
   const slot    = (s.slots || [])[slotIdx]; if (!slot?.data) { toast('Kein Audio', 'err'); return; }
   let liveBuf   = APP.audioBuffers[bk(s.id, slotIdx)];
-  // Phase-3-Anpassung (Datei-Split): _ctx direkt → hasAudioContext()+actx(),
-  // s. Kommentar bei decodeAudio() oben. Keine Verhaltensänderung.
   if (!liveBuf && hasAudioContext()) liveBuf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, actx());
   if (!liveBuf) { toast('Audio nicht geladen', 'err'); return; }
   const ts = slot.trimStart || 0; let te = slot.trimEnd ?? liveBuf.duration; if (te <= ts) te = liveBuf.duration;
@@ -402,16 +384,13 @@ export async function exportSoundToWav(s) {
   try {
     const hasFx = s.effects?.enabled;
     const numCh = liveBuf.numberOfChannels; const sr = liveBuf.sampleRate;
-    // Tail-Puffer für Reverb/Delay-Ausklang (Bestandsverhalten unverändert).
+    // Tail-Puffer für Reverb/Delay-Ausklang.
     const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + (hasFx ? 3.5 : 0)) * sr), sr);
 
-    // P1 Render-Pipeline (renderPipeline.js): derselbe Graph-Aufbau wie
-    // Live-Playback/Preview. Trim geschieht per start(when, offset, duration)
-    // direkt auf dem UNGETRIMMTEN liveBuf — die manuelle Trim-Buffer-Kopie
-    // entfällt dadurch (AudioBufferSourceNode.start() mit offset/duration
-    // funktioniert für OfflineAudioContext identisch wie live). Als
-    // Nebeneffekt der Vereinheitlichung werden jetzt AUCH Fades/Envelope
-    // korrekt mitgerendert, die im alten Export-Code komplett fehlten.
+    // Derselbe Graph-Aufbau wie Live-Playback/Preview (renderPipeline.js). Trim geschieht per
+    // start(when, offset, duration) direkt auf dem UNGETRIMMTEN liveBuf — AudioBufferSourceNode.start()
+    // mit offset/duration funktioniert für OfflineAudioContext identisch wie live. Fades/Envelope
+    // werden dabei korrekt mitgerendert.
     const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
       mode: 'export',
       destination: offCtx.destination
@@ -433,13 +412,9 @@ function _setPlaying(id, on) {
   if (wrap) wrap.querySelector('.tile')?.classList.toggle('is-playing', on);
 }
 
-// Prompt 5: früher hieß diese Funktion nach der (jetzt entfernten) unteren
-// Statusleiste; sie pflegte zusätzlich deren Elemente (#sdot/#stxt) — die
-// Zählung (APP.activeAudio) und der Navbar-Indikator (Prompt 4) bleiben
-// davon unberührt, nur die statusleisten-spezifischen Zeilen entfallen.
 function _updateSoundLiveIndicator() {
   const n = Object.keys(APP.activeAudio).length;
-  // Prompt 4: Navbar-Indikator an #btnModeSound — sichtbar/aktuell aus
+  // Navbar-Indikator an #btnModeSound — sichtbar/aktuell aus
   // jeder Ansicht heraus, da hier direkt am tatsächlichen Wiedergabestatus
   // der Audio-Engine (APP.activeAudio, nicht am zuletzt geklickten Button)
   // hängend, analog zum bestehenden Musik-Indikator (has-live-indicator,

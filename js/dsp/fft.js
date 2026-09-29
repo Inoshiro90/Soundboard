@@ -1,10 +1,8 @@
 /**
  * fft.js — Kompakte, reine JS-FFT/IFFT (radix-2 Cooley-Tukey, iterativ, in-place).
  *
- * Bewusst ohne externe Abhängigkeiten (WASM/Bibliothek) gehalten, siehe
- * AUDACITY_SOUNDBOARD_IMPLEMENTATION_PLAN.md, Abschnitt "Echte spektrale
- * Noise Reduction" → Technologie-Entscheidung. Für Soundboard-typische,
- * kurze Clips ist eine reine JS-FFT ausreichend performant.
+ * Bewusst ohne externe Abhängigkeiten (WASM/Bibliothek) gehalten. Für
+ * Soundboard-typische, kurze Clips ist eine reine JS-FFT ausreichend performant.
  *
  * `n` (Länge von re/im) MUSS eine Zweierpotenz sein — Aufrufer in
  * noiseReduction.js stellen das über `nextPow2()` sicher.

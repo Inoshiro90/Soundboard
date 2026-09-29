@@ -1,0 +1,290 @@
+/* ============================================================
+   components/buttons.css — Buttons, Range-Slider, Profil-/Kategorie-Tabs
+   ============================================================ */
+
+/* ─── BUTTONS ─── */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-1);
+	font-family: var(--font-sans);
+	font-size: var(--text-badge);
+	font-weight: var(--fw-semibold);
+	letter-spacing: 0.125px;
+	/* Standard-Button — Breite inhaltsbezogen, Höhe = var(--h-btn) */
+	height: var(--h-btn);
+	padding: 0 var(--space-3);
+	border-radius: var(--radius-micro);
+	border: var(--border-whisper);
+	background: var(--bg-surface);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition:
+		color var(--dur-base) var(--ease),
+		background var(--dur-base) var(--ease),
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease),
+		transform var(--dur-fast) var(--ease);
+	white-space: nowrap;
+	flex-shrink: 0;
+	user-select: none;
+	text-transform: uppercase;
+	text-decoration: none;
+}
+.btn:hover {
+	color: var(--text-primary);
+	border-color: rgba(0, 0, 0, 0.18);
+	background: var(--bg-warm);
+}
+[data-theme='dark'] .btn:hover {
+	border-color: rgba(255, 255, 255, 0.15);
+}
+.btn:active {
+	transform: scale(0.96);
+}
+.btn:focus-visible {
+	outline: none;
+	box-shadow: var(--shadow-focus);
+}
+
+.btn--accent {
+	background: var(--color-accent);
+	color: #fff;
+	border-color: transparent;
+}
+.btn--accent:hover {
+	background: var(--color-accent-active);
+	border-color: transparent;
+	color: #fff;
+}
+
+.btn--ghost {
+	background: transparent;
+	border-color: transparent;
+}
+.btn--ghost:hover {
+	background: var(--bg-warm);
+	border-color: var(--border-color);
+}
+
+.btn--danger {
+	background: transparent;
+	color: var(--color-orange);
+	border-color: var(--color-orange);
+}
+.btn--danger:hover {
+	background: rgba(221, 91, 0, 0.08);
+}
+
+.btn--active {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	background: var(--badge-bg);
+}
+
+.btn--icon {
+	/* Icon-only-Targets — B = H = var(--h-btn) (Hit Area,
+	   nicht das Icon selbst) */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	padding: 0;
+	border-radius: var(--radius-micro);
+}
+
+.btn--sm {
+	padding: 0 var(--space-2);
+	font-size: 0.65rem;
+}
+
+/* ─── RANGE SLIDER ───
+   Sichtbarer Track bleibt schmal (4px), das <input> selbst bekommt aber
+   mindestens var(--h-btn) bedienbare Höhe. Der schmale Track wird per
+   ::-webkit-slider-runnable-track / ::-moz-range-track zentriert
+   innerhalb dieser Fläche gerendert. */
+.slider {
+	-webkit-appearance: none;
+	appearance: none;
+	height: var(--h-btn);
+	background: transparent;
+	outline: none;
+	cursor: pointer;
+	display: block;
+}
+.slider::-webkit-slider-runnable-track {
+	height: 4px;
+	background: var(--bg-warm);
+	border-radius: var(--radius-pill);
+	border: var(--border-whisper);
+}
+.slider::-moz-range-track {
+	height: 4px;
+	background: var(--bg-warm);
+	border-radius: var(--radius-pill);
+	border: var(--border-whisper);
+}
+.slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 14px;
+	height: 14px;
+	margin-top: -5px; /* (4px Track - 14px Thumb) / 2, zentriert den Thumb auf dem Track */
+	border-radius: var(--radius-circle);
+	background: var(--color-accent);
+	cursor: pointer;
+	border: 2px solid var(--bg-surface);
+	box-shadow: var(--shadow-card);
+	transition: transform var(--dur-fast) var(--ease);
+}
+.slider::-moz-range-thumb {
+	width: 14px;
+	height: 14px;
+	border-radius: var(--radius-circle);
+	background: var(--color-accent);
+	cursor: pointer;
+	border: 2px solid var(--bg-surface);
+	box-shadow: var(--shadow-card);
+	transition: transform var(--dur-fast) var(--ease);
+}
+.slider::-webkit-slider-thumb:hover {
+	transform: scale(1.15);
+}
+.slider::-moz-range-thumb:hover {
+	transform: scale(1.15);
+}
+.slider:focus-visible::-webkit-slider-thumb {
+	box-shadow: var(--shadow-focus);
+}
+.slider:focus-visible::-moz-range-thumb {
+	box-shadow: var(--shadow-focus);
+}
+
+/* ─── PROFILE TABS ───────────────────────────────────────────
+   Feste Breite von 2 Rasterspalten (--w-2col, siehe grid-system.css)
+   statt inhaltsgetriebener Breite — Profilnamen werden bei Bedarf
+   abgeschnitten (Ellipsis) statt die Zeile beliebig zu strecken.
+   Breite = var(--w-2col), Höhe = var(--h-tabbar);
+   der aktive Zustand darf die Größe nicht verändern — deshalb ist
+   der Bottom-Border immer 2px reserviert (nur die Farbe wechselt).
+   Icon+Name linksbündig, Edit-Button rechtsbündig:
+   .profile-tab selbst verteilt die zwei Kind-Elemente per
+   space-between, die Ellipsis sitzt jetzt auf .profile-tab__name
+   statt auf dem äußeren Button (der zwei Flex-Kinder hat). */
+.profile-tab {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-1);
+	width: var(--w-2col);
+	height: var(--h-tabbar);
+	flex-shrink: 0;
+	padding: 0 var(--space-2) 0 var(--space-3);
+	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+	border: var(--border-whisper);
+	border-bottom: 2px solid transparent;
+	background: var(--bg-warm);
+	color: var(--text-muted);
+	font-family: var(--font-sans);
+	font-size: var(--text-caption);
+	font-weight: var(--fw-medium);
+	cursor: pointer;
+	transition: all var(--dur-base) var(--ease);
+	box-sizing: border-box;
+}
+.profile-tab:hover {
+	color: var(--text-primary);
+	background: var(--bg-surface);
+}
+.profile-tab.is-active {
+	background: var(--bg-surface);
+	color: var(--color-accent);
+	font-weight: var(--fw-semibold);
+	border-color: var(--border-color);
+	border-bottom-color: var(--bg-surface);
+}
+
+/* Dezente, dauerhafte Akzentmarkierung für eingefärbte Tabs (Sound-Profile,
+   Ambient-Szenen, Musik-Playlists) — bewusst KEINE Vollfarbe als
+   Hintergrund. Ein box-shadow-Inset am oberen Rand ändert das Layout
+   nicht (kein zusätzlicher border, kein Reflow) und bleibt in
+   normal/hover/active gleichermaßen sichtbar, ohne mit dem unteren
+   Active-Border (der Tab/Panel optisch verschmilzt) zu kollidieren. */
+.profile-tab--accent {
+	box-shadow: inset 0 3px 0 0 var(--tab-accent);
+}
+.profile-tab--accent.is-active {
+	box-shadow: inset 0 3px 0 0 var(--tab-accent);
+}
+
+.profile-tab__name {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Eigenständiges var(--h-btn) × var(--h-btn) Target,
+   unabhängig vom umgebenden Tab-Layout. */
+.profile-tab__edit {
+	width: var(--h-btn);
+	height: var(--h-btn);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-radius: var(--radius-micro);
+	transition: color var(--dur-fast) var(--ease);
+	flex-shrink: 0;
+}
+.profile-tab__edit svg { width: 14px; height: 14px; display: block; }
+.profile-tab__edit:hover {
+	color: var(--color-accent);
+}
+
+.profile-add {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
+	border-radius: var(--radius-subtle);
+	border: 1px dashed var(--border-color);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: var(--text-caption);
+	cursor: pointer;
+	transition: all var(--dur-base) var(--ease);
+}
+.profile-add:hover {
+	border-color: var(--color-accent);
+	color: var(--color-accent);
+}
+
+/* ─── CATEGORY TABS ───
+   Keine eindeutig eigene Komponente -> semantisch nächstliegende Klasse
+   (Standard-Button) übernommen. */
+.category-tab {
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
+	border-radius: var(--radius-micro);
+	border: var(--border-whisper);
+	background: transparent;
+	color: var(--text-muted);
+	font-family: var(--font-sans);
+	font-size: var(--text-badge);
+	font-weight: var(--fw-semibold);
+	letter-spacing: 0.125px;
+	cursor: pointer;
+	transition: all var(--dur-base) var(--ease);
+}
+.category-tab:hover,
+.category-tab.is-active {
+	border-color: var(--color-accent);
+	color: var(--color-accent);
+	background: var(--badge-bg);
+}

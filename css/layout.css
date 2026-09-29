@@ -50,7 +50,7 @@
   border: var(--border-whisper);
 }
 
-/* Theme toggle in navbar — Spez. Kap. 11: Theme-Button -> var(--h-btn) */
+/* Theme toggle in navbar -> var(--h-btn) */
 .navbar-theme-btn {
   width: var(--h-btn);
   height: var(--h-btn);
@@ -95,14 +95,11 @@
   flex-shrink: 0;
 }
 
-/* Prompt 4, Kap. 10/15: .menubar-volume/__label/__slider (Inline-
-   Lautstärkeleiste im Player) final entfernt — seit Prompt 2 nicht mehr aus
-   dem Markup referenziert (Lautstärke lebt in #soundVolumeModal/
-   #ambientVolumeModal). .menubar-volume__number bleibt erhalten (Styling
-   für #masterVolNum/#ambientMasterVolNum/#musicMasterVolNum dort). */
+/* .menubar-volume__number: Styling für #masterVolNum/#ambientMasterVolNum/
+   #musicMasterVolNum (Lautstärke lebt in #soundVolumeModal/#ambientVolumeModal). */
 .menubar-volume__number {
-  /* Spez. Kap. 34: Breite als Kategorie-C-Ausnahme (kurzes Zahlenfeld),
-     Höhe folgt dem gemeinsamen Control-System (var(--h-btn)). */
+  /* Breite als Kategorie-C-Ausnahme (kurzes Zahlenfeld), Höhe folgt dem
+     gemeinsamen Control-System (var(--h-btn)). */
   width: 52px;
   height: var(--h-btn);
   text-align: center;
@@ -212,7 +209,7 @@
 }
 .profile-bar::-webkit-scrollbar { display: none; }
 
-/* ─── TAB-BAR-ROW (Prompt 4) ───
+/* ─── TAB-BAR-ROW ───
    Wrapper um .profile-bar + den Export-Button ("Profil-Export" /
    "Szenen-Export" / "Playlist-Export"). Der Export-Button sitzt bewusst
    AUSSERHALB der scrollbaren .profile-bar, damit er bei vielen Tabs nicht
@@ -484,17 +481,15 @@
 }
 
 /* ─── RESPONSIVE ───
-   Spez. Kap. 56: auf sanktionierten Breakpoint migriert (767px =
-   Ende von XS+SM / Beginn MD) statt eigenem 600px-Zwischenwert. */
+   Breakpoint 767px (Ende von XS+SM / Beginn MD). */
 @media (max-width: 767px) {
   .app-navbar        { padding: 0 var(--space-3); }
   .app-menubar       { padding: var(--space-2) var(--space-3); gap: var(--space-1); }
   .toolbar           { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
   .profile-bar       { padding: var(--space-1) var(--space-3); }
   .board             { padding: var(--space-2); }
-  /* Gilt für alle drei Board-Toolbars gleichermaßen (vormals nur in
-     .ambient-board__toolbar, css/ambient.css) — eine gemeinsame Regel statt
-     Toolbar-spezifischer Sonderwerte. */
+  /* Gilt für alle drei Board-Toolbars gleichermaßen — eine gemeinsame Regel
+     statt Toolbar-spezifischer Sonderwerte. */
   .board-toolbar     { gap: var(--space-2); }
 
   /* .app-menubar enthält ab jetzt nur noch die 2-Spalten-breiten
@@ -505,7 +500,7 @@
   /* wrap statt nowrap: greift nur ein, falls die beiden 2-Spalten-
      Buttons + Trenner auf sehr schmalen Viewports (XS) doch einmal
      knapp nicht nebeneinander passen — verhindert Overflow/Scrollbar
-     statt striktem nowrap zu erzwingen (Kap. 47). */
+     statt striktem nowrap zu erzwingen. */
   .app-menubar       { flex-wrap: wrap; }
   .app-menubar > .menubar-btn:not(.menubar-btn--wide),
   .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) {

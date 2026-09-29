@@ -1,8 +1,7 @@
 /**
- * macroTimeline.js — Visual Macro Timeline Editor (Phase 5)
+ * macroTimeline.js — Visual Macro Timeline Editor
  *
- * Replaces the old "step list with ms delay" UI with a drag-and-drop
- * canvas-based timeline. Each macro step is a coloured block on a
+ * Drag-and-drop canvas-based timeline. Each macro step is a coloured block on a
  * horizontal time axis. Steps can be dragged to set startTime.
  *
  * Data model change (backward-compatible):
@@ -14,6 +13,7 @@
 
 import { APP }    from './core/state.js';
 import { CItems } from './core/state.js';
+import './notifications.js';
 import { bk } from './utils.js';
 
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -367,6 +367,21 @@ function _bindEvents() {
   _canvas.addEventListener('contextmenu', e => { e.preventDefault(); _onRightClick(e); });
 }
 
+
+// ─── RIGHT CLICK: SCHRITT ENTFERNEN ──────────────────────────
+// Kontextmenü-Handler der Timeline (UI-Hinweis in #macroModal: "Rechtsklick = entfernen").
+// _steps ist eine Referenz auf APP.macroSteps → in-place entfernen (splice), damit auch
+// die Schrittliste (renderMacroSteps) und das Speichern denselben Zustand sehen.
+function _onRightClick(e) {
+  const r  = _canvas.getBoundingClientRect();
+  const si = _hitTest(e.clientX - r.left, e.clientY - r.top);
+  if (si < 0) return;
+  _steps.splice(si, 1);
+  _dragging = null;
+  _resize();
+  render();
+  import('./ui/macro-steps.js').then(m => m.renderMacroSteps());
+}
 
 // ─── HIT TEST ────────────────────────────────────────────────
 

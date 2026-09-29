@@ -1,13 +1,9 @@
 /**
- * audioCache.js — Zentraler Audio Buffer Cache (Phase 5 Bugfix)
+ * audioCache.js — Zentraler Audio Buffer Cache
  *
- * Problem: APP.audioBuffers[key] wird direkt überall zugegriffen —
- *   - keine Fehlerbehandlung
- *   - kein IDB-Fallback
- *   - doppeltes Decoding möglich
- *   - AudioContext vor User-Gesture
- *
- * Lösung: getOrDecodeBuffer() als einzige öffentliche Schnittstelle.
+ * getOrDecodeBuffer() ist die einzige öffentliche Schnittstelle. Sie bündelt
+ * Fehlerbehandlung, IDB-Fallback, Vermeidung von Doppel-Decoding und den
+ * Schutz vor einem AudioContext vor der User-Geste.
  *
  * Decode-Garantien:
  *   1. Nie doppelt dekodieren (pending-Map verhindert Race Conditions)

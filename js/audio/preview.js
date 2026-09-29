@@ -1,6 +1,5 @@
 /**
  * audio/preview.js — Effekt-Editor-Vorschau + Analyzer
- * Ausgelagert aus audio.js (Phase 3 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
@@ -28,12 +27,12 @@ export function startAnalyzerLoop(analyserNode, canvas, mode) {
   updateAnalyzerIdleHint();
   const bufLen = analyserNode.frequencyBinCount;
   const dataF  = new Uint8Array(bufLen); const dataT = new Uint8Array(analyserNode.fftSize);
-  // Abschnitt 25: Canvas-Backing-Store (cv.width/height) und die Theme-
+  // Canvas-Backing-Store (cv.width/height) und die Theme-
   // Farben nur bei tatsächlicher Änderung neu lesen/setzen, nicht bei
   // jedem der ~60 Frames/Sekunde — cv.width/height-Zuweisung löscht und
   // realloziert intern die gesamte Canvas-Bitmap, und getComputedStyle()
   // erzwingt einen Style-Recalc; beides pro Frame ist unnötige Last,
-  // gerade auf Mobile (Abschnitt 26).
+  // gerade auf Mobile.
   let lastW = 0, lastH = 0, lastDpr = 0;
   let accent = '#0075de', bg = '#1a1a1a';
   function _refreshThemeColors() {
@@ -69,23 +68,23 @@ export function startAnalyzerLoop(analyserNode, canvas, mode) {
   draw();
 }
 
-/* ═══════════════ EFFEKT-EDITOR-PREVIEW (isolierter Lifecycle) ═══════════
+/*
+ * Effekt-Editor-Preview (isolierter Lifecycle)
  * Läuft komplett NEBEN der normalen Soundboard-Wiedergabe: eigener State
  * (APP.audioPreview statt APP.activeAudio), kein _setPlaying()/kein
  * Tile-Highlight, kein Auto-Duck, keine Rotation-/Fortschrittsanzeige,
  * kein stopAll()/stopItem() auf echte Sounds. Nutzt aber dieselbe
- * renderSoundGraph()-Pipeline wie Live-Playback/Export (Abschnitt 28) —
+ * renderSoundGraph()-Pipeline wie Live-Playback/Export —
  * dieselben Effekte, derselbe Analyzer-Aufbau, keine zweite Engine.
  *
- * previewSound() ist der öffentliche Einstiegspunkt (Bestandsname/-signatur
- * beibehalten, Abschnitt 30) und togglet intern zwischen
+ * previewSound() ist der öffentliche Einstiegspunkt und togglet intern zwischen
  * startEffectPreview()/stopEffectPreview().
- * ══════════════════════════════════════════════════════════════════════ */
+ */
 
 function _stopPreviewSourceOnly() {
   const p = APP.audioPreview;
   if (p.src) {
-    // Abschnitt 14: mehrfaches/zu spätes .stop() (Quelle bereits von selbst
+    // Mehrfaches/zu spätes .stop() (Quelle bereits von selbst
     // beendet) darf nie zu einem sichtbaren Fehler führen.
     try { p.src.onended = null; p.src.stop(); } catch (e) { /* bereits beendet — ignorieren */ }
   }
@@ -93,7 +92,7 @@ function _stopPreviewSourceOnly() {
 
 /**
  * Zentrale, einzige Cleanup-Stelle für die Effekt-Editor-Preview
- * (Abschnitt 35). Wird aufgerufen bei: Stop-Klick, natürlichem Ende,
+ *. Wird aufgerufen bei: Stop-Klick, natürlichem Ende,
  * Start einer neuen Preview (ersetzt die alte), Modal-Schließen,
  * Speichern und Abbrechen.
  */
@@ -110,17 +109,17 @@ export function stopEffectPreview() {
 
 async function startEffectPreview(s, slotIdx) {
   const p = APP.audioPreview;
-  stopEffectPreview(); // Abschnitt 15: eine evtl. laufende/ladende Preview immer zuerst sauber beenden
+  stopEffectPreview(); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden
   const myToken = p.token; // stopEffectPreview() hat token bereits erhöht — dieser Aufruf "besitzt" ihn jetzt
 
   const slot = s.slots?.[slotIdx];
   if (!slot?.data) { toast('Slot ' + (slotIdx + 1) + ' leer'); return; }
 
   p.loading = true; _updatePreviewButton();
-  actx(); // stellt AudioContext innerhalb der User-Geste sicher (Abschnitt 21/22)
+  actx(); // stellt AudioContext innerhalb der User-Geste sicher
   const ctx = actx();
 
-  // Abschnitt 19: bestehenden Cache verwenden, nicht unnötig neu dekodieren.
+  // Bestehenden Cache verwenden, nicht unnötig neu dekodieren.
   let buf = APP.audioBuffers[bk(s.id, slotIdx)];
   if (!buf) {
     try {
@@ -140,9 +139,8 @@ async function startEffectPreview(s, slotIdx) {
 
   let graph;
   try {
-    // mode:'preview' — dieselbe Pipeline wie Live/Export (Abschnitt 28/29),
-    // erzeugt seit dem P3-Fix auch hier einen Analyser, falls in den
-    // aktuellen Effekten aktiviert (Abschnitt 3/8).
+    // mode:'preview' — dieselbe Pipeline wie Live/Export; erzeugt auch hier einen Analyser,
+    // falls in den aktuellen Effekten aktiviert.
     graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: ctx.destination });
   } catch (e) {
     console.error('[audio] Preview-Graph-Fehler:', e);
@@ -168,7 +166,7 @@ async function startEffectPreview(s, slotIdx) {
   p.soundId = s.id; p.slotIdx = slotIdx;
 
   src.onended = () => {
-    // Abschnitt 13/15: onended kann auch von einer bereits ERSETZTEN
+    // onended kann auch von einer bereits ERSETZTEN
     // Quelle nachträglich feuern — nur reagieren, wenn es noch DIESE ist.
     if (APP.audioPreview.src !== src) return;
     stopEffectPreview();
@@ -187,9 +185,9 @@ async function startEffectPreview(s, slotIdx) {
 /**
  * Öffentlicher Einstiegspunkt: togglet die Effekt-Editor-Preview für Sound
  * `s`, Slot `slotIdx`. Läuft bereits eine Preview (spielend oder ladend),
- * wird sie gestoppt (Abschnitt 5/14) — Argumente werden dann ignoriert.
+ * wird sie gestoppt — Argumente werden dann ignoriert.
  * Sonst wird eine neue gestartet (ersetzt automatisch eine evtl. andere
- * laufende Preview, Abschnitt 15).
+ * laufende Preview).
  */
 export async function previewSound(s, slotIdx) {
   if (APP.audioPreview.playing || APP.audioPreview.loading) { stopEffectPreview(); return; }
@@ -197,7 +195,7 @@ export async function previewSound(s, slotIdx) {
 }
 
 /**
- * Abschnitt 38: "Analyzer AUS ≠ Preview AUS" — reagiert auf die
+ * "Analyzer AUS ≠ Preview AUS" — reagiert auf die
  * Spektrum-Analyzer-Checkbox im FX-Dialog, OHNE eine laufende Preview zu
  * beenden. Beim Deaktivieren wird nur die Visualisierungsschleife
  * gestoppt (stopAnalyzer()); beim Reaktivieren wird — sofern gerade eine
@@ -225,7 +223,7 @@ export function syncPreviewAnalyzer(enabled) {
 
 function _updatePreviewButton() {
   const p = APP.audioPreview;
-  // Abschnitt 5: zwei Buttons steuern dieselbe Preview — #btnPreviewSound
+  // Zwei Buttons steuern dieselbe Preview — #btnPreviewSound
   // (Sticky-Bar des Sound-Editors) und #btnPreviewFx (Footer von
   // "Audio-Effekte"). Beide müssen denselben Zustand zeigen.
   ['btnPreviewSound', 'btnPreviewFx'].forEach(id => {
@@ -248,7 +246,7 @@ function _updatePreviewButton() {
 }
 
 /**
- * Abschnitt 24: dezenter Hinweis auf dem Analyzer-Canvas, solange der
+ * Dezenter Hinweis auf dem Analyzer-Canvas, solange der
  * Analyzer aktiviert, aber gerade nichts zu visualisieren ist (keine
  * laufende Preview) — sonst wirkt das Canvas nur leer/defekt. No-op außerhalb
  * des Audio-Effekt-Dialogs (Elemente existieren dann schlicht nicht im DOM).

@@ -12,7 +12,7 @@
  *
  * Quality: Good for ±6 semitones, acceptable up to ±12.
  *
- * STEREO (P1): Die Overlap-Add-Logik ist in `PitchShiftEngine` gekapselt
+ * STEREO: Die Overlap-Add-Logik ist in `PitchShiftEngine` gekapselt
  * und wird für Kanal L und Kanal R als ZWEI unabhängige Instanzen
  * betrieben (eigener Ringbuffer, eigene Grain-/Phasen-Zustände pro
  * Kanal). Kein Cross-Channel-Processing → unkorrelierte Stereo-Signale

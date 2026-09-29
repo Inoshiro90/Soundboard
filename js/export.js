@@ -1,5 +1,5 @@
 /**
- * export.js — MP3 + WAV Export (Phase 4)
+ * export.js — MP3 + WAV Export
  *
  * MP3 via lamejs (loaded from CDN in index.html).
  * WAV encoding: own implementation (no external deps).
@@ -9,6 +9,7 @@
 import { APP }  from './core/state.js';
 import { toast } from './notifications.js';
 import { bk }   from './utils.js';
+import './audio/context.js';
 import { renderSoundGraph } from './renderPipeline.js';
 import { idbGet, audioKey, isIdbRef } from './db.js';
 import { decodeAudio } from './audio/playback.js';
@@ -118,15 +119,11 @@ async function renderSoundOffline(s, slotIdx) {
   const sr     = liveBuf.sampleRate;
   const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + tail) * sr), sr);
 
-  // P1 Render-Pipeline (renderPipeline.js): renderSoundOffline() ist der
-  // tatsächlich von exportSoundWav()/exportSoundMp3() genutzte Render-Pfad
-  // und baute bisher UNABHÄNGIG von playSound()/exportSoundToWav() einen
-  // eigenen Graphen nach (Quelle des P0-Pitch-Bugs). Jetzt derselbe
-  // Baustein wie überall sonst — inkl. Fades/Envelope, die hier bisher
-  // komplett fehlten. Trim geschieht per start(when, offset, duration)
-  // direkt auf dem ungetrimmten liveBuf (funktioniert für
-  // OfflineAudioContext identisch wie live), die manuelle Trim-Buffer-
-  // Kopie entfällt dadurch.
+  // renderSoundOffline() ist der tatsächlich von exportSoundWav()/exportSoundMp3()
+  // genutzte Render-Pfad — derselbe Baustein wie überall sonst (renderPipeline.js),
+  // inkl. Fades/Envelope. Trim geschieht per start(when, offset, duration) direkt
+  // auf dem ungetrimmten liveBuf (funktioniert für OfflineAudioContext identisch
+  // wie live), eine manuelle Trim-Buffer-Kopie ist dadurch nicht nötig.
   const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
     mode: 'export',
     destination: offCtx.destination

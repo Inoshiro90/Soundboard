@@ -1,6 +1,5 @@
 /**
  * storage/normalization.js — Normalisierung von Ambient-/Musik-Datenstrukturen
- * Ausgelagert aus storage.js (Phase 2 der Refaktorierung).
  * Akzeptiert fehlende/unvollständige/veraltete Rohdaten (z.B. beim Laden aus
  * localStorage oder Import) und liefert immer eine vollständige, valide Struktur.
  */
@@ -34,8 +33,8 @@ function _normalizeAmbientTrack(t) {
   if (t.variantMode !== 'random' && t.variantMode !== 'rotate') t.variantMode = 'random';
   if (!t.name) t.name = 'Ambient';
   if (!t.icon) t.icon = '🌫️';
-  // Prompt 1, Kap. 6: Akzentfarbe für Ambient-Tracks — bestehende Tracks
-  // ohne dieses Feld erhalten automatisch 'none' (keine Akzentfarbe).
+  // Akzentfarbe für Ambient-Tracks — bestehende Tracks ohne dieses Feld
+  // erhalten automatisch 'none' (keine Akzentfarbe).
   if (!t.color) t.color = 'none';
   if (typeof t.vol !== 'number')  t.vol  = 0.7;
   if (typeof t.loop !== 'boolean') t.loop = true;
@@ -44,9 +43,9 @@ function _normalizeAmbientTrack(t) {
   if (typeof t.intervalMode !== 'boolean') t.intervalMode = false;
   if (typeof t.intervalMin !== 'number') t.intervalMin = 10;
   if (typeof t.intervalMax !== 'number') t.intervalMax = 30;
-  // Prompt 2, Kap. 17/21/23: neue, defensiv nachgerüstete Felder — bestehende
-  // Ambient-Tracks ohne diese Felder erhalten die gleichen Defaults wie
-  // _mkTrack() (neue Tracks), ohne vorhandene Werte zu überschreiben.
+  // Defensiv nachgerüstete Felder — bestehende Ambient-Tracks ohne diese Felder
+  // erhalten die gleichen Defaults wie _mkTrack() (neue Tracks), ohne vorhandene
+  // Werte zu überschreiben.
   if (t.fadeInCurve !== 'linear' && t.fadeInCurve !== 'exponential' && t.fadeInCurve !== 'sCurve') t.fadeInCurve = 'linear';
   if (t.fadeOutCurve !== 'linear' && t.fadeOutCurve !== 'exponential' && t.fadeOutCurve !== 'sCurve') t.fadeOutCurve = 'linear';
   if (!t.crossfade || typeof t.crossfade !== 'object') {
@@ -74,9 +73,9 @@ export function _normalizeAmbient(raw) {
     if (!p.id)   p.id   = uid();
     if (!p.name) p.name = 'Ambient';
     if (!p.icon) p.icon = '🌫️';
-    // Prompt 1, Kap. 5/6: Szene-Akzentfarbe — rückwärtskompatibel ergänzt.
+    // Szene-Akzentfarbe — rückwärtskompatibel ergänzt.
     if (!p.color) p.color = 'none';
-    // Prompt 4, Kap. 1: übergeordnetes Audio-Effekt-Preset der Szene.
+    // Übergeordnetes Audio-Effekt-Preset der Szene.
     if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeAmbientTrack);
@@ -95,7 +94,7 @@ export function _normalizeAmbient(raw) {
 
 // ─── MUSIC NORMALISATION ───────────────────────────────────────
 // Analog zu _normalizeAmbient — akzeptiert fehlenden/unvollständigen
-// APP.music (Migration Kap. 66: bestehende Nutzer haben noch kein
+// APP.music (Migration: bestehende Nutzer haben noch kein
 // APP.music) und liefert immer eine vollständige, valide Struktur.
 function _normalizeMusicTrack(t) {
   if (!t.id) t.id = uid();
@@ -111,7 +110,7 @@ function _normalizeMusicTrack(t) {
   if (typeof t.order    !== 'number') t.order    = 0;
   if (typeof t.trimStart !== 'number') t.trimStart = 0;
   if (t.trimEnd === undefined) t.trimEnd = null;
-  // Prompt 3, Kap. 5: bestehende Musik-Tracks ohne vollständiges
+  // Bestehende Musik-Tracks ohne vollständiges
   // Effekt-Objekt bekommen es rückwärtskompatibel ergänzt (dieselbe
   // defaultEffects()-Fabrik wie Sound/Ambient — kein eigenes Modell,
   // keine destruktive Migration bereits vorhandener Effekte).
@@ -123,20 +122,20 @@ export function _normalizeMusic(raw) {
   const a = (raw && typeof raw === 'object') ? raw : {};
   let profiles = Array.isArray(a.profiles) ? a.profiles : [];
   if (!profiles.length) {
-    // Spez. Kap. 53: leeres Standardprofil beim ersten Start, ohne Demo-Datei.
+    // Leeres Standardprofil beim ersten Start, ohne Demo-Datei.
     profiles = [mkMusicProfile('Musik', '🎵')];
   }
   profiles.forEach(p => {
     if (!p.id)   p.id   = uid();
     if (!p.name) p.name = 'Musik';
     if (!p.icon) p.icon = '🎵';
-    // Prompt 1, Kap. 5: Playlist-Akzentfarbe — rückwärtskompatibel ergänzt.
+    // Playlist-Akzentfarbe — rückwärtskompatibel ergänzt.
     if (!p.color) p.color = 'none';
-    // Prompt 4, Kap. 1: übergeordnetes Audio-Effekt-Preset der Playlist.
+    // Übergeordnetes Audio-Effekt-Preset der Playlist.
     if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
     if (!Array.isArray(p.tracks)) p.tracks = [];
     p.tracks = p.tracks.map(_normalizeMusicTrack);
-    // Spez. Kap. 54: klares Modell statt widersprüchlicher Kombination —
+    // Klares Modell statt widersprüchlicher Kombination —
     // solange KEINE bewusste manuelle Reihenfolge existiert, wird
     // alphabetisch sortiert angezeigt; erst nach der ersten manuellen
     // Umsortierung (siehe music/music-model.js: reorderMusicTrack) zählt .order.

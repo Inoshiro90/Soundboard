@@ -1,9 +1,9 @@
 /**
  * ui/slot-editor.js — Slot-Liste, Slot-Bearbeiten-Dialog, Trim-Modal-Guard
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { APP, CItems } from '../core/state.js';
+import '../utils.js';
 import { playBufferPreview } from '../audio/playback.js';
 import { toast } from '../notifications.js';
 import { detectClipping } from '../analysis.js';
@@ -14,23 +14,18 @@ import { drawTrimWaveform, updateTrimDurLabel, _initTrimCanvasDrag, _initTrimZoo
 // ─── SLOT LIST ────────────────────────────────────────────────
 
 /**
- * Bugfix (Abschnitt 4+9, Testfall H): APP.audioBuffers['_ed_N'] ist
- * positionsbezogen (N = Index in APP.editSlots), wurde aber bei einem
- * Drag-and-Drop-Reorder oder beim Entfernen eines Slots bisher NICHT
- * mitverschoben — nur das APP.editSlots-Array selbst wurde umsortiert.
- * Folge: nach einem Reorder zeigte z.B. _ed_0 weiterhin auf den Buffer,
- * der VOR dem Reorder an Position 0 lag — Slot-Vorschau (previewSlot),
- * Trim-Dialog (openTrimModal) und vor allem der beim Speichern in den
- * Haupt-Cache kopierte Buffer (bk(soundId, i)) bezogen sich dadurch auf
- * die FALSCHE Audiodatei für diese Position.
+ * APP.audioBuffers['_ed_N'] ist positionsbezogen (N = Index in APP.editSlots) und
+ * muss daher bei einem Drag-and-Drop-Reorder oder beim Entfernen eines Slots
+ * mitverschoben werden — sonst würden Slot-Vorschau (previewSlot), Trim-Dialog
+ * (openTrimModal) und vor allem der beim Speichern in den Haupt-Cache kopierte
+ * Buffer (bk(soundId, i)) die FALSCHE Audiodatei für diese Position verwenden.
  *
- * Fix: unmittelbar vor jeder Array-Mutation, die die Zuordnung
- * Index→Slot-Objekt verändert (Reorder, Entfernen), wird der aktuelle
- * _ed_N-Stand anhand der ALTEN Reihenfolge (prevSlots) auf die
- * Objekt-IDENTITÄT der Slots gemapped. Nach der Mutation wird _ed_N aus
- * diesem Mapping anhand der NEUEN Reihenfolge neu aufgebaut. Da die
- * Zuordnung über Objekt-Referenzen (nicht Indizes) läuft, ist das
- * Ergebnis unabhängig davon, wie die Slots konkret umsortiert wurden.
+ * Unmittelbar vor jeder Array-Mutation, die die Zuordnung Index→Slot-Objekt
+ * verändert (Reorder, Entfernen), wird der aktuelle _ed_N-Stand anhand der ALTEN
+ * Reihenfolge (prevSlots) auf die Objekt-IDENTITÄT der Slots gemapped. Nach der
+ * Mutation wird _ed_N aus diesem Mapping anhand der NEUEN Reihenfolge neu aufgebaut.
+ * Da die Zuordnung über Objekt-Referenzen (nicht Indizes) läuft, ist das Ergebnis
+ * unabhängig davon, wie die Slots konkret umsortiert wurden.
  */
 function _resyncEdBuffers(prevSlots) {
   const bufByObj = new Map();
@@ -66,10 +61,9 @@ export function renderSlotList() {
            <i class="fa-solid fa-play" aria-hidden="true"></i>
          </button>` : '';
 
-    // Sounddauer/Start/Ende/Zuschneiden leben jetzt gebündelt im
-    // slotEditModal (Edit-Button) — die Zeile zeigt nur noch Name +
-    // die vier Kernaktionen, dafür alle groß genug für motorisch
-    // eingeschränkte Nutzer:innen (≥44px Touch-Ziel).
+    // Sounddauer/Start/Ende/Zuschneiden leben gebündelt im slotEditModal
+    // (Edit-Button) — die Zeile zeigt nur Name + die vier Kernaktionen, alle
+    // groß genug für motorisch eingeschränkte Nutzer:innen (≥44px Touch-Ziel).
     // Aktionsbuttons in einen eigenen Wrapper (.slot-actions) gebündelt:
     // die Anzahl variiert je Slot-Zustand (Preview/Edit fehlen z.B. ohne
     // Audiodaten) — .slot-row darf daher nicht von einer festen
@@ -105,11 +99,10 @@ export function renderSlotList() {
     });
     const rmBtn = row.querySelector('.js-rm-btn');
     if (rmBtn) rmBtn.addEventListener('click', () => {
-      // Abschnitt 10+11: Entfernen muss IMMER bestätigt werden — auch für
-      // den letzten verbleibenden Slot, dessen Entfernen jetzt ausdrücklich
-      // erlaubt ist (ein Sound ganz ohne Audioslot ist ein gültiger
-      // Editor-Zustand). Bei Abbruch: keinerlei Mutation, Slot/Buffer/UI
-      // bleiben exakt wie zuvor.
+      // Entfernen muss IMMER bestätigt werden — auch für den letzten verbleibenden
+      // Slot, dessen Entfernen ausdrücklich erlaubt ist (ein Sound ganz ohne Audioslot
+      // ist ein gültiger Editor-Zustand). Bei Abbruch: keinerlei Mutation,
+      // Slot/Buffer/UI bleiben exakt wie zuvor.
       const isLastSlot = APP.editSlots.length === 1;
       const msg = isLastSlot
         ? 'Diesen Audioslot wirklich entfernen? Danach hat der Sound keine Audiospur mehr.'
@@ -215,10 +208,10 @@ function previewSlot(i) {
 }
 
 // ─── TRIM MODAL ───────────────────────────────────────────────
-// Abschnitt 7: #trimModal führt Start/Ende/Fades zunächst nur lokal im
-// Dialog (erst btnTrimSave übernimmt sie in APP.editSlots) — bekommt daher
-// einen eigenen, kleinen Dirty-Schutz über dieselbe zentrale Guard-Utility
-// wie #soundModal (keine zweite, abweichende Implementierung).
+// #trimModal führt Start/Ende/Fades zunächst nur lokal im Dialog (erst
+// btnTrimSave übernimmt sie in APP.editSlots) — bekommt daher einen
+// eigenen, kleinen Dirty-Schutz über dieselbe zentrale Guard-Utility wie
+// #soundModal (keine zweite, abweichende Implementierung).
 let _trimGuard    = null;
 let _trimBaseline = null;
 
@@ -248,10 +241,9 @@ function _ensureTrimGuard() {
 }
 
 /**
- * Von events.js' btnTrimSave-Handler VOR dem programmgesteuerten `.hide()`
+ * Von events/register-slot-events.js' btnTrimSave-Handler VOR dem programmgesteuerten `.hide()`
  * aufzurufen — verhindert, dass das erfolgreiche Übernehmen der Trimwerte
- * selbst nochmal die Verwerfen-Rückfrage auslöst (Abschnitt 13, hier für
- * den Trim-Dialog).
+ * selbst nochmal die Verwerfen-Rückfrage auslöst (hier für den Trim-Dialog).
  */
 export function markTrimSaved() {
   _trimGuard?.disarm();
@@ -264,7 +256,7 @@ export function openTrimModal(slotIdx) {
   const buf = APP.audioBuffers[`_ed_${slotIdx}`];
   if (!buf)            { toast('Audio lädt…'); return; }
 
-  // P3 Spektrogramm: bei jedem Öffnen zurücksetzen (eingeklappt) — die
+  // Spektrogramm: bei jedem Öffnen zurücksetzen (eingeklappt) — die
   // vorherige Anzeige bezog sich sonst kurzzeitig noch auf den ALTEN
   // Slot-Buffer, bis der Toggle erneut angeklickt wird. Der Cache selbst
   // (_trimSpectrogramCache) erkennt den Buffer-Wechsel ohnehin automatisch
@@ -282,7 +274,7 @@ export function openTrimModal(slotIdx) {
   APP.trim.scrollOffset = 0;
   APP.trim.playheadPos  = null;
 
-  // P2 Find Clipping: einmalig beim Öffnen berechnen (nicht bei jedem
+  // Find Clipping: einmalig beim Öffnen berechnen (nicht bei jedem
   // Redraw — detectClipping() iteriert einmal über alle Samples, das bei
   // Zoom/Scroll wiederholt auszuführen wäre unnötige Arbeit).
   const clip = detectClipping(buf, { threshold: 0.999 });

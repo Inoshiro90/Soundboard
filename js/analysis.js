@@ -1,20 +1,10 @@
-/**
- * analysis.js — Wiederverwendbare Audioanalyse (Peak, RMS).
- *
- * Bewusst schlank gehalten: nur das, was die Loudness-Normalisierung
- * (P1) tatsächlich braucht. Weitere Analysefunktionen (Clipping-Erkennung,
- * DC-Offset …) sind laut Plan als spätere P2-Erweiterung vorgesehen und
- * werden hier nicht vorweggenommen, um den Umfang nicht unnötig
- * aufzublähen (siehe Plan, Abschnitt "Vermeidung unnötiger neuer Dateien").
- */
 
 /**
  * analysis.js — Wiederverwendbare Audioanalyse (Peak, RMS, DC-Offset,
  * Clipping-Erkennung, Silence-Regionen).
  *
  * Zentrale Quelle der Wahrheit für Normalize, Loudness, Meter, Find
- * Clipping, Truncate Silence (siehe Plan Abschnitt 6, "Zentrales
- * Analyse-Modul js/analysis.js").
+ * Clipping und Truncate Silence.
  */
 
 /**
@@ -122,10 +112,8 @@ export function detectClipping(buffer, { threshold = 0.999 } = {}) {
 /**
  * Erkennt zusammenhängende Stille-Regionen (Maximum über ALLE Kanäle
  * gemeinsam unter thresholdDb), mindestens minDurationSec lang.
- * KORRIGIERT gegenüber dem ursprünglichen editRemoveSilence()-Bug, der
- * nur Kanal 0 prüfte (siehe Audit) — hier wird pro Sample-Index das
- * Maximum über alle Kanäle gebildet, sodass Stille nur erkannt wird,
- * wenn wirklich ALLE Kanäle an dieser Stelle leise sind.
+ * Pro Sample-Index wird das Maximum über alle Kanäle gebildet, sodass Stille
+ * nur erkannt wird, wenn wirklich ALLE Kanäle an dieser Stelle leise sind.
  * @returns {{startSample:number, endSample:number, durationSec:number}[]}
  */
 export function findSilenceRegions(buffer, { thresholdDb = -50, minDurationSec = 0.5 } = {}) {

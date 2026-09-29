@@ -1,6 +1,5 @@
 /**
  * music/music-model.js — Playlist-/Track-Datenmodell (CRUD)
- * Ausgelagert aus music.js (Phase 5 der Refaktorierung).
  */
 
 import { APP, CMP, CMTracks } from '../core/state.js';
@@ -12,7 +11,7 @@ import { _saveRaw } from '../storage/persistence.js';
 // Zirkulärer Import (music-playback.js importiert umgekehrt ensureMusicState/
 // _findTrack/_persist aus diesem Modul) — unkritisch, s. Kommentar in
 // music-playback.js.
-import { stopMusic, _revokeBlobUrl, _orderedTracks, _blobUrls, _resetShuffleOrder, _players, _crossfading} from './music-playback.js';
+import { stopMusic, _revokeBlobUrl, _orderedTracks, _blobUrls, _resetShuffleOrder, _players, _crossfading } from './music-playback.js';
 import { renderMusicProfileTabs, renderMusicPanel, renderMusicPlayer } from './music-render.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -51,12 +50,10 @@ export function ensureMusicState() {
   if (typeof APP.music.autoplay !== 'boolean') APP.music.autoplay = true;
 }
 
-// Exportiert (Phase 5): music-playback.js benötigt _persist() (viele Stellen)
+// Exportiert: music-playback.js benötigt _persist() (viele Stellen)
 // und _findTrack() (mehrere Stellen); music-render.js benötigt _findTrack().
-// Reine Sichtbarkeits-Erweiterung durch den Datei-Split, keine
-// Verhaltensänderung.
 export function _persist() { try { _saveRaw(); } catch (e) { console.warn('[music] persist failed:', e); } }
-/** Prompt 4: öffentlicher Persist-Wrapper, analog zu persistAmbientNow()
+/** Öffentlicher Persist-Wrapper, analog zu persistAmbientNow()
  *  in ambient/ambient-model.js — für Bulk-Änderungen von außerhalb dieses Moduls
  *  (z.B. applyPresetToCollection() auf alle Tracks einer Playlist). */
 export function persistMusicNow() { _persist(); }
@@ -84,7 +81,7 @@ function _mkTrack(name) {
     icon: MUSIC_ICONS[CMTracks().length % MUSIC_ICONS.length], color: 'none',
     data: null, fileName: '', duration: 0, vol: 1, order: CMTracks().length,
     trimStart: 0, trimEnd: null,
-    // Prompt 3, Kap. 5: vollständiges Effekt-Modell analog zu Sound/Ambient —
+    // Vollständiges Effekt-Modell analog zu Sound/Ambient —
     // dieselbe defaultEffects()-Fabrik, kein eigenes Musik-Effektmodell.
     effects: defaultEffects()
   };
@@ -102,7 +99,7 @@ export function saveMusicProfile(id, name, icon, color, audioEffectPreset) {
     const p = APP.music.profiles.find(x => x.id === id);
     if (p) {
       p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor;
-      // Prompt 4, Kap. 10: übergeordnetes Preset wird bei jedem Speichern
+      // Übergeordnetes Preset wird bei jedem Speichern
       // mitgesichert (undefined = Aufrufer hat es nicht übergeben → Feld
       // unangetastet lassen, statt es stillschweigend auf null zu setzen).
       if (audioEffectPreset !== undefined) p.audioEffectPreset = audioEffectPreset;
@@ -141,7 +138,7 @@ export function switchMusicProfile(id) {
   if (id === APP.music.activeProfileId) return;
   // Anders als Ambient-Szenenwechsel wird die Musik NICHT gestoppt — der
   // Track spielt weiter, auch wenn man die Playlist wechselt, in der er
-  // liegt (Kap. 38: Ansichten/Listen sind keine Audiomodi).
+  // liegt (Ansichten/Listen sind keine Audiomodi).
   APP.music.activeProfileId = id;
   _resetShuffleOrder();
   _persist();
@@ -203,9 +200,9 @@ export function setMusicTrackIcon(trackId, icon) {
 }
 
 /**
- * Prompt 3, Kap. 5-7: weist einem Musik-Track ein vollständiges,
+ * Weist einem Musik-Track ein vollständiges,
  * normalisiertes Effekt-Objekt zu (aus applyPresetEffects() erzeugt, s.
- * events.js) — niemals ein Merge in ein bestehendes Objekt. Wirkt beim
+ * events/register-tile-events.js) — niemals ein Merge in ein bestehendes Objekt. Wirkt beim
  * nächsten Laden des Tracks in einen Player-Slot (_loadIntoSlot() →
  * _reconnectSlotFx()); ein bereits laufender Track wird dadurch nicht
  * unterbrochen (gleiche Zurückhaltung wie bei Icon/Farbe/Name-Edits).
@@ -239,7 +236,7 @@ export function removeMusicTrack(trackId) {
   _revokeBlobUrl(trackId);
   idbDelete(audioKey(trackId, 0)).catch(() => {});
   if (wasActive) {
-    // Kap. 42: sinnvollen nächsten Track bestimmen, sonst stoppen (bereits
+    // Sinnvollen nächsten Track bestimmen, sonst stoppen (bereits
     // durch stopMusic() geschehen — activeTrackId bleibt hier bewusst leer,
     // kein automatischer Weiterlauf auf einen ggf. unerwarteten Track).
     APP.music.activeTrackId = null;
@@ -251,7 +248,7 @@ export function removeMusicTrack(trackId) {
 }
 
 /** Manuelle Umsortierung (Drag&Drop oder ↑/↓-Buttons) — schaltet ab hier
- *  dauerhaft auf .order statt alphabetischer Sortierung (Kap. 54). */
+ *  dauerhaft auf .order statt alphabetischer Sortierung. */
 export function reorderMusicTrack(idA, idB) {
   const p = CMP(); if (!p) return;
   const tracks = p.tracks || [];
@@ -279,7 +276,7 @@ export function moveMusicTrack(trackId, dir) {
 }
 
 
-// ─── RESET (Kap. 35) ───────────────────────────────────────────
+// ─── RESET ───────────────────────────────────────────────
 
 export function resetMusic() {
   stopMusic();

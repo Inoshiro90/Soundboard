@@ -1,0 +1,224 @@
+/* ============================================================
+   components/patches.css — Kachel-Overlay, Mobile-Verbesserungen, Task-Patches v5
+   ============================================================ */
+
+/* ─── TILE — remove stop overlay, no stop button ─────────────── */
+/* .tile__stop-overlay is now gone from HTML; rule kept for safety */
+.tile__stop-overlay {
+	display: none !important;
+}
+
+/* ─── MOBILE RESPONSIVE IMPROVEMENTS ──────────────────────────
+   Breakpoint XS (≤575px). */
+@media (max-width: 575px) {
+	/* Hinweis: .app-header ist totes Markup (das reale Element trägt
+	   die Klasse .app-navbar, bereits var(--h-navbar) in layout.css). */
+	.app-header {
+		padding: var(--space-1) var(--space-2);
+		gap: var(--space-1);
+	}
+	.app-logo__badge {
+		display: none;
+	}
+	.header-actions {
+		gap: 3px;
+	}
+
+	/* On small screens hide text labels in header buttons, keep icons */
+	.btn .btn-label {
+		display: none;
+	}
+
+	.toolbar {
+		padding: var(--space-1) var(--space-2);
+		gap: var(--space-2);
+	}
+
+	.board {
+		padding: var(--space-2);
+	}
+
+	/* Tile text slightly smaller but always readable */
+	.tile__label {
+		font-size: clamp(0.55rem, 3.5cqi, 0.8rem);
+	}
+	.tile__icon {
+		font-size: clamp(1.2rem, 8cqi, 2.2rem);
+	}
+}
+
+/* ─── ICON PICKER section title ──────────────────────────── */
+.icon-picker__section-title {
+	grid-column: 1 / -1;
+	font-size: var(--text-badge);
+	font-weight: var(--fw-semibold);
+	letter-spacing: 0.125px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	padding: var(--space-2) 0 var(--space-1);
+	margin-top: var(--space-1);
+	border-top: var(--border-whisper);
+}
+.icon-picker__section-title:first-child {
+	border-top: none;
+	margin-top: 0;
+	padding-top: var(--space-1);
+}
+
+/* ─── MENUBAR volume number input ────────────────────────── */
+.menubar-volume__number::-webkit-inner-spin-button,
+.menubar-volume__number::-webkit-outer-spin-button {
+	-webkit-appearance: none;
+}
+.menubar-volume__number {
+	-moz-appearance: textfield;
+}
+
+/* ─── Sound modal vol number ─────────────────────────────── */
+.vol-number-input {
+	/* Breite Kategorie-C, Höhe folgt var(--h-btn). */
+	width: 52px;
+	height: var(--h-btn);
+	text-align: center;
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	padding: 0 var(--space-2);
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-micro);
+	color: var(--text-primary);
+	outline: none;
+	transition:
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease);
+}
+.vol-number-input:focus {
+	border-color: var(--color-accent);
+	box-shadow: var(--shadow-focus);
+}
+.vol-number-input::-webkit-inner-spin-button,
+.vol-number-input::-webkit-outer-spin-button {
+	-webkit-appearance: none;
+}
+.vol-number-input {
+	-moz-appearance: textfield;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TASK-SPECIFIC PATCHES v5
+   ════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Macro step buttons — match modal footer btn size ──── */
+/* Dieselbe semantische Button-Klasse -> dieselbe Dimensionierung wie
+   jeder andere Standard-Button (var(--h-btn)). Nur Typografie/Radius
+   unterscheiden sich hier bewusst. */
+.macro-step-action-btns .btn,
+.macro-step-action-btns .btn--sm {
+	font-size: var(--text-nav); /* 15px — same as footer btns */
+	padding: 0 var(--space-4);
+	border-radius: var(--radius-subtle);
+	font-weight: var(--fw-semibold);
+}
+
+/* ─── 4. Select dropdown chevron ────────────────────────────── */
+.form-select {
+	-webkit-appearance: none;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23615d59' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right var(--space-3) center;
+	padding-right: var(--space-7);
+}
+/* [data-theme="dark"] .form-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b9a97' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+} */
+
+/* ─── 5. Tile background color swatches (reuse .color-swatch) ── */
+/* No extra CSS needed — same .color-row + .color-swatch component */
+/* Hide old color picker input when swatch mode is used */
+.tile-bg-picker-hidden {
+	display: none !important;
+}
+
+/* ─── 6. Theme toggle icon — transition for smooth swap ───── */
+.navbar-theme-btn i {
+	transition: transform var(--dur-base) var(--ease-spring);
+}
+.navbar-theme-btn:active i {
+	transform: scale(0.85) rotate(20deg);
+}
+
+/* ─── 9. Grid control row icons ─────────────────────────────── */
+.grid-control-group {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	flex-shrink: 0;
+}
+.grid-control-group__icon {
+	color: var(--text-muted);
+	font-size: 0.85rem;
+	flex-shrink: 0;
+	width: 16px;
+	text-align: center;
+}
+
+/* Emoji grid performance: contain paint for large lists */
+.icon-picker__grid {
+	content-visibility: auto;
+	contain-intrinsic-size: 0 300px;
+}
+
+/* ─── Lucide Icons global sizing ─────────────────────────────────
+   lucide.createIcons() replaces [data-lucide] with inline <svg>.
+   Ensure consistent sizing wherever Lucide SVGs appear.          */
+
+/* Navbar theme toggle */
+.navbar-theme-btn svg {
+	width: 18px;
+	height: 18px;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	fill: none;
+	display: block;
+	transition: transform var(--dur-base) var(--ease-spring);
+}
+.navbar-theme-btn:active svg {
+	transform: scale(0.85) rotate(20deg);
+}
+
+/* Grid control icons (columns-3, rows-3) */
+.grid-control-group__icon svg,
+[data-lucide].grid-control-group__icon svg {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	fill: none;
+	display: block;
+}
+
+/* Emoji picker category pills (smile, cat, apple, etc.) */
+.icon-picker__cat-pill svg {
+	width: 14px;
+	height: 14px;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	fill: none;
+	flex-shrink: 0;
+	display: block;
+}
+
+/* FIX #2: Target only <i> placeholder — NOT the <svg> Lucide creates.
+   Applying display:inline-flex to an SVG collapses it on mobile Safari. */
+i[data-lucide] {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}

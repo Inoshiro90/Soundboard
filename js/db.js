@@ -1,5 +1,5 @@
 /**
- * db.js — IndexedDB wrapper (Phase 3)
+ * db.js — IndexedDB wrapper
  *
  * Stores audio blobs (base64 strings) separately from the profile state.
  * Key schema: "audio:{soundId}:{slotIndex}"
@@ -192,7 +192,7 @@ export async function deleteSlotAudio(soundId, slotIdx) {
   await idbDelete(audioKey(soundId, slotIdx));
 }
 
-// ─── SLOT-REORDER NORMALIZATION (Bugfix: Slot-Reordering + IDB) ────
+// ─── SLOT-REORDER NORMALIZATION ────
 //
 // IDB speichert Audio positionsbezogen ("soundId:slotIndex"). Die
 // Sound-Editor-Arbeitskopie (APP.editSlots) kann aber per Drag-and-Drop
@@ -211,16 +211,16 @@ export async function deleteSlotAudio(soundId, slotIdx) {
 // automatisch mit dem Slot mit — dadurch lässt sich beim Speichern immer
 // eindeutig bestimmen, ob und wohin Audiodaten in IDB verschoben werden
 // müssen. `_idbSlot` wird vor dem Persistieren aus dem Slot entfernt
-// (siehe events.js) und ist NICHT Teil des gespeicherten Datenmodells —
+// (siehe events/register-effects-events.js, SOUND MODAL SAVE) und ist NICHT Teil des gespeicherten Datenmodells —
 // das bestehende "soundId:slotIndex"-Schema bleibt unverändert.
 //
 // Ablauf (sicher auch bei Vertauschungen/Rotationen mehrerer Slots):
-//   Phase 1: ALLE benötigten Quell-Audiodaten zuerst lesen (bevor
+//   Schritt 1: ALLE benötigten Quell-Audiodaten zuerst lesen (bevor
 //            irgendetwas geschrieben wird) — verhindert, dass ein noch
 //            benötigter alter Eintrag durch einen anderen Move
 //            überschrieben wird, bevor er gelesen wurde.
-//   Phase 2: Alle Zielpositionen schreiben.
-//   Phase 3: Verwaiste alte Positionen (die keinem finalen Slot mehr
+//   Schritt 2: Alle Zielpositionen schreiben.
+//   Schritt 3: Verwaiste alte Positionen (die keinem finalen Slot mehr
 //            entsprechen) aufräumen, begrenzt auf den bekannten
 //            ehemaligen Wertebereich (kein unbegrenzter DB-Scan nötig).
 //
@@ -231,12 +231,12 @@ export async function deleteSlotAudio(soundId, slotIdx) {
  * @param {number} [previousSlotCount=0] — Anzahl Slots, die der Sound VOR
  *                                    dieser Bearbeitung persistiert hatte
  *                                    (0 bei einem neuen Sound), für die
- *                                    Aufräum-Grenze in Phase 3.
+ *                                    Aufräum-Grenze in Schritt 3.
  */
 export async function normalizeSlotAudioStorage(soundId, slots, previousSlotCount = 0) {
   const finalCount = slots.length;
 
-  // Phase 1 + 2: nur Slots verschieben, deren Audio aktuell NICHT bereits
+  // Schritt 1 + 2: nur Slots verschieben, deren Audio aktuell NICHT bereits
   // an ihrer finalen Position liegt.
   const moves = [];
   slots.forEach((sl, to) => {
@@ -256,7 +256,7 @@ export async function normalizeSlotAudioStorage(soundId, slots, previousSlotCoun
     }
   }
 
-  // Phase 3: verwaiste alte Positionen aufräumen (z.B. entfernte Slots,
+  // Schritt 3: verwaiste alte Positionen aufräumen (z.B. entfernte Slots,
   // oder Positionen, die durch einen Move freigezogen wurden und von
   // keinem finalen Slot mehr referenziert werden).
   let maxOld = previousSlotCount;

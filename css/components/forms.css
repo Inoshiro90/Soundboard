@@ -1,0 +1,86 @@
+/* ============================================================
+   components/forms.css — Formulare, Section-Label
+   ============================================================ */
+
+/* ─── FORMS ─── */
+.form-label {
+	font-size: var(--text-badge);
+	font-weight: var(--fw-semibold);
+	letter-spacing: 0.125px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	margin-bottom: var(--space-1);
+	margin-top: var(--space-1);
+	display: block;
+}
+.form-control,
+.form-select {
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	color: var(--text-primary);
+	font-family: var(--font-sans);
+	border-radius: var(--radius-subtle);
+	font-size: var(--text-caption);
+	/* Bootstraps eigene .form-control/.form-select
+	   Default-Höhe (~38px via padding/line-height) überschreiben,
+	   damit alle Formularfelder ohne eigene Höhenklasse dem
+	   gemeinsamen Control-System (var(--h-btn)) folgen. Komponenten
+	   mit eigener, spezifischerer Klasse (z.B. .vol-number-input,
+	   .ambient-row__num, .mstep-select) überschreiben dies gezielt. */
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
+	transition:
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease),
+		background var(--dur-base) var(--ease);
+}
+.form-control:focus,
+.form-select:focus {
+	background: var(--bg-surface);
+	border-color: var(--color-accent);
+	color: var(--text-primary);
+	box-shadow: var(--shadow-focus);
+	outline: none;
+}
+.form-control::placeholder {
+	color: var(--text-muted);
+}
+.form-select option {
+	background: var(--bg-surface);
+}
+.form-check-input:checked {
+	background-color: var(--color-accent);
+	border-color: var(--color-accent);
+}
+.form-check-input:focus {
+	box-shadow: var(--shadow-focus);
+}
+
+/* Sichtbarer Switch-/Checkbox-Track darf sein bestehendes Format
+   behalten — die Hit Area (Checkbox + Label) muss aber mindestens
+   var(--h-btn) hoch sein. Wir nutzen dafür den Label-/Wrapper-Bereich
+   statt den Track selbst aufzublasen. */
+.form-check {
+	display: flex;
+	align-items: center;
+	min-height: var(--h-btn);
+	gap: var(--space-2);
+}
+.form-check .form-check-label {
+	padding-block: calc((var(--h-btn) - 1em) / 2);
+	cursor: pointer;
+}
+.form-check .form-check-input {
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
+/* ─── SECTION LABEL ─── */
+.section-label {
+	font-size: var(--text-badge);
+	font-weight: var(--fw-bold);
+	letter-spacing: 0.125px;
+	color: var(--color-accent);
+	text-transform: uppercase;
+	margin: var(--space-3) 0 var(--space-2);
+}

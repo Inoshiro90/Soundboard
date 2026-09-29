@@ -1,6 +1,5 @@
 /**
  * music/music-events.js — Event-Verdrahtung für die Musik-Ansicht
- * Ausgelagert aus music.js (Phase 5 der Refaktorierung).
  */
 
 import { APP, CMP } from '../core/state.js';
@@ -16,9 +15,10 @@ import {
   playMusicTrack, previousMusicTrack, nextMusicTrack, pauseMusic, resumeMusic,
   stopMusic, setMusicRepeatMode, toggleMusicShuffle, seekMusic,
   setMusicMasterVolume, setMusicCrossfade, setMusicAutoplay
+  , _players, _activeSlot
 } from './music-playback.js';
 import { renderMusicProfileTabs, renderMusicPanel, renderMusicPlayer } from './music-render.js';
-import {_players, _activeSlot} from './music-playback.js';
+
 // ─── EVENTS ────────────────────────────────────────────────────
 
 export function registerMusicEvents() {
@@ -36,8 +36,8 @@ export function registerMusicEvents() {
   });
   document.getElementById('btnAddMusicProfile')?.addEventListener('click', () => _dispatchEditProfile(null));
 
-  // Prompt 4: Export-Button am rechten Rand der Tab-Leiste — exportiert
-  // immer die AKTIVE Playlist (exportMusicProfile() unverändert aus storage/import-export.js).
+  // Export-Button am rechten Rand der Tab-Leiste — exportiert immer die
+  // AKTIVE Playlist (exportMusicProfile() aus storage/import-export.js).
   document.getElementById('btnExportMusicProfileTab')?.addEventListener('click', () => {
     const p = CMP();
     if (p) exportMusicProfile(p.id); else toast('Keine Musik-Playlist vorhanden', 'err');
@@ -48,11 +48,11 @@ export function registerMusicEvents() {
     if (this.files?.length) addMusicFiles(this.files);
     this.value = '';
   });
-  // Prompt 4: Export-Button lebt jetzt am rechten Rand von #musicProfBar
-  // (s. events.js: btnExportMusicProfileTab), nicht mehr hier in der
-  // Toolbar — exportMusicProfile() bleibt unverändert die zentrale Logik.
+  // Der Export-Button liegt am rechten Rand von #musicProfBar
+  // (s. events/register-toolbar-events.js: btnExportMusicProfileTab), nicht in der
+  // Toolbar — exportMusicProfile() ist die zentrale Logik.
 
-  // Prompt 3, Kap. 7/10: Dialog-Trigger statt permanent sichtbarer Player-Leisten.
+  // Dialog-Trigger statt permanent sichtbarer Player-Leisten.
   document.getElementById('btnOpenMusicPlaybackModal')?.addEventListener('click', () => {
     new bootstrap.Modal(document.getElementById('musicPlaybackModal')).show();
   });
@@ -76,7 +76,7 @@ export function registerMusicEvents() {
   });
   document.getElementById('btnMusicShuffle')?.addEventListener('click', () => toggleMusicShuffle());
 
-  // Progress-Slider: Ziehen/Klick + Tastatur (ArrowLeft/Right/Home/End, Kap. 12)
+  // Progress-Slider: Ziehen/Klick + Tastatur (ArrowLeft/Right/Home/End)
   const seekEl = document.getElementById('musicSeek');
   seekEl?.addEventListener('input',  function () { seekMusic(parseFloat(this.value) || 0); });
   seekEl?.addEventListener('change', function () { seekMusic(parseFloat(this.value) || 0); });
@@ -103,8 +103,8 @@ export function registerMusicEvents() {
   });
 
   // Space = Play/Pause, ArrowLeft/Right = Seek — nur innerhalb der Musikansicht
-  // und nie, wenn ein Eingabefeld fokussiert ist (Kap. 29: bestehende
-  // Shortcut-Architektur nicht stören, keine globalen Shortcuts erzwingen).
+  // und nie, wenn ein Eingabefeld fokussiert ist (bestehende Shortcut-Architektur
+  // nicht stören, keine globalen Shortcuts erzwingen).
   document.getElementById('musicBoard')?.addEventListener('keydown', e => {
     const tag = e.target.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
@@ -120,7 +120,7 @@ export function registerMusicEvents() {
       const row = e.target.closest('.music-row'); if (!row) return;
       const id = row.dataset.id;
       const actEl = e.target.closest('[data-act]');
-      if (!actEl) { playMusicTrack(id); return; } // Kap. 58: Klick auf Zeile selbst = abspielen, kein Popup
+      if (!actEl) { playMusicTrack(id); return; } // Klick auf Zeile selbst = abspielen, kein Popup
       const act = actEl.dataset.act;
       if      (act === 'play')   playMusicTrack(id);
       else if (act === 'up')     moveMusicTrack(id, -1);
@@ -181,19 +181,19 @@ export function registerMusicEvents() {
   renderMusicPlayer();
 }
 
-// ─── PROFIL-BEARBEITEN: DIALOG-TRIGGER (Prompt 3) ─────────────
+// ─── PROFIL-BEARBEITEN: DIALOG-TRIGGER ─────────────────────
 // Öffnet KEIN eigenes Modal — das Bootstrap-Modal-Markup (#musicProfileModal)
-// lebt konsistent mit allen anderen Edit-Dialogen in index.html/events.js.
+// lebt konsistent mit allen anderen Edit-Dialogen in index.html/dialogs/music-modal.js.
 // Gleiches CustomEvent-Prinzip wie _openTrackEditModal()/'music:editTrack',
-// um einen zirkulären Import music/music-events.js ⇄ events.js zu vermeiden.
+// um einen zirkulären Import music/music-events.js ⇄ dialogs/music-modal.js zu vermeiden.
 function _dispatchEditProfile(id) {
   document.dispatchEvent(new CustomEvent('music:editProfile', { detail: { id } }));
 }
 
-// Track-Edit-Modal wird von events.js bereitgestellt (Bootstrap-Modal-Markup
-// lebt konsistent mit allen anderen Edit-Dialogen in index.html) und über
-// dieses CustomEvent angestoßen — vermeidet einen zirkulären Import
-// music/music-events.js ⇄ events.js.
+// Track-Edit-Modal wird von dialogs/music-modal.js bereitgestellt (Bootstrap-
+// Modal-Markup lebt konsistent mit allen anderen Edit-Dialogen in index.html)
+// und über dieses CustomEvent angestoßen — vermeidet einen zirkulären Import
+// music/music-events.js ⇄ dialogs/music-modal.js.
 function _openTrackEditModal(trackId) {
   document.dispatchEvent(new CustomEvent('music:editTrack', { detail: { id: trackId } }));
 }

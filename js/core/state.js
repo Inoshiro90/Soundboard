@@ -1,7 +1,6 @@
 /**
  * core/state.js — Zentraler Anwendungszustand (APP) + Ableitungsfunktionen
- * Ausgelagert aus dem ursprünglichen state.js (Phase 1 der Refaktorierung).
- * Statische Referenzdaten (Emoji-/Farbtabellen) liegen jetzt in js/data/.
+ * Statische Referenzdaten (Emoji-/Farbtabellen) liegen in js/data/.
  */
 
 export const APP = {
@@ -9,7 +8,7 @@ export const APP = {
   activeProfileId: null,
   globalSettings: {
     overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
-    // P2 Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
+    // Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
     // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
     // Siehe audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient/ambient-playback.js duckAmbient().
     autoDuck: { enabled: false, amount: 0.7, attack: 150, release: 500 }
@@ -24,7 +23,6 @@ export const APP = {
   trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null,
            zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null,
            clippingRegions: [] },
-  // Phase 3
   analyzer:     { node: null, canvas: null, rafId: null, mode: 'bars', active: false },
   // Effekt-Editor-Preview (Audio-Effekt-Dialog): eigener, von der normalen
   // Soundboard-Wiedergabe (activeAudio/_setPlaying/Ducking/Rotation)
@@ -40,7 +38,6 @@ export const APP = {
   irCache:      {},
   idbReady:     false,
   pitchWorkletReady: false,
-  // Phase 4
   history:      { stack: [], pointer: -1, maxSize: 50 },
   timeline:     {
     tracks:     [],          // [{ id, name, clips[], vol, pan, mute, solo }]

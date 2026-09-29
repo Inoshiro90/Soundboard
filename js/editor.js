@@ -1,5 +1,5 @@
 /**
- * editor.js — Destructive Audio Editing (Phase 4)
+ * editor.js — Destructive Audio Editing
  *
  * All operations work on AudioBuffer objects and produce new AudioBuffers.
  * Results are stored in IDB and reflected in the sound's slot.
@@ -70,13 +70,13 @@ function findSound(soundId) {
     const s = (prof.items || []).find(x => x.id === soundId);
     if (s) return s;
   }
-  // Prompt 2: "Dauerhaft bearbeiten" wird jetzt auch vom geteilten
-  // Ambient-Track-Editor genutzt (#soundModal im 'ambient'-Kontext, s.
-  // events.js: _currentEditId()/_findEditTargetAnyContext()). Ambient-
-  // Tracks führen ihre Dateivarianten unter `.files`, nicht `.slots` —
-  // ein nicht-enumerables Alias hält den gesamten Rest dieser Datei
-  // unverändert funktionsfähig, ohne die Ambient-Datenstruktur selbst zu
-  // ändern oder eine zweite Editor-Implementierung zu benötigen.
+  // "Dauerhaft bearbeiten" wird auch vom geteilten Ambient-Track-Editor genutzt
+  // (#soundModal im 'ambient'-Kontext, s. events/register-slot-events.js:
+  // _currentEditId()/_findEditTargetAnyContext()). Ambient-Tracks führen ihre
+  // Dateivarianten unter `.files`, nicht `.slots` — ein nicht-enumerables Alias
+  // hält den gesamten Rest dieser Datei unverändert funktionsfähig, ohne die
+  // Ambient-Datenstruktur selbst zu ändern oder eine zweite Editor-Implementierung
+  // zu benötigen.
   const t = findAmbientTrack(soundId);
   if (t) {
     Object.defineProperty(t, 'slots', { value: t.files, enumerable: false, configurable: true });
@@ -211,10 +211,10 @@ export async function editNormalize(soundId, slotIdx, targetDb = 0) {
 }
 
 /**
- * RMS-Lautstärke-Normalisierung (P1). Bewusst NICHT "LUFS" genannt — misst
- * echtes RMS (optional mit grober K-Weighting-Annäherung), keine volle
- * ITU-R BS.1770/EBU-R128-Lautheitsmessung. Peak-Schutz hat immer Vorrang
- * vor exakter Zielerreichung, um Clipping zu vermeiden (siehe Plan-Beispiel).
+ * RMS-Lautstärke-Normalisierung. Bewusst NICHT "LUFS" genannt — misst echtes
+ * RMS (optional mit grober K-Weighting-Annäherung), keine volle
+ * ITU-R BS.1770/EBU-R128-Lautheitsmessung. Peak-Schutz hat immer Vorrang vor
+ * exakter Zielerreichung, um Clipping zu vermeiden.
  *
  * @param {object} [opts]
  * @param {number} [opts.targetRmsDb=-18]
@@ -274,11 +274,10 @@ export async function editReverse(soundId, slotIdx) {
 
 /**
  * Fade In — render permanently into audio file.
- * P3: wählbare Kurvenform (linear/exponential/sCurve) + Clamping nach
- * Audit-Problem 13 (max. 40% der Clip-Dauer, s. renderPipeline.js
- * _clampFadeDurations — hier dupliziert, da editor.js bewusst nicht von
- * renderPipeline.js abhängt, um den Offline-Render-Pfad unabhängig vom
- * Live-Graph-Aufbau zu halten).
+ * Wählbare Kurvenform (linear/exponential/sCurve) + Clamping (max. 40% der
+ * Clip-Dauer, s. renderPipeline.js _clampFadeDurations — hier dupliziert, da
+ * editor.js bewusst nicht von renderPipeline.js abhängt, um den
+ * Offline-Render-Pfad unabhängig vom Live-Graph-Aufbau zu halten).
  */
 export async function editFadeIn(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
@@ -302,7 +301,7 @@ export async function editFadeIn(soundId, slotIdx, durationSec, curve = 'linear'
 
 /**
  * Fade Out — render permanently into audio file.
- * P3: wählbare Kurvenform + Clamping, s. editFadeIn().
+ * Wählbare Kurvenform + Clamping, s. editFadeIn().
  */
 export async function editFadeOut(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
@@ -328,7 +327,7 @@ export async function editFadeOut(soundId, slotIdx, durationSec, curve = 'linear
 }
 
 /**
- * P3: identische Kurvenformen-Logik wie renderPipeline.js
+ * Identische Kurvenformen-Logik wie renderPipeline.js
  * _scheduleFadeCurve() — bewusst dupliziert statt importiert (siehe
  * editFadeIn()-Kommentar zur Entkopplung von editor.js/renderPipeline.js).
  */
@@ -441,16 +440,15 @@ export async function editRemoveSilence(soundId, slotIdx, thresholdDb = -60) {
 }
 
 /**
- * Truncate Silence (P2) — kürzt INTERNE Stille-Abschnitte (nicht nur
- * Anfang/Ende wie editRemoveSilence) auf eine Zielminimaldauer, statt sie
- * komplett zu entfernen. Nutzt findSilenceRegions() aus analysis.js, das
- * bewusst über ALLE Kanäle gemeinsam prüft (Korrektur des Single-Channel-
- * Bugs von editRemoveSilence(), siehe dortiger Kommentar/Audit).
+ * Truncate Silence — kürzt INTERNE Stille-Abschnitte (nicht nur Anfang/Ende wie
+ * editRemoveSilence) auf eine Zielminimaldauer, statt sie komplett zu entfernen.
+ * Nutzt findSilenceRegions() aus analysis.js, das bewusst über ALLE Kanäle
+ * gemeinsam prüft (Korrektur des Single-Channel-Bugs von editRemoveSilence()).
  *
- * Jede erkannte Region wird symmetrisch um ihre Mitte gekürzt: die ersten
- * und letzten targetSilenceDurationSec/2 Samples der Original-Stille
- * bleiben erhalten, die Mitte wird herausgeschnitten. targetSilenceDurationSec
- * === 0 entfernt die Stille komplett (Sonderfall).
+ * Jede erkannte Region wird symmetrisch um ihre Mitte gekürzt: die ersten und
+ * letzten targetSilenceDurationSec/2 Samples der Original-Stille bleiben
+ * erhalten, die Mitte wird herausgeschnitten. targetSilenceDurationSec === 0
+ * entfernt die Stille komplett (Sonderfall).
  */
 export async function editTruncateSilence(soundId, slotIdx, opts = {}) {
   const sound = findSound(soundId);
@@ -548,14 +546,13 @@ export async function editNoiseGate(soundId, slotIdx, thresholdDb = -40, attackM
 /**
  * Learn noise profile from a buffer region.
  *
- * BUGFIX/Erweiterung (P1 „Echte spektrale Noise Reduction"): analysiert
- * jetzt per echter FFT (statt AnalyserNode-getFloatFrequencyData, dessen
+ * Analysiert per echter FFT (statt AnalyserNode-getFloatFrequencyData, dessen
  * Werte in dBFS UND geglättet/gefenstert nach AnalyserNode-eigenen Regeln
  * vorliegen und damit nicht direkt als linearer Noise-Floor für
- * Spektralsubtraktion nutzbar waren) ein lineares, über mehrere
- * Hann-gefensterte Frames gemitteltes Magnitudenspektrum. Das Profil wird
- * zusätzlich am Slot persistiert (nicht nur flüchtig in APP.noiseProfile),
- * damit es eine Sitzung überlebt.
+ * Spektralsubtraktion nutzbar waren) ein lineares, über mehrere Hann-gefensterte
+ * Frames gemitteltes Magnitudenspektrum. Das Profil wird zusätzlich am Slot
+ * persistiert (nicht nur flüchtig in APP.noiseProfile), damit es eine Sitzung
+ * überlebt.
  *
  * @param {number} [startSec=0] Beginn der Rauschregion
  * @param {number} [durationSec=0.5] Länge der Rauschregion
@@ -618,10 +615,9 @@ export async function learnNoiseProfile(soundId, slotIdx, startSec = 0, duration
 /**
  * Echte spektrale Rauschunterdrückung (FFT-Overlap-Add-Spektralsubtraktion).
  *
- * BUGFIX (P1): ersetzt die bisherige Pseudo-Implementierung (Highpass +
- * Compressor, verwendete das gelernte Profil gar nicht) durch eine
- * tatsächliche, profilbasierte Spektralsubtraktion, siehe
- * dsp/noiseReduction.js.
+ * Ersetzt die frühere Pseudo-Implementierung (Highpass + Compressor, die das
+ * gelernte Profil gar nicht verwendete) durch eine tatsächliche, profilbasierte
+ * Spektralsubtraktion, siehe dsp/noiseReduction.js.
  *
  * @param {object} [opts]
  * @param {number} [opts.amount=0.6] Dry/Wet-Mix (0 = Original, 1 = voll bearbeitet)
@@ -635,7 +631,7 @@ export async function editNoiseReduce(soundId, slotIdx, opts = {}) {
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   // Rückwärtskompatibel: bisheriger Aufrufer übergibt eine einzelne
-  // amount-Zahl statt eines Options-Objekts (siehe events.js).
+  // amount-Zahl statt eines Options-Objekts (siehe events/register-slot-events.js).
   const params = typeof opts === 'number' ? { amount: opts } : (opts || {});
   const { amount = 0.6, sensitivity = 6, smoothing = 2 } = params;
 

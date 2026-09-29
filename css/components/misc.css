@@ -1,0 +1,64 @@
+/* ============================================================
+   components/misc.css — Toast, Theme-Toggle
+   ============================================================ */
+
+/* ─── TOAST ─── */
+.toast-item {
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-left: 3px solid var(--color-accent);
+	color: var(--text-primary);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-subtle);
+	font-size: var(--text-badge);
+	font-family: var(--font-mono);
+	animation: toast-in var(--dur-fast) var(--ease);
+	min-width: 160px;
+	box-shadow: var(--shadow-deep);
+}
+.toast-item--error {
+	border-left-color: var(--color-orange);
+}
+.toast-item--success {
+	border-left-color: var(--color-teal);
+}
+@keyframes toast-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+.toast-item--out {
+	animation: toast-out 0.2s var(--ease) forwards;
+}
+@keyframes toast-out {
+	to {
+		opacity: 0;
+		transform: translateY(5px);
+	}
+}
+
+/* ─── THEME TOGGLE ───  Theme-Button -> var(--h-btn) */
+.theme-toggle {
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	color: var(--text-muted);
+	width: var(--h-btn);
+	height: var(--h-btn);
+	border-radius: var(--radius-micro);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.82rem;
+	flex-shrink: 0;
+	transition: all var(--dur-base) var(--ease);
+}
+.theme-toggle:hover {
+	color: var(--text-primary);
+	border-color: rgba(0, 0, 0, 0.18);
+}

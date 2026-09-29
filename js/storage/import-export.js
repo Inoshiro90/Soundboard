@@ -1,7 +1,6 @@
 /**
  * storage/import-export.js — JSON-Export/Import-Feature (Vollexport +
  * Einzel-Export/-Import für Profile/Szenen/Playlists/einzelne Elemente/Presets)
- * Ausgelagert aus storage.js (Phase 2 der Refaktorierung).
  */
 
 import { APP, CItems, CATracks, CMTracks } from '../core/state.js';
@@ -223,11 +222,11 @@ export async function exportAmbientTrack(trackId) {
   toast('Ambient-Sound exportiert ✓', 'ok');
 }
 
-// ─── AUDIO-EFFEKT-PRESETS EXPORTIEREN (Kap. 12, 14) ───────────
+// ─── AUDIO-EFFEKT-PRESETS EXPORTIEREN ───────────────────────
 // Gleiches Muster wie die übrigen Einzel-Exporte oben: kind + version +
 // _downloadJson(). Einzelpreset ('fx_preset') und Preset-Sammlung
-// ('fx_preset_collection') sind bewusst zwei unterschiedliche, jeweils
-// klar versionierte kinds (Kap. 14) statt eines vermischten Formats.
+// ('fx_preset_collection') sind bewusst zwei unterschiedliche, jeweils klar
+// versionierte kinds statt eines vermischten Formats.
 
 export async function exportPreset(presetId) {
   const p = getPresetById(presetId);
@@ -302,8 +301,8 @@ async function _importProfileBundle(profileData) {
   }
   const newProfile = {
     id: uid(), name: (profileData.name || 'Profil') + ' (importiert)', icon: profileData.icon || '🎵',
-    // Prompt 1/4: color/audioEffectPreset aus dem Bundle übernehmen (alte
-    // Exports ohne diese Felder bekommen die neutralen Defaults).
+    // color/audioEffectPreset aus dem Bundle übernehmen (alte Exports ohne
+    // diese Felder bekommen die neutralen Defaults).
     color: profileData.color || 'none', audioEffectPreset: profileData.audioEffectPreset ?? null,
     items
   };
@@ -425,7 +424,7 @@ export async function importData(file, { onSuccess }) {
       // Einzel-Import (Profil/Szene/Playlist/einzelnes Element) — erkannt
       // am "kind"-Feld, das nur unsere neuen Teilexporte tragen. Alte
       // Vollexporte haben kein "kind" und fallen unten in den bestehenden
-      // Pfad (Rückwärtskompatibilität, Spez. Kap. 34).
+      // Pfad (Rückwärtskompatibilität).
       if (d && d.kind) {
         switch (d.kind) {
           case 'soundboard_profile': await _importProfileBundle(d.profile); break;
@@ -435,7 +434,7 @@ export async function importData(file, { onSuccess }) {
           case 'ambient_track':      await _importAmbientTrackBundle(d.track); break;
           case 'music_track':        await _importMusicTrackBundle(d.track); break;
           case 'fx_preset': {
-            // Kap. 13: fehlende Pflichtfelder (kein effects-Objekt) -> Import
+            // Fehlende Pflichtfelder (kein effects-Objekt) -> Import
             // abbrechen und verständlich melden, statt fehlerhaft zu importieren.
             if (!validatePresetShape(d.preset)) { toast('Ungültiges Preset: Pflichtfelder fehlen', 'err'); return; }
             importSinglePresetData(d.preset);
@@ -459,11 +458,11 @@ export async function importData(file, { onSuccess }) {
       APP.activeProfileId = d.activeProfileId || APP.profiles[0]?.id;
       APP.globalSettings  = { ...APP.globalSettings, ...(d.globalSettings || {}) };
       APP.ambient          = _normalizeAmbient(d.ambient);
-      // Spez. Kap. 34: bestehender Export ohne Musik (d.music === undefined)
+      // Bestehender Export ohne Musik (d.music === undefined)
       // muss weiterhin problemlos importierbar sein — _normalizeMusic()
       // liefert dafür eine valide Default-Struktur.
       APP.music            = _normalizeMusic(d.music);
-      // Kap. 16 Rückwärtskompatibilität: alte Vollexporte kennen noch kein
+      // Rückwärtskompatibilität: alte Vollexporte kennen noch kein
       // userPresets-Feld — bestehende eigene Presets bleiben dabei erhalten
       // (nicht überschreiben, falls die importierte Datei welche enthält;
       // sonst unverändert lassen statt zu leeren).

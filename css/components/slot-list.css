@@ -1,0 +1,252 @@
+/* ============================================================
+   components/slot-list.css — Slot-Liste, Slot-Aktions-Buttons, Hotkey-Feld, Makro-Schritte
+   ============================================================ */
+
+/* ─── SLOT LIST ───────────────────────────────────────────────
+   Ziehgriff/Nummer fix, Name nimmt den Rest, die (variable Anzahl)
+   Kernaktionen (Play/Ordner/Bearbeiten/Entfernen — Preview/Bearbeiten
+   fehlen je nach Slot-Zustand) sind ≥44px große Touch-Ziele (WCAG 2.5.5).
+   Sounddauer/Start/Ende/Zuschneiden leben im slotEditModal, siehe dort.
+
+   Die Aktionsbuttons stecken in einem eigenen Wrapper (.slot-actions,
+   siehe renderSlotList() in js/ui/slot-editor.js) — .slot-row hat dadurch
+   IMMER genau vier Spalten unabhängig von der (variablen) Button-Anzahl;
+   der Name muss sich sein 1fr nicht mit den Buttons in derselben Zeile
+   teilen.
+   Mobile-first (≤767px, XS/SM = max. 4 Rasterspalten): Ziehgriff+Nummer+
+   Name in Zeile 1, Aktionen als eigene, volle Zeile darunter — der Name
+   konkurriert dadurch gar nicht mehr mit den Buttons. Ab 768px (MD = 8,
+   LG/XL/XXL = 12 Rasterspalten) rutschen die Aktionen wieder in dieselbe
+   Zeile, der Name bekommt dafür fest die Breite von 4 Rasterspalten
+   (var(--w-4col) aus grid-system.css — dieselbe „4 Spalten"-Breite
+   unabhängig davon, ob das Root-Raster an diesem Breakpoint gerade 8
+   oder 12 Spalten hat). */
+.slot-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--grid-gutter);
+	max-height: 260px;
+	overflow-y: auto;
+}
+.slot-row {
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-subtle);
+	display: grid;
+	grid-template-columns: auto auto minmax(0, 1fr);
+	align-items: center;
+	gap: var(--space-2) var(--grid-gutter);
+	padding: var(--space-2) var(--space-3);
+	cursor: default;
+	transition: border-color var(--dur-fast) var(--ease);
+}
+.slot-row.is-drag-over {
+	border-color: var(--color-accent);
+	border-style: dashed;
+}
+.slot-row.is-dragging {
+	opacity: 0.35;
+}
+
+/* ≤767px (XS/SM, max. 4 Rasterspalten): eigene, volle Zeile für die
+   Aktionen — erzwungen per grid-column-Span statt per Reihenfolge/
+   Zufall, damit es unabhängig von der tatsächlichen Button-Anzahl
+   IMMER eine eigene Zeile ist. */
+.slot-actions {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-1);
+}
+
+/* ≥768px (MD = 8, LG/XL/XXL = 12 Rasterspalten): Aktionen zurück in
+   dieselbe Zeile wie Name, Name fest auf 4 Rasterspalten Breite. */
+@media (min-width: 768px) {
+	.slot-row {
+		display: flex;
+		align-items: center;
+	}
+	.slot-name {
+		flex: 0 0 var(--w-4col);
+		width: var(--w-4col);
+	}
+	.slot-actions {
+		flex-shrink: 0;
+		margin-left: auto;
+	}
+}
+
+.slot-drag-handle {
+	cursor: grab;
+	color: var(--text-muted);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: var(--space-2);
+}
+.slot-drag-handle span {
+	display: block;
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: var(--text-muted);
+}
+.slot-num {
+	font-family: var(--font-mono);
+	font-size: 0.6rem;
+	color: var(--text-muted);
+	min-width: 16px;
+}
+.slot-name {
+	font-size: var(--text-caption);
+	min-width: 0;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.slot-name--empty {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+/* ─── SLOT-AKTIONS-BUTTONS: groß & barrierefrei (≥44px) ─── */
+.slot-btn {
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0; /* darf in .slot-actions (flex-wrap) nie zusammengedrückt werden */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+	font-size: 1rem;
+	transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.slot-btn--load {
+	color: var(--color-accent);
+}
+.slot-btn--load:hover {
+	color: var(--color-accent-active);
+	border-color: var(--color-accent);
+}
+.slot-btn--remove {
+	color: var(--text-muted);
+}
+.slot-btn--remove:hover {
+	color: var(--color-orange);
+	border-color: var(--color-orange);
+}
+.slot-btn--preview {
+	color: var(--color-teal);
+}
+.slot-btn--preview:hover {
+	border-color: var(--color-teal);
+}
+.slot-btn--edit {
+	color: var(--text-muted);
+}
+.slot-btn--edit:hover {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+}
+
+/* ─── HOTKEY FIELD ─── */
+.hotkey-field {
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	color: var(--text-primary);
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-subtle);
+	cursor: pointer;
+	width: 100%;
+	outline: none;
+	text-align: center;
+	transition:
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease);
+}
+.hotkey-field:focus,
+.hotkey-field.is-recording {
+	border-color: var(--color-accent);
+	box-shadow: var(--shadow-focus);
+}
+.hotkey-field.is-recording {
+	animation: hk-blink 0.5s infinite;
+}
+@keyframes hk-blink {
+	50% {
+		opacity: 0.5;
+	}
+}
+
+/* ─── MACRO STEPS ─── */
+.macro-step {
+	background: var(--bg-warm);
+	border: var(--border-whisper);
+	border-radius: var(--radius-subtle);
+	padding: var(--space-2) var(--space-3);
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	margin-bottom: var(--space-2);
+	flex-wrap: wrap;
+}
+.mstep-num {
+	font-family: var(--font-mono);
+	font-size: 0.6rem;
+	color: var(--text-muted);
+	min-width: 16px;
+	flex-shrink: 0;
+}
+.mstep-type {
+	/* Breite Kategorie-C (kurzes Select), Höhe folgt
+	   dem gemeinsamen Control-System. */
+	width: 72px !important;
+	height: var(--h-btn) !important;
+	padding: 0 var(--space-2) !important;
+	font-size: var(--text-badge) !important;
+	flex-shrink: 0;
+}
+.mstep-select {
+	flex: 1;
+	min-width: 80px;
+	height: var(--h-btn) !important;
+	padding: 0 var(--space-2) !important;
+	font-size: var(--text-badge) !important;
+}
+.mstep-delay {
+	width: 62px;
+	height: var(--h-btn);
+	padding: 0 var(--space-2);
+	font-size: var(--text-badge);
+}
+.mstep-remove {
+	/* Eigenständiges Icon-only-Target -> var(--h-btn) Hit Area */
+	width: var(--h-btn);
+	height: var(--h-btn);
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 0.76rem;
+	margin-left: auto;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: color var(--dur-fast) var(--ease);
+}
+.mstep-remove:hover {
+	color: var(--color-orange);
+}
+.mstep-ms-label {
+	font-size: 0.6rem;
+	color: var(--text-muted);
+	white-space: nowrap;
+}

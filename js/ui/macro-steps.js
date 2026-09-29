@@ -1,6 +1,5 @@
 /**
  * ui/macro-steps.js — Makro-Schritte-Editor-Liste (Makro-Modal)
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { APP, CItems } from '../core/state.js';

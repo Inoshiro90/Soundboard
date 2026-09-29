@@ -5,13 +5,13 @@
  * Editier-Modal versehentlich verlieren, weil der Dialog über Abbrechen, den
  * X-Button, einen Klick außerhalb (Backdrop) oder Escape geschlossen wurde.
  *
- * Zentrales Prinzip: alle vier Schließwege lösen in Bootstrap 5 intern
- * dasselbe `hide.bs.modal`-Event aus — auch ein programmgesteuerter
- * `.hide()`-Aufruf. Dieses eine Event wird hier EINMAL pro Modal abgefangen,
- * statt vier separate Click-/Keydown-Handler zu bauen. Das schließt strukturell
- * aus, dass z.B. ein eigener Abbrechen-Click-Handler UND `hide.bs.modal`
- * unabhängig voneinander je eine eigene Rückfrage auslösen (doppeltes
- * confirm() für ein- und dieselbe Aktion).
+ * Zentrales Prinzip: alle vier Schließwege lösen in Bootstrap 5 intern dasselbe
+ * `hide.bs.modal`-Event aus — auch ein programmgesteuerter `.hide()`-Aufruf.
+ * Dieses eine Event wird hier EINMAL pro Modal abgefangen, statt vier separate
+ * Click-/Keydown-Handler zu bauen. Das schließt strukturell aus, dass z.B. ein
+ * eigener Abbrechen-Click-Handler UND `hide.bs.modal` unabhängig voneinander je
+ * eine eigene Rückfrage auslösen (doppeltes confirm() für ein- und dieselbe
+ * Aktion).
  *
  * `hide.bs.modal` ist in Bootstrap 5 abbrechbar: `event.preventDefault()`
  * verhindert, dass das Modal tatsächlich schließt. Wird das Verwerfen vom
@@ -23,10 +23,10 @@
  *
  * Ein Guard unterscheidet außerdem sauber zwischen "Benutzer versucht zu
  * schließen" und "Anwendung hat erfolgreich gespeichert und schließt jetzt
- * absichtlich": Der Aufrufer ruft dafür vor einem programmgesteuerten
- * `.hide()` nach erfolgreichem Speichern `disarm()` auf — dadurch ignoriert
- * der Guard das dadurch ausgelöste `hide.bs.modal` vollständig, unabhängig
- * vom Dirty-Zustand.
+ * absichtlich": Der Aufrufer ruft dafür vor einem programmgesteuerten `.hide()`
+ * nach erfolgreichem Speichern `disarm()` auf — dadurch ignoriert der Guard
+ * das dadurch ausgelöste `hide.bs.modal` vollständig, unabhängig vom
+ * Dirty-Zustand.
  */
 export function createModalDraftGuard({ modalId, isDirty, message, onDiscard }) {
   const el = document.getElementById(modalId);

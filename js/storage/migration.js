@@ -1,6 +1,5 @@
 /**
  * storage/migration.js — Migrationslogik für Altformate
- * Ausgelagert aus storage.js (Phase 2 der Refaktorierung).
  * migrateEffects/migratePlaybackSettings/migrateProfileColors ergänzen
  * rückwärtskompatibel fehlende Felder in bestehenden gespeicherten Daten;
  * runIdbMigrationIfNeeded überführt Base64-Audio in IndexedDB.
@@ -12,8 +11,8 @@ import { toast }                            from '../notifications.js';
 import { idbSet, migrateAudioToIdb, audioKey, IDB_SENTINEL, isBase64Data } from '../db.js';
 // Zirkulärer Import (persistence.js importiert umgekehrt migrateEffects/
 // migratePlaybackSettings/migrateProfileColors/runIdbMigrationIfNeeded aus
-// diesem Modul) — funktioniert wie das bereits bestehende audio/playback.js/
-// ambient/ambient-playback.js-Muster, da _saveRaw() erst zur Laufzeit (nicht beim
+// diesem Modul) — funktioniert wie das Muster in audio/playback.js/
+// ambient/ambient-playback.js, da _saveRaw() erst zur Laufzeit (nicht beim
 // Modul-Ladevorgang) aufgerufen wird.
 import { _saveRaw }                         from './persistence.js';
 
@@ -29,7 +28,6 @@ export function migrateEffects() {
         s.effects = clone(def); return;
       }
       const fx = s.effects;
-      // Phase 1
       if (!fx.lowpass)  fx.lowpass  = clone(def.lowpass);
       if (!fx.highpass) fx.highpass = clone(def.highpass);
       if (!fx.reverb)   fx.reverb   = clone(def.reverb);
@@ -37,12 +35,10 @@ export function migrateEffects() {
       if (fx.pan     == null) fx.pan     = 0;
       if (fx.enabled == null) fx.enabled = false;
       if (fx.preset  == null) fx.preset  = null;
-      // Phase 2
       if (!fx.eq)         fx.eq         = clone(def.eq);
       if (!fx.compressor) fx.compressor = clone(def.compressor);
       if (!fx.limiter)    fx.limiter    = clone(def.limiter);
       if (!fx.distortion) fx.distortion = clone(def.distortion);
-      // Phase 3
       if (!fx.pitchShift) fx.pitchShift = clone(def.pitchShift);
       if (!fx.irReverb)   fx.irReverb   = clone(def.irReverb);
       if (!fx.envelope)   fx.envelope   = clone(def.envelope);
@@ -50,7 +46,6 @@ export function migrateEffects() {
       if (!fx.eq10)       fx.eq10       = clone(def.eq10);
       if (!Array.isArray(fx.eq10.bands)) fx.eq10.bands = [0,0,0,0,0,0,0,0,0,0];
       while (fx.eq10.bands.length < 10)  fx.eq10.bands.push(0);
-      // Phase 4
       if (!fx.spatial)   fx.spatial   = clone(def.spatial);
       if (!fx.noiseGate) fx.noiseGate = clone(def.noiseGate);
     });
@@ -59,8 +54,8 @@ export function migrateEffects() {
 
 // ─── "WIEDERGABE & VERHALTEN"-MIGRATION ───────────────────────
 // Analog zu migrateEffects(): stellt sicher, dass jeder gespeicherte Sound
-// (auch aus einer Version vor dieser Funktion) ein vollständiges
-// `playback`-Objekt besitzt, ohne bestehende Werte zu überschreiben.
+// (auch aus einer älteren Version) ein vollständiges `playback`-Objekt
+// besitzt, ohne bestehende Werte zu überschreiben.
 // s.loop/s.fade/s.random bleiben davon unberührt (eigene Legacy-Felder,
 // s. mkSound()).
 export function migratePlaybackSettings() {
@@ -81,11 +76,10 @@ export function migratePlaybackSettings() {
 }
 
 // ─── PROFIL-FARBEN-/PRESET-MIGRATION ──────────────────────────
-// Prompt 1, Kap. 5: Sound-Profile (Tabs) bekommen ein `color`-Feld.
-// Prompt 4, Kap. 1: zusätzlich ein `audioEffectPreset`-Feld (null = kein
-// übergeordnetes Preset). Bestehende, ohne diese Felder gespeicherte
-// Profile erhalten automatisch die neutralen Defaults — keine
-// destruktive Migration.
+// Sound-Profile (Tabs) bekommen ein `color`-Feld sowie ein
+// `audioEffectPreset`-Feld (null = kein übergeordnetes Preset). Bestehende,
+// ohne diese Felder gespeicherte Profile erhalten automatisch die neutralen
+// Defaults — keine destruktive Migration.
 export function migrateProfileColors() {
   APP.profiles.forEach(p => {
     if (!p.color) p.color = 'none';

@@ -1,5 +1,5 @@
 /**
- * generators.js — Noise-Generator-Bausteine für die Ambient-Ebene (P2).
+ * generators.js — Noise-Generator-Bausteine für die Ambient-Ebene.
  *
  * Kapselt das Laden/Instanziieren des noise-generator-processor.js
  * AudioWorklets. Lautstärke wird bewusst NICHT hier gesteuert (siehe
@@ -55,11 +55,11 @@ export function setNoiseGeneratorType(node, generatorType) {
 }
 
 /**
- * P3: Tone Generator — erzeugt einen Testton oder Sweep als fertigen
+ * Tone Generator — erzeugt einen Testton oder Sweep als fertigen
  * AudioBuffer (Mono), der wie eine importierte Datei über
  * persistEdit()/saveSlotAudio() in einen Slot geschrieben werden kann
- * (kein eigener "Generator-Sound-Typ", siehe Plan-Begründung: volle
- * Kompatibilität mit Trim/Effekten/Export ohne Sonderfall).
+ * (kein eigener "Generator-Sound-Typ" — volle Kompatibilität mit
+ * Trim/Effekten/Export ohne Sonderfall).
  *
  * WICHTIG (Sweep): die Momentanfrequenz wird zwar pro Sample aus der
  * gewünschten Sweep-Kurve berechnet, aber die Phase wird per

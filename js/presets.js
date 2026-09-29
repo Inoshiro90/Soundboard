@@ -3,12 +3,11 @@
  *
  * Zentralisiert alles, was NICHT reine Audio-Engine-Zuständigkeit ist
  * (presets/effect-presets-data.js bleibt Eigentümer der eingebauten
- * Effektparameter in EFFECT_PRESETS, verschoben aus audio.js in Phase 1
- * der Refaktorierung): Preset-Metadaten, generische Anwendung eines Presets
+ * Effektparameter in EFFECT_PRESETS): Preset-Metadaten, generische Anwendung eines Presets
  * auf ein Effekte-Objekt, User-Preset-CRUD sowie Validierung/Normalisierung
  * importierter Presets.
  *
- * Wichtige Architekturentscheidung (Kap. 17): Presets sind reine
+ * Wichtige Architekturentscheidung: Presets sind reine
  * Datenobjekte. Es gibt keine `if (id === 'cave')`-Sonderfälle — jede
  * Funktion hier arbeitet generisch über PRESET_EFFECT_KEYS, sodass
  * importierte User-Presets exakt wie eingebaute Presets behandelt werden.
@@ -21,7 +20,7 @@ import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import { uid } from './utils.js';
 
 // ─── KATEGORIEN ───────────────────────────────────────────────
-// Fachlich an der Art der akustischen Transformation orientiert (Kap. 9),
+// Fachlich an der Art der akustischen Transformation orientiert,
 // nicht an Entwicklungsphasen oder Fantasy-Settings. Erweitert auf 6
 // Kategorien (vom Nutzer vorgegebenes Schema): reine Raumakustik wird von
 // physischer Abschirmung (Barriere zwischen Quelle und Hörer) getrennt,
@@ -104,15 +103,12 @@ export const PRESET_EFFECT_KEYS = [
   'pitchShift', 'irReverb', 'envelope', 'spatial', 'noiseGate'
 ];
 
-// ─── GENERISCHE PRESET-ANWENDUNG (Kap. 6, 17, 21) ─────────────
-/**
- * Baut aus einem (Teil-)Effekte-Objekt eines Presets ein vollständiges
- * Effekte-Objekt für einen Sound. Deterministisch (Kap. 21): hängt nur
- * von presetEffects + defaultEffects() ab, NICHT vom bisherigen Zustand
- * des Sounds — nicht im Preset gesetzte Module fallen auf Default zurück,
- * exakt gesetzte Felder werden übernommen. `enabled`/`preset` werden vom
- * Aufrufer gesetzt (hier nicht enthalten).
- */
+// ─── GENERISCHE PRESET-ANWENDUNG ─────────────────────────────
+// Baut aus einem (Teil-)Effekte-Objekt eines Presets ein vollständiges
+// Effekte-Objekt für einen Sound. Deterministisch: hängt nur von presetEffects +
+// defaultEffects() ab, NICHT vom bisherigen Zustand des Sounds — nicht im
+// Preset gesetzte Module fallen auf Default zurück, exakt gesetzte Felder werden
+// übernommen. `enabled`/`preset` werden vom Aufrufer gesetzt (hier nicht enthalten).
 export function applyPresetEffects(presetEffects) {
   const def = defaultEffects();
   const src = presetEffects || {};
@@ -130,32 +126,29 @@ export function applyPresetEffects(presetEffects) {
   return out;
 }
 
-// ─── ÜBERGEORDNETE PRESET-ANWENDUNG AUF EINE SAMMLUNG (Prompt 4) ──
-/**
- * Wendet ein Preset auf eine Sammlung von Audio-Objekten (Sounds eines
- * Sound-Profils, Ambient-Tracks einer Szene, Musik-Tracks einer Playlist)
- * an — EINMALIGE zentrale Implementierung (Kap. 12), damit Sound-, Ambient-
- * und Musik-Profile dieselbe Logik verwenden, statt sie dreimal zu
- * duplizieren.
- *
- * Der Aufrufer filtert `items` bereits auf die für den jeweiligen
- * Container relevanten Audioobjekte (z.B. nur `type === 'sound'` bei
- * Sound-Profilen, s. Kap. 7) — diese Funktion arbeitet danach generisch
- * über `item.effects`, unabhängig vom konkreten Container-Typ.
- *
- * @param {object} params
- * @param {object[]} params.items - Audioobjekte mit einer `effects`-
- *   Eigenschaft (wird ggf. neu gesetzt).
- * @param {string} params.presetId - ID eines Built-in- oder User-Presets.
- * @param {'all'|'same'|'none'} params.overwriteMode - Kap. 4:
- *   'all'  = Alle: ersetzt IMMER, auch bereits vorhandene andere Presets.
- *   'same' = Gleiche: Elemente ohne Preset bekommen es; Elemente mit
- *            GENAU diesem Preset werden erneut synchronisiert; alles
- *            andere bleibt unangetastet.
- *   'none' = Keine (Default, Kap. 5): NUR Elemente ohne vorhandenes
- *            Preset bekommen es; alles mit einem Preset bleibt unangetastet.
- * @returns {{changed:number, total:number}} - für eine Erfolgsmeldung im UI.
- */
+// ─── ÜBERGEORDNETE PRESET-ANWENDUNG AUF EINE SAMMLUNG ──
+// Wendet ein Preset auf eine Sammlung von Audio-Objekten (Sounds eines
+// Sound-Profils, Ambient-Tracks einer Szene, Musik-Tracks einer Playlist) an —
+// EINMALIGE zentrale Implementierung, damit Sound-, Ambient- und Musik-Profile
+// dieselbe Logik verwenden, statt sie dreimal zu duplizieren.
+//
+// Der Aufrufer filtert `items` bereits auf die für den jeweiligen Container
+// relevanten Audioobjekte (z.B. nur `type === 'sound'` bei Sound-Profilen) —
+// diese Funktion arbeitet danach generisch über `item.effects`, unabhängig vom
+// konkreten Container-Typ.
+//
+// @param {object} params
+// @param {object[]} params.items - Audioobjekte mit einer `effects`-
+//   Eigenschaft (wird ggf. neu gesetzt).
+// @param {string} params.presetId - ID eines Built-in- oder User-Presets.
+// @param {'all'|'same'|'none'} params.overwriteMode -
+//   'all'  = Alle: ersetzt IMMER, auch bereits vorhandene andere Presets.
+//   'same' = Gleiche: Elemente ohne Preset bekommen es; Elemente mit
+//            GENAU diesem Preset werden erneut synchronisiert; alles
+//            andere bleibt unangetastet.
+//   'none' = Keine (Default): NUR Elemente ohne vorhandenes Preset bekommen es;
+//            alles mit einem Preset bleibt unangetastet.
+// @returns {{changed:number, total:number}} - für eine Erfolgsmeldung im UI.
 export function applyPresetToCollection({ items, presetId, overwriteMode }) {
   const preset = presetId ? getPresetById(presetId) : null;
   const list = Array.isArray(items) ? items : [];
@@ -172,7 +165,7 @@ export function applyPresetToCollection({ items, presetId, overwriteMode }) {
     else apply = !hasExisting; // 'none' (Default)
 
     if (!apply) return;
-    // Kap. 6: NIEMALS in ein vorhandenes Effekte-Objekt mergen —
+    // NIEMALS in ein vorhandenes Effekte-Objekt mergen —
     // applyPresetEffects() liefert eine vollständige, normalisierte
     // Konfiguration, die das alte Effekte-Objekt komplett ersetzt.
     const merged = applyPresetEffects(preset.effects);
@@ -216,7 +209,7 @@ export function getPresetsByCategory(category) {
   return getAllPresets().filter(p => p.category === category);
 }
 
-// ─── VALIDIERUNG / NORMALISIERUNG (Kap. 18, 19, 26) ───────────
+// ─── VALIDIERUNG / NORMALISIERUNG ───────────
 // Wertebereiche gespiegelt aus den bestehenden Clamp-Grenzen in
 // audio/effect-graph.js (buildEffectChain()/_buildX()-Funktionen) bzw. den
 // Slider-min/max-Attributen in index.html. Verhindert NaN/Infinity/
@@ -261,7 +254,7 @@ function _enum(val, allowed, fallback) { return allowed.includes(val) ? val : fa
  * Nimmt beliebiges (potenziell nicht vertrauenswürdiges, z.B. importiertes)
  * Rohdaten-Objekt entgegen und liefert ein vollständiges, garantiert
  * gültiges Effekte-Objekt (alle PRESET_EFFECT_KEYS, alle Zahlenwerte
- * geklemmt, unbekannte Felder/Module verworfen). Kap. 19: unbekannte
+ * geklemmt, unbekannte Felder/Module verworfen). Unbekannte
  * zusätzliche Effektmodule im Rohdaten-Objekt werden dabei stillschweigend
  * ignoriert (nicht Teil von PRESET_EFFECT_KEYS) — der Import wird NICHT
  * abgelehnt, es erscheint aber auch keine Fehlfunktion, da nur bekannte
@@ -330,7 +323,7 @@ export function normalizeEffectsObject(raw) {
   return out;
 }
 
-// ─── USER-PRESET CRUD (Kap. 7, 8, 20) ──────────────────────────
+// ─── USER-PRESET CRUD ──────────────────────────
 
 function _sanitizeMeta({ name, category, description }) {
   const cleanName = (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 60) : 'Eigenes Preset';
@@ -340,7 +333,7 @@ function _sanitizeMeta({ name, category, description }) {
 }
 
 /** Neues User-Preset. IDs sind mit 'user_' präfixt — kann nie mit einer
- *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren (Kap. 8). */
+ *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren. */
 export function createUserPreset({ name, category, description, effects }) {
   const meta = _sanitizeMeta({ name, category, description });
   const preset = {
@@ -375,7 +368,7 @@ export function deleteUserPreset(id) {
 
 /** Preset (built-in ODER eigenes) als neues, unabhängiges User-Preset
  *  duplizieren — das Original (insbesondere ein Built-in) bleibt dabei
- *  unverändert (Kap. 20). */
+ *  unverändert. */
 export function duplicatePreset(sourceId, overrideName) {
   const src = getPresetById(sourceId);
   if (!src) return null;
@@ -392,14 +385,14 @@ export function isUserPreset(id) {
 }
 
 /**
- * Rückwärtskompatibilität (Kap. 16): migriert die Kategorie bereits
- * gespeicherter User-Presets, falls sich der Kategorie-Schlüssel in einer
- * späteren Version geändert hat (z.B. das alte 3er-Schema 'character' ->
- * neues 6er-Schema). Jede Kategorie, die nicht (mehr) in
- * PRESET_CATEGORIES existiert, fällt auf DEFAULT_CATEGORY zurück, statt
- * beim Rendern stillschweigend aus dem Dropdown zu verschwinden. Von
- * storage/persistence.js load() direkt nach dem Einlesen von APP.userPresets
- * aufgerufen; idempotent und ohne Wirkung, wenn nichts zu migrieren ist.
+ * Rückwärtskompatibilität: migriert die Kategorie bereits gespeicherter
+ * User-Presets, falls sich der Kategorie-Schlüssel in einer späteren Version
+ * geändert hat (z.B. das alte 3er-Schema 'character' -> neues 6er-Schema). Jede
+ * Kategorie, die nicht (mehr) in PRESET_CATEGORIES existiert, fällt auf
+ * DEFAULT_CATEGORY zurück, statt beim Rendern stillschweigend aus dem Dropdown
+ * zu verschwinden. Von storage/persistence.js load() direkt nach dem Einlesen
+ * von APP.userPresets aufgerufen; idempotent und ohne Wirkung, wenn nichts zu
+ * migrieren ist.
  */
 const LEGACY_CATEGORY_MAP = { character: 'supernatural' };
 
@@ -414,20 +407,21 @@ export function migratePresetCategories() {
   return changed;
 }
 
-// ─── IMPORT (aufgerufen von storage/import-export.js importData(), Kap. 12-13, 19) ──
-// Format-Entscheidung (Kap. 19, dokumentiert): eine importierte Preset-
-// Datei mit unbekannten Zusatzfeldern wird NICHT abgelehnt (Felder werden
-// ignoriert); eine Datei mit fehlenden Pflichtfeldern (kein `effects`-
-// Objekt) WIRD abgelehnt (siehe validatePresetShape unten, von storage/import-export.js
+// ─── IMPORT (aufgerufen von storage/import-export.js importData()) ──
+// Eine importierte Preset-Datei mit unbekannten Zusatzfeldern wird NICHT
+// abgelehnt (Felder werden ignoriert); eine Datei mit fehlenden Pflichtfeldern
+// (kein `effects`-Objekt) WIRD abgelehnt (siehe validatePresetShape unten, von
+// storage/import-export.js vor dem Aufruf dieser Funktionen genutzt). Eine
+// unbekannte/neuere `version` wird nicht hart abgelehnt (Vorwärtskompatibilität).
 // vor dem Aufruf dieser Funktionen genutzt). Eine unbekannte/neuere
 // `version` wird nicht hart abgelehnt (Vorwärtskompatibilität) — es wird
 // lediglich versucht, effects/Metadaten bestmöglich zu übernehmen; alle
 // Werte laufen ohnehin durch normalizeEffectsObject().
-// IDs aus der Importdatei werden NIE übernommen (Kap. 13 "Doppelte ID") —
-// jeder Import erzeugt immer eine frische ID, genau wie bei den
-// bestehenden _importXBundle()-Funktionen in storage/import-export.js. Ein gleicher
-// Anzeigename führt dadurch nie zu Datenverlust (Kap. 13 "Gleicher Name"):
-// das bestehende Preset bleibt unter seiner eigenen ID unangetastet.
+// IDs aus der Importdatei werden NIE übernommen — jeder Import erzeugt
+// immer eine frische ID, genau wie bei den bestehenden
+// _importXBundle()-Funktionen in storage/import-export.js. Ein gleicher
+// Anzeigename führt dadurch nie zu Datenverlust: das bestehende Preset
+// bleibt unter seiner eigenen ID unangetastet.
 
 export function validatePresetShape(raw) {
   return !!(raw && typeof raw === 'object' && raw.effects && typeof raw.effects === 'object');

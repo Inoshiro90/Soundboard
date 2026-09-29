@@ -1,13 +1,13 @@
 /**
  * storage/persistence.js — Kern-Persistenz (Laden/Speichern)
- * Ausgelagert aus storage.js (Phase 2 der Refaktorierung). Bleibt die zentrale
- * Fassade für _saveRaw()/save()/load(): viele Module projektweit rufen diese
- * Funktionen unter unverändertem Namen und unveränderter Signatur auf.
+ * Zentrale Fassade für _saveRaw()/save()/load(): viele Module projektweit rufen
+ * diese Funktionen auf.
  */
 
 import { APP }              from '../core/state.js';
 import { STORAGE_KEY }      from '../core/constants.js';
 import { toast }            from '../notifications.js';
+import '../audio/context.js';
 import { openDB, idbDelete, audioKey, idbSet, IDB_SENTINEL } from '../db.js';
 import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
 import { migratePresetCategories } from '../presets.js';
@@ -16,7 +16,7 @@ import { initDefaults }     from './factories.js';
 import { migrateEffects, migratePlaybackSettings, migrateProfileColors, runIdbMigrationIfNeeded } from './migration.js';
 
 // ─── DECODE ALL AUDIO ────────────────────────────────────────
-// BUGFIX: We do NOT call actx() here — no AudioContext before user gesture.
+// We do NOT call actx() here — no AudioContext before user gesture.
 // Instead we store slot data refs so getOrDecodeBuffer() can be called on demand.
 
 export async function decodeAllAudio() {
@@ -35,10 +35,9 @@ export function _saveRaw() {
       activeProfileId: APP.activeProfileId,
       globalSettings:  APP.globalSettings,
       ambient:         APP.ambient,
-      // Spez. Kap. 32/67: nur serialisierbare, sinnvoll persistente Felder —
-      // kein laufender AudioContext/AudioElement/Timer. isPlaying wird
-      // bewusst NICHT gespeichert (Kap. 33: nach Reload nie automatisch
-      // starten), nur welcher Track zuletzt aktiv war.
+      // Nur serialisierbare, sinnvoll persistente Felder — kein laufender
+      // AudioContext/AudioElement/Timer. isPlaying wird bewusst NICHT gespeichert
+      // (nach Reload nie automatisch starten), nur welcher Track zuletzt aktiv war.
       music: {
         profiles:        APP.music.profiles,
         activeProfileId: APP.music.activeProfileId,
@@ -78,9 +77,9 @@ export async function load() {
     APP.music            = _normalizeMusic(d.music);
     APP.viewMode         = ['sound', 'ambient', 'music'].includes(d.viewMode) ? d.viewMode : 'sound';
     // Rückwärtskompatibel: ältere gespeicherte Zustände haben kein
-    // userPresets-Feld — Default leeres Array (Kap. 15/16).
+    // userPresets-Feld — Default leeres Array.
     APP.userPresets      = Array.isArray(d.userPresets) ? d.userPresets : [];
-    // Kap. 16: Kategorie-Schema kann sich zwischen Versionen ändern
+    // Kategorie-Schema kann sich zwischen Versionen ändern
     // (z.B. altes 3er- auf neues 6er-Schema) — vorhandene User-Presets
     // migrieren, statt sie unsichtbar werden zu lassen.
     if (migratePresetCategories()) _saveRaw();
@@ -94,7 +93,7 @@ export async function load() {
       migratePlaybackSettings();
       migrateProfileColors();
       await runIdbMigrationIfNeeded();
-      // BUGFIX: No decodeAllAudio() here — lazy decode on demand
+      // No decodeAllAudio() here — lazy decode on demand
     }
   } catch(e) {
     console.error('[storage] load error:', e); initDefaults();
@@ -109,7 +108,7 @@ export async function saveSlotAudio(soundId, slotIdx, base64, slot) {
 
 export async function resetAll({ onDone }) {
   if (!confirm('Alles zurücksetzen?')) return;
-  // Spez. Kap. 35: zugehörige IndexedDB-Musikdateien gezielt löschen —
+  // Zugehörige IndexedDB-Musikdateien gezielt löschen —
   // Sound-/Ambient-Blobs bleiben davon unberührt (bestehendes Verhalten).
   try {
     for (const mp of (APP.music?.profiles || [])) {

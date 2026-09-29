@@ -1,5 +1,5 @@
 /**
- * timeline.js — Multi-Track Timeline / Mixer (Phase 4)
+ * timeline.js — Multi-Track Timeline / Mixer
  *
  * State lives in APP.timeline (core/state.js).
  * Canvas rendering for the timeline view.
@@ -15,6 +15,7 @@ import { APP, CItems }   from './core/state.js';
 import { uid, bk }       from './utils.js';
 import { toast }         from './notifications.js';
 import { actx } from './audio/context.js';
+import './audio/playback.js';
 import { historyPush, snapshotTimeline } from './history.js';
 
 // ─── TRACK MANAGEMENT ────────────────────────────────────────

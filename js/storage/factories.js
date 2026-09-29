@@ -1,6 +1,5 @@
 /**
  * storage/factories.js — Factory-Funktionen für Profile/Items + Standardbestand
- * Ausgelagert aus storage.js (Phase 2 der Refaktorierung).
  */
 
 import { APP }                             from '../core/state.js';
@@ -10,9 +9,8 @@ import { defaultEffects, defaultPlayback } from '../audio/effect-graph.js';
 // ─── FACTORY ─────────────────────────────────────────────────
 
 // Wie viele leere Kacheln bekommt ein neu angelegtes Profil als Startbestand?
-// Früher aus maxCols*maxRows (10×10=100) berechnet; das Grid ist seit dem
-// neuen Spalten-System (grid-system.css) breakpoint-gesteuert und hat kein
-// festes Zeilenlimit mehr, daher ein fester, viewport-unabhängiger Wert.
+// Das Grid ist breakpoint-gesteuert (grid-system.css) und hat kein festes
+// Zeilenlimit, daher ein fester, viewport-unabhängiger Wert.
 export const STARTER_PLACEHOLDER_COUNT = 24;
 
 export function mkProfile(name, icon, color) {

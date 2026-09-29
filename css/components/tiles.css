@@ -1,0 +1,387 @@
+/* ============================================================
+   components/tiles.css — Kacheln (Tile, Inhalt, Hover, Bearbeitungsmodus, Drag)
+   ============================================================ */
+
+/* ─── TILE WRAP ─── */
+.tile-wrap {
+	position: relative;
+	min-width: 0;
+	container-type: inline-size;
+	/* Deaktiviert Doppeltipp-Zoom-Verzögerung und Pinch-Zoom auf der
+	   Kachel, erlaubt aber normales Scrollen — wichtig als Baseline
+	   VOR einem Long-Press, da touch-action ab dem ersten touchstart
+	   gilt und ein späteres Umschalten (siehe .is-edit-mode unten)
+	   in manchen Browsern für die bereits laufende Touch-Sequenz zu
+	   spät kommen kann. */
+	touch-action: manipulation;
+}
+.tile-wrap.is-dragging {
+	opacity: 0.3;
+}
+.tile-wrap.is-drag-over .tile {
+	border-color: var(--color-accent) !important;
+	border-style: dashed !important;
+}
+
+/* ─── TILE ─── */
+.tile {
+	width: 100%;
+	height: 100%; /* Höhe kommt jetzt von .tile-wrap { aspect-ratio: 1/1 }, siehe grid-system.css */
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-1);
+	padding: var(--space-2) var(--space-2) var(--space-3);
+	transition:
+		border-color var(--dur-base) var(--ease),
+		box-shadow var(--dur-base) var(--ease),
+		transform var(--dur-fast) var(--ease),
+		background var(--dur-base) var(--ease);
+	position: relative;
+	overflow: hidden;
+	user-select: none;
+	-webkit-user-select: none;
+	box-shadow: var(--shadow-card);
+}
+.tile:hover {
+	border-color: rgba(0, 0, 0, 0.18);
+	box-shadow: var(--shadow-deep);
+	background: var(--bg-warm);
+}
+[data-theme='dark'] .tile:hover {
+	border-color: rgba(255, 255, 255, 0.15);
+}
+.tile:active,
+.tile.is-playing {
+	transform: scale(0.965);
+	border-color: var(--color-accent);
+	box-shadow:
+		0 0 0 2px var(--badge-bg),
+		var(--shadow-card);
+}
+
+/* Macro tile */
+.tile.tile--macro {
+	border-color: rgba(0, 117, 222, 0.2);
+}
+.tile.tile--macro:hover {
+	border-color: var(--color-accent);
+}
+.tile.tile--macro.is-playing {
+	border-color: var(--color-teal);
+	box-shadow:
+		0 0 0 2px rgba(42, 157, 153, 0.15),
+		var(--shadow-card);
+}
+
+/* Placeholder tile */
+.tile.tile--placeholder {
+	background: transparent;
+	border: 1px dashed var(--border-color);
+	box-shadow: none;
+	cursor: default;
+}
+.tile.tile--placeholder:hover {
+	border-color: var(--border-medium);
+	box-shadow: none;
+	background: var(--bg-warm);
+}
+.tile.tile--placeholder:active {
+	transform: none;
+	box-shadow: none;
+}
+
+/* No audio */
+.tile.tile--no-audio .tile__icon,
+.tile.tile--no-audio .tile__label {
+	opacity: 0.35;
+}
+
+/* Locked */
+.tile-wrap.is-locked .tile {
+	border-color: rgba(26, 174, 57, 0.3) !important;
+}
+
+/* Arrange selected */
+.tile-wrap.is-arrange-selected .tile {
+	border-color: var(--color-teal) !important;
+	box-shadow: 0 0 0 2px rgba(42, 157, 153, 0.2) !important;
+}
+
+/* ─── TILE CONTENT ─── */
+.tile__icon {
+	font-size: clamp(1.4rem, 10cqi, 2.6rem);
+	line-height: 1;
+	pointer-events: none;
+	flex-shrink: 0;
+}
+.tile__label {
+	font-family: var(--font-sans);
+	font-size: clamp(var(--tile-label-min-size), 4.5cqi, 0.9375rem);
+	font-weight: var(--fw-semibold);
+	letter-spacing: 0.125px;
+	text-align: center;
+	color: var(--text-primary);
+	/* max-width: 100%; */
+	min-width: 0;
+	overflow: hidden;
+	/* white-space: nowrap; */
+	pointer-events: none;
+	line-height: 1.2;
+	flex-shrink: 0;
+	text-transform: uppercase;
+	max-width: max-content;
+}
+.tile__hotkey {
+	position: absolute;
+	top: 4px;
+	left: 5px;
+	font-family: var(--font-mono);
+	font-size: 0.5rem;
+	color: var(--text-muted);
+	background: var(--bg-warm);
+	padding: 1px 3px;
+	border-radius: var(--radius-micro);
+	pointer-events: none;
+	max-width: 58%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	z-index: 1;
+	border: var(--border-whisper);
+}
+.tile__slot-badge {
+	position: absolute;
+	bottom: 4px;
+	left: 5px;
+	font-family: var(--font-mono);
+	font-size: 0.48rem;
+	color: var(--text-muted);
+	pointer-events: none;
+	z-index: 1;
+	line-height: 1;
+}
+.tile.has-multi-slots .tile__slot-badge {
+	color: var(--color-accent);
+}
+
+.tile__loop-icon {
+	position: absolute;
+	bottom: 4px;
+	right: 5px;
+	font-size: 0.5rem;
+	color: var(--text-muted);
+	pointer-events: none;
+	z-index: 1;
+	opacity: 0.4;
+}
+.tile.tile--loop .tile__loop-icon {
+	color: var(--color-accent);
+	opacity: 1;
+}
+
+.tile__macro-badge {
+	position: absolute;
+	bottom: 4px;
+	left: 5px;
+	font-family: var(--font-mono);
+	font-size: 0.46rem;
+	color: var(--color-accent);
+	pointer-events: none;
+	z-index: 1;
+	line-height: 1;
+	opacity: 0.7;
+}
+.tile__lock-icon {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	font-size: 0.6rem;
+	color: var(--color-teal);
+	pointer-events: none;
+	z-index: 2;
+	display: none;
+}
+.tile-wrap.is-locked .tile__lock-icon {
+	display: block;
+}
+
+.tile__progress {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	height: 2px;
+	background: var(--color-accent);
+	width: 0%;
+	border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+	pointer-events: none;
+	transition: none;
+	opacity: 0.6;
+}
+.tile.tile--macro .tile__progress {
+	background: var(--color-teal);
+}
+
+.tile__stop-overlay {
+	position: absolute;
+	inset: 0;
+	background: rgba(255, 255, 255, 0.88);
+	display: none;
+	align-items: center;
+	justify-content: center;
+	font-size: 1.1rem;
+	color: var(--color-orange);
+	border-radius: var(--radius-sm);
+}
+[data-theme='dark'] .tile__stop-overlay {
+	background: rgba(25, 25, 25, 0.75);
+}
+.tile.is-playing:hover .tile__stop-overlay {
+	display: flex;
+}
+
+/* ─── TILE HOVER CONTROLS ─── */
+.tile-controls {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	display: flex;
+	gap: 2px;
+	opacity: 0;
+	/* WICHTIG: opacity:0 allein macht ein Element nicht "untappable" —
+	   auf Touch (kein :hover) wäre der unsichtbare Edit-Button sonst
+	   weiterhin exakt an der ursprünglich gemeldeten Stelle treffbar.
+	   pointer-events:none stellt sicher, dass er außerhalb von Hover/
+	   Bearbeitungsmodus wirklich inaktiv ist. */
+	pointer-events: none;
+	transition: opacity var(--dur-base) var(--ease);
+	z-index: 10;
+}
+.tile-wrap:hover .tile-controls {
+	opacity: 1;
+	pointer-events: auto;
+}
+/* Placeholder-"+"-Button: anders als der Edit-Button (der vor
+   versehentlichem Antippen geschützt werden soll) ist das Hinzufügen
+   auf einer LEEREN Kachel die einzige, gefahrlose Aktion dort — keine
+   konkurrierende "Play"-Aktion, die geschützt werden müsste. Bleibt
+   daher immer sichtbar/tappbar, auch ohne Hover (wichtig für Touch,
+   das :hover nie auslöst). */
+.tile--placeholder ~ .tile-controls {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* ─── BEARBEITUNGSMODUS (Toolbar-Button #btnTileEditMode) ───────────
+   Zeigt die Stift-Edit-Controls dauerhaft (nicht nur bei :hover, das
+   Touch ohnehin nicht hat). Betrifft NUR die Sichtbarkeit des
+   Stift-Buttons — Tap-auf-Kachel spielt weiterhin normal ab
+   (Bearbeiten geht ausschließlich über den Stift-Button), und
+   Verschieben ist davon unabhängig (s. Abschnitt "KACHEL VERSCHIEBEN"
+   unten, per Long-Press jederzeit verfügbar). */
+.tile-grid.is-edit-mode .tile-controls {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* ─── KACHEL VERSCHIEBEN (Touch: Long-Press, Desktop: natives HTML5-DnD) ───
+   Bewusst UNABHÄNGIG vom Bearbeitungsmodus oben: Long-Press
+   (ui.js: setupTileEditGestures/_beginTouchDrag) löst das Ziehen direkt
+   aus, ohne dass vorher ein Modus aktiviert werden muss. */
+.tile-wrap {
+	/* Gibt dem Pointer-Long-Press/Drag Vorrang vor Browser-Pan/Zoom-
+	   Gesten auf der Kachel selbst — sonst würde ein Long-Press-Versuch
+	   auf Touch oft vom Seiten-Scroll gekapert, bevor der Timer feuert. */
+	touch-action: none;
+}
+.tile-wrap.is-dragging {
+	opacity: 0.5;
+	cursor: grabbing;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.tile-wrap.is-drag-over .tile {
+	outline: 2px solid var(--color-accent);
+	outline-offset: -2px;
+}
+
+.edit-mode-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	background: var(--badge-bg);
+	border: 1px solid var(--color-accent);
+	border-radius: var(--radius-subtle);
+	padding: var(--space-2) var(--space-3);
+	min-height: var(--h-btn);
+	flex-wrap: wrap;
+}
+.edit-mode-bar__label {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	color: var(--color-accent);
+	font-size: var(--text-caption);
+	font-weight: var(--fw-semibold);
+}
+
+/* Sekundäre Tile-Controls verwenden var(--h-btn), dürfen aber die
+   1×1-Kachel nicht unbenutzbar machen. Da die
+   Controls per position:absolute über der Kachel (in den Gutter
+   hinein) schweben und erst bei Hover sichtbar werden, ist ein
+   leichtes Hinausragen in den Gutter unkritisch — die primäre
+   Kachelfläche bleibt uneingeschränkt bedienbar. */
+.tile-ctrl-btn {
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	color: var(--text-muted);
+	width: var(--h-btn);
+	height: var(--h-btn);
+	border-radius: var(--radius-micro);
+	font-size: 0.72rem;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: var(--shadow-card);
+	transition:
+		color var(--dur-fast) var(--ease),
+		border-color var(--dur-fast) var(--ease);
+}
+.tile-ctrl-btn:hover {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+}
+
+@media only screen and (hover: none) {
+	.tile-ctrl-btn {display: none}
+}
+
+/* ─── DRAG DOTS ─── */
+.drag-dots {
+	position: absolute;
+	bottom: 3px;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 2px;
+	cursor: grab;
+	opacity: 0;
+	transition: opacity var(--dur-base) var(--ease);
+}
+.drag-dots span {
+	display: block;
+	width: 3px;
+	height: 3px;
+	border-radius: var(--radius-circle);
+	background: var(--text-muted);
+}
+.tile-wrap:hover .drag-dots {
+	opacity: 0.5;
+}

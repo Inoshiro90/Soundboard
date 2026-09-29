@@ -1,7 +1,6 @@
 /**
  * music/music-playback.js — Wiedergabe-Engine (Zwei-Player-Crossfade),
  * Ordering/Shuffle, Blob-URL-Cache, Fortschritts-Loop
- * Ausgelagert aus music.js (Phase 5 der Refaktorierung).
  */
 
 import { APP, CMP, CMTracks } from '../core/state.js';
@@ -14,41 +13,37 @@ import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // _revokeBlobUrl/_orderedTracks/_blobUrls/_resetShuffleOrder aus diesem
 // Modul) — unkritisch, da alle betroffenen Bezeichner Funktions-
 // deklarationen bzw. nur zur Laufzeit gelesene/geschriebene Objekte sind
-// (analog zum bereits etablierten Muster, z. B. ambient/*.js in Phase 5).
+// (dasselbe Muster wie in ambient/*.js).
 import { ensureMusicState, _findTrack, _persist } from './music-model.js';
 import { renderMusicPanel, renderMusicPlayer } from './music-render.js';
 
 // ─── RUNTIME-ONLY STATE (nie persistiert) ────────────────────
 
-// Exportiert (Phase 5): _players/_activeSlot werden von music-render.js
+// Exportiert: _players/_activeSlot werden von music-render.js
 // (Zeilen-Status) und music-events.js benötigt; _crossfading von
 // music-model.js (setMusicTrackVolume, Live-Gain-Check); _blobUrls von
-// music-model.js (resetMusic). Reine Sichtbarkeits-Erweiterung durch den
-// Datei-Split, keine Verhaltensänderung.
+// music-model.js (resetMusic).
 export let _players       = null;   // { A:{audio,source,gain,trackId}, B:{...}, master } — lazy
 export let _activeSlot     = 'A';
-let _loadToken      = 0;     // Race-Condition-Absicherung (Kap. 6)
+let _loadToken      = 0;     // Race-Condition-Absicherung
 export let _crossfading    = false;
-let _shuffleOrder   = [];    // Track-IDs in fixer Shuffle-Reihenfolge (Kap. 16)
+let _shuffleOrder   = [];    // Track-IDs in fixer Shuffle-Reihenfolge
 let _rafId          = null;
-export const _blobUrls     = new Map(); // trackId → ObjectURL (Kap. 65: sauber freigeben)
+export const _blobUrls     = new Map(); // trackId → ObjectURL (sauber freigeben)
 
-// Phase-5-Anpassung (Datei-Split): ES-Module erlauben kein Neuzuweisen eines
-// importierten `let`-Bindings aus einem anderen Modul. `_shuffleOrder` wird
-// aber auch von music-model.js (switchMusicProfile/removeMusicTrack/
-// resetMusic) zurückgesetzt — dafür diese kleine, rein kapselnde Hilfs-
-// funktion (identisches Verhalten wie die vormalige Direktzuweisung
-// `_shuffleOrder = []` an denselben drei Stellen). Vorab mit dem Nutzer
-// abgestimmt (s. Chat).
+// `_shuffleOrder` wird auch von music-model.js (switchMusicProfile/removeMusicTrack/
+// resetMusic) zurückgesetzt — ES-Module erlauben kein Neuzuweisen eines
+// importierten `let`-Bindings aus einem anderen Modul, daher diese kleine,
+// rein kapselnde Hilfsfunktion.
 export function _resetShuffleOrder() { _shuffleOrder = []; }
 
 
-// ─── ORDERING (Kap. 54) ──────────────────────────────────────
+// ─── ORDERING ──────────────────────────────────────
 // Ohne bewusste manuelle Reihenfolge: alphabetisch. Sobald einmal manuell
 // umsortiert wurde (reorderMusicTrack), gilt ausschließlich .order — keine
 // sich gegenseitig überschreibende Mischung aus beidem.
 
-// Exportiert (Phase 5): music-model.js/music-render.js benötigen die
+// Exportiert: music-model.js/music-render.js benötigen die
 // Track-Reihenfolge (reorderMusicTrack/moveMusicTrack bzw. renderMusicPanel).
 export function _orderedTracks() {
   const p = CMP();
@@ -79,9 +74,9 @@ function _playOrder() {
 }
 
 
-// ─── BLOB-URL-VERWALTUNG (Kap. 65) ────────────────────────────
+// ─── BLOB-URL-VERWALTUNG ────────────────────────────
 
-// Exportiert (Phase 5): music-model.js ruft _revokeBlobUrl() beim Löschen
+// Exportiert: music-model.js ruft _revokeBlobUrl() beim Löschen
 // von Profilen/Tracks auf.
 export function _revokeBlobUrl(trackId) {
   const url = _blobUrls.get(trackId);
@@ -117,19 +112,17 @@ function _ensurePlayers() {
     const source = ctx.createMediaElementSource(audio);
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    // Prompt 3, Kap. 8/9: KEINE statische source→gain-Verkabelung mehr —
-    // der tatsächliche Signalweg (mit oder ohne Effektkette) wird pro
-    // geladenem Track in _reconnectSlotFx() aufgebaut, weil das Preset
-    // (effects) sich von Track zu Track unterscheidet.
+    // KEINE statische source→gain-Verkabelung: der tatsächliche Signalweg (mit oder
+    // ohne Effektkette) wird pro geladenem Track in _reconnectSlotFx() aufgebaut, weil
+    // das Preset (effects) sich von Track zu Track unterscheidet.
     gain.connect(master);
     const rec = { audio, source, gain, trackId: null, fxChain: null };
-    // BUGFIX (Nutzer-Feedback): renderMusicPanel()/renderMusicPlayer() wurden
-    // bisher nur an den JS-Aufrufstellen (playMusicTrack/_switchToTrack usw.)
-    // aktualisiert. Da .play() bei noch ungeladenen Metadaten erst asynchron
-    // NACH diesem Aufruf tatsächlich zu spielen beginnt, blieb das Icon auf
-    // "Play" stehen. Die echten play/pause-Events des <audio>-Elements sind
-    // die zuverlässige Quelle der Wahrheit — bei jedem Wechsel wird neu
-    // gerendert, unabhängig davon, WARUM sich der Zustand geändert hat.
+    // renderMusicPanel()/renderMusicPlayer() reagieren auf die echten play/pause-Events
+    // des <audio>-Elements, nicht nur an den JS-Aufrufstellen (playMusicTrack/
+    // _switchToTrack usw.): .play() beginnt bei noch ungeladenen Metadaten erst
+    // asynchron NACH diesem Aufruf tatsächlich zu spielen, das Icon bliebe sonst auf
+    // "Play" stehen. Die Events sind die zuverlässige Quelle der Wahrheit — bei jedem
+    // Wechsel wird neu gerendert, unabhängig davon, WARUM sich der Zustand geändert hat.
     audio.addEventListener('play',  () => { renderMusicPanel(); renderMusicPlayer(); });
     audio.addEventListener('pause', () => { renderMusicPanel(); renderMusicPlayer(); });
     return rec;
@@ -139,7 +132,7 @@ function _ensurePlayers() {
 }
 
 /**
- * Prompt 3, Kap. 8/9: baut den Signalweg für einen Player-Slot neu auf —
+ * Baut den Signalweg für einen Player-Slot neu auf —
  * source → [Effektkette] → gain → master (gain→master bleibt statisch,
  * s. _ensurePlayers()). Wird bei JEDEM Track-Laden in einen Slot
  * aufgerufen (_loadIntoSlot()), weil jeder Track sein eigenes
@@ -174,7 +167,7 @@ async function _loadIntoSlot(slot, track) {
   let b64 = track.data;
   if (track.data === IDB_SENTINEL) {
     b64 = await idbGet(audioKey(track.id, 0));
-    if (myToken !== _loadToken) return null; // Kap. 6: inzwischen überholt
+    if (myToken !== _loadToken) return null; // Inzwischen überholt
     if (!b64) { toast(`"${track.name}" konnte nicht geladen werden`, 'err'); return null; }
   }
 
@@ -185,7 +178,7 @@ async function _loadIntoSlot(slot, track) {
 
   rec.audio.src   = url;
   rec.trackId     = track.id;
-  // Prompt 3, Kap. 8/9: Effektkette für DIESEN Track aufbauen — jeder
+  // Effektkette für DIESEN Track aufbauen — jeder
   // Track kann ein anderes Preset haben, daher pro Ladevorgang neu.
   _reconnectSlotFx(rec, track.effects);
   return rec;
@@ -212,7 +205,7 @@ function _handleTrackEnded() {
   nextMusicTrack({ auto: true });
 }
 
-/** Kap. 57: Klick auf aktiven Track = Play/Pause, auf anderen Track = wechseln. */
+/** Klick auf aktiven Track = Play/Pause, auf anderen Track = wechseln. */
 export async function playMusicTrack(id) {
   ensureMusicState();
   const track = _findTrack(id);
@@ -237,7 +230,7 @@ async function _switchToTrack(track) {
   const newSlot = oldSlot === 'A' ? 'B' : 'A';
 
   const rec = await _loadIntoSlot(newSlot, track);
-  if (myToken !== _loadToken || !rec) return; // Kap. 6: überholt oder fehlgeschlagen
+  if (myToken !== _loadToken || !rec) return; // Überholt oder fehlgeschlagen
 
   const ctx = actx();
   const targetGain = track.vol ?? 1;
@@ -249,7 +242,7 @@ async function _switchToTrack(track) {
   const hasOld  = !!(oldRec.trackId && !oldRec.audio.paused);
 
   const doPlay = () => {
-    if (myToken !== _loadToken) return; // während des Ladens überholt (Kap. 6)
+    if (myToken !== _loadToken) return; // während des Ladens überholt
     if (isFinite(rec.audio.duration) && rec.audio.duration > 0) {
       track.duration = rec.audio.duration;
       _persist();
@@ -308,7 +301,7 @@ export function resumeMusic() {
   renderMusicPanel(); renderMusicPlayer();
 }
 
-/** Stoppt AUSSCHLIESSLICH Musik (Kap. 18) — rührt Sound-Kacheln/Ambient nicht an. */
+/** Stoppt AUSSCHLIESSLICH Musik — rührt Sound-Kacheln/Ambient nicht an. */
 export function stopMusic() {
   ++_loadToken; // laufende Ladevorgänge verwerfen
   if (_players) {
@@ -351,7 +344,7 @@ export function nextMusicTrack({ auto = false } = {}) {
 export function previousMusicTrack() {
   ensureMusicState();
   // Klassisches Player-Verhalten: > 3s in den Track hinein -> Trackanfang,
-  // sonst echter Sprung zum vorherigen Track (Kap. 14).
+  // sonst echter Sprung zum vorherigen Track.
   const rec = _players?.[_activeSlot];
   if (rec && rec.trackId && rec.audio.currentTime > 3) { seekMusic(0); return; }
   const order = _playOrder();
@@ -402,7 +395,7 @@ export function isMusicPlaying() {
   return !!(rec && rec.trackId && !rec.audio.paused);
 }
 
-// ─── PROGRESS (rAF, throttled auf die aktive Zeile — Kap. 12/44) ──────
+// ─── PROGRESS (rAF, throttled auf die aktive Zeile) ──────
 
 function _startProgressLoop() {
   if (_rafId) return;

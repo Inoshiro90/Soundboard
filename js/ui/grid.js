@@ -1,6 +1,5 @@
 /**
  * ui/grid.js — Kachel-Grid-Rendering (Sound/Makro/Platzhalter) + "+"-Kachel
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { APP, CItems } from '../core/state.js';
@@ -14,12 +13,10 @@ import { mkPH } from '../storage/factories.js';
 // makeMacroTile/renderGrid aus diesem Modul; tabs.js importiert umgekehrt
 // renderGrid) — unkritisch, da alle betroffenen Bezeichner Funktions-
 // deklarationen sind, die erst zur Laufzeit aufgerufen werden (analog zum
-// bereits bestehenden audio/playback.js/ambient.js-Muster).
-import { isTileEditMode, setupDrag } from './drag-drop.js';
-import { updateCategories } from './tabs.js';
+// bereits bestehenden audio/playback.js/ambient/ambient-playback.js-Muster).
+import { isTileEditMode, setupDrag, normaliseOrders } from './drag-drop.js';
+import { updateCategories, PENCIL_ICON_SVG } from './tabs.js';
 import { renderLucideIcons } from './icon-picker.js';
-import {normaliseOrders} from './drag-drop.js';
-import {PENCIL_ICON_SVG} from './tabs.js';
 
 // ─── GRID ─────────────────────────────────────────────────────
 // Reines CSS-Grid seit der Einführung des Spalten-Systems
@@ -106,8 +103,8 @@ function _cssLengthToPx(value) {
 }
 
 // Untere Grenze aus dem bestehenden Designsystem (--tile-label-min-size,
-// css/base.css) — deckt sich mit dem bisherigen unteren clamp()-Wert von
-// .tile__label, kein neuer willkürlicher Wert.
+// css/base.css) — deckt sich mit dem unteren clamp()-Wert von .tile__label,
+// kein neuer willkürlicher Wert.
 function tileLabelMinSize() {
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue('--tile-label-min-size').trim();
@@ -218,13 +215,13 @@ export function makeSoundTile(s) {
   // Außerhalb des Bearbeitungsmodus spielt ein Tap wie gewohnt ab.
   tile.addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
-    if (isTileEditMode()) { import('../events.js').then(mod => mod.openSoundModal(s.id)); return; }
+    if (isTileEditMode()) { import('../dialogs/sound-modal.js').then(mod => mod.openSoundModal(s.id)); return; }
     playSound(s);
   });
 
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
     e.stopPropagation();
-    import('../events.js').then(m => m.openSoundModal(s.id));
+    import('../dialogs/sound-modal.js').then(m => m.openSoundModal(s.id));
   });
 
   _tileLabelObserver.observe(wrap);
@@ -265,12 +262,12 @@ export function makeMacroTile(m) {
   // Tap direkt, statt das Makro auszuführen.
   wrap.querySelector('.tile').addEventListener('click', e => {
     if (e.target.closest('.tile-controls')) return;
-    if (isTileEditMode()) { import('../events.js').then(mod => mod.openMacroModal(m.id)); return; }
+    if (isTileEditMode()) { import('../dialogs/macro-modal.js').then(mod => mod.openMacroModal(m.id)); return; }
     runMacro(m);
   });
   wrap.querySelector('.js-edit-btn').addEventListener('click', e => {
     e.stopPropagation();
-    import('../events.js').then(ev => ev.openMacroModal(m.id));
+    import('../dialogs/macro-modal.js').then(ev => ev.openMacroModal(m.id));
   });
   return wrap;
 }
@@ -299,7 +296,7 @@ export function makePHTile(ph) {
     if (e.target.closest('.tile-controls')) return;
   });
   phTile.addEventListener('dblclick', () => {
-    import('../events.js').then(m => m.openSoundModal(null, ph.id));
+    import('../dialogs/sound-modal.js').then(m => m.openSoundModal(null, ph.id));
   });
   const addBtn = wrap.querySelector('.js-add-btn');
   if (addBtn) addBtn.addEventListener('click', e => {
@@ -312,8 +309,7 @@ export function makePHTile(ph) {
 // ─── "+"-KACHEL: SOUND ODER MAKRO WÄHLEN ───────────────────────
 // Ein einziges, wiederverwendetes Popover für alle leeren Kacheln (statt
 // eines pro Kachel) — positioniert sich per JS am zuletzt geklickten
-// "+"-Button. Ersetzt den vormals eigenständigen "Makro"-Menüband-Button:
-// Sound UND Makro werden jetzt direkt am Zielslot entschieden.
+// "+"-Button. Sound UND Makro werden direkt am Zielslot entschieden.
 let _tileAddTargetId = null;
 let _tileAddTargetBtn = null;
 
@@ -362,12 +358,12 @@ export function initTileAddChoice() {
   document.getElementById('tileAddChoiceSound')?.addEventListener('click', () => {
     const phId = _tileAddTargetId;
     _closeTileAddChoice();
-    import('../events.js').then(m => m.openSoundModal(null, phId));
+    import('../dialogs/sound-modal.js').then(m => m.openSoundModal(null, phId));
   });
   document.getElementById('tileAddChoiceMacro')?.addEventListener('click', () => {
     const phId = _tileAddTargetId;
     _closeTileAddChoice();
-    import('../events.js').then(m => m.openMacroModal(null, phId));
+    import('../dialogs/macro-modal.js').then(m => m.openMacroModal(null, phId));
   });
   document.addEventListener('click', e => {
     const panel = document.getElementById('tileAddChoicePopover');
@@ -381,12 +377,11 @@ export function initTileAddChoice() {
 }
 
 /**
- * Prompt 4, Kap. 3: generische Variante von renderPresetDropdown() — baut
- * die Preset-Optionsliste (Kategorien + eigene Presets) in ein beliebiges
- * <select>-Element statt fest in #fxPreset. Es darf nur EINE Quelle für die
- * Preset-Liste geben: sowohl Sound-Effekte (#fxPreset) als auch der
- * Musik-Track-Dialog (Prompt 3) und die Profil-Presets (Prompt 4) rufen
- * diese Funktion auf.
+ * Generische Variante von renderPresetDropdown() — baut die Preset-Optionsliste
+ * (Kategorien + eigene Presets) in ein beliebiges <select>-Element statt fest in
+ * #fxPreset. Es darf nur EINE Quelle für die Preset-Liste geben: sowohl
+ * Sound-Effekte (#fxPreset) als auch der Musik-Track-Dialog und die Profil-Presets
+ * rufen diese Funktion auf.
  * @param {HTMLSelectElement} sel - Ziel-<select>, dessen erstes <option>
  *   ("— Kein Preset —"/"Kein Preset") im Markup bereits vorhanden sein muss.
  * @param {string} [currentId] - zu erhaltender Wert; Standard: sel.value.

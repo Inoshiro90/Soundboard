@@ -1,6 +1,5 @@
 /**
  * audio/ir-data.js — Impulsantwort-Generierung für Reverb
- * Ausgelagert aus audio.js (Phase 3 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
@@ -20,10 +19,11 @@ const IR_PARAMS = {
   default:     { duration: 2.2,  decay: 2.0, pre: 0.005 }
 };
 
-/** Preset-Erweiterung: gültige Impulsantwort-Namen für irReverb.impulse,
- *  zur Wiederverwendung bei der Validierung importierter Presets
- *  (siehe presets.js normalizeEffectsObject()). 'default' bewusst
- *  ausgeschlossen — kein eigener wählbarer Name in der UI (fxIrImpulse). */
+/**
+ * Gültige Impulsantwort-Namen für irReverb.impulse, zur Wiederverwendung bei der
+ * Validierung importierter Presets (siehe presets.js normalizeEffectsObject()).
+ * 'default' bewusst ausgeschlossen — kein eigener wählbarer Name in der UI (fxIrImpulse).
+ */
 export const IR_IMPULSE_NAMES = Object.keys(IR_PARAMS).filter(k => k !== 'default');
 
 export function getIRBuffer(ctx, name) {
@@ -35,10 +35,9 @@ export function getIRBuffer(ctx, name) {
   return buf;
 }
 
-// Exportiert (Phase 3): _buildReverb() in audio/effect-graph.js nutzt
-// _buildIR() für den generischen (nicht-benannten) Reverb-Algorithmus,
-// getIRBuffer() (oben) für die benannten IR-Presets. Reine Sichtbarkeits-
-// Erweiterung durch den Datei-Split, keine Verhaltensänderung.
+// Exportiert: _buildReverb() in audio/effect-graph.js nutzt _buildIR() für den
+// generischen (nicht-benannten) Reverb-Algorithmus, getIRBuffer() (oben) für die
+// benannten IR-Presets.
 export function _buildIR(ctx, p) {
   const sr    = ctx.sampleRate;
   const pre   = Math.floor((p.pre  ?? 0.005) * sr);

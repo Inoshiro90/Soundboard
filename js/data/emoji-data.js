@@ -1,6 +1,5 @@
 /**
  * data/emoji-data.js — Statische Emoji-Referenztabellen
- * Ausgelagert aus state.js (Phase 1 der Refaktorierung).
  * Emoji data: Unicode 17.0 fully-qualified, skin-tone variants removed (1914 emojis)
  */
 

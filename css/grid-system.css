@@ -68,8 +68,8 @@
     --h-navbar:    calc(var(--grid-row-h) * 0.75);
     --h-menubar:   calc(var(--grid-row-h) * 0.875);
     --h-tabbar:    calc(var(--grid-row-h) * 0.625);
-    /* Spez. Kap. 10: bei 912px ist 1/2 Rastereinheit (≈21.67px) < 24px
-       WCAG-Mindestgröße. 9/16 (≈24.38px) erfüllt SC 2.5.8. */
+    /* Bei 912px ist 1/2 Rastereinheit (≈21.67px) < 24px WCAG-Mindestgröße.
+       9/16 (≈24.38px) erfüllt SC 2.5.8. */
     --h-btn:       calc(var(--grid-row-h) * 9 / 16);
   }
 }
@@ -97,7 +97,7 @@
 
     --h-navbar:    calc(var(--grid-row-h) * 0.5);
     --h-menubar:   calc(var(--grid-row-h) * 0.5);
-    /* Spez. Kap. 10: bei 1400px ist 3/8 (≈23.65px) < 24px WCAG-Mindestgröße.
+    /* Bei 1400px ist 3/8 (≈23.65px) < 24px WCAG-Mindestgröße.
        13/32 (≈25.62px) erfüllt SC 2.5.8. */
     --h-tabbar:    calc(var(--grid-row-h) * 13 / 32);
     --h-btn:       calc(var(--grid-row-h) * 13 / 32);
@@ -146,7 +146,7 @@
   #ambProfModal .modal-dialog,
   #ambTrackIconModal .modal-dialog,
   #musicTrackModal .modal-dialog,
-  #slotEditModal .modal-dialog { max-width: var(--w-4col); }  /* Spez. Kap. 26: analog Profil-Gruppe */
+  #slotEditModal .modal-dialog { max-width: var(--w-4col); }  /* analog Profil-Gruppe */
   #macroItemPickerModal .modal-dialog { max-width: var(--w-5col); }
 }
 
@@ -175,22 +175,19 @@
   #profModal    .modal-dialog,
   #ambProfModal .modal-dialog,
   #ambTrackIconModal .modal-dialog,
-  #musicTrackModal .modal-dialog { max-width: var(--w-8col); }  /* Spez. Kap. 26 */
-  #slotEditModal .modal-dialog { max-width: var(--w-8col); }  /* Spez. Kap. 26 */
+  #musicTrackModal .modal-dialog { max-width: var(--w-8col); }
+  #slotEditModal .modal-dialog { max-width: var(--w-8col); }
   #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
 }
 
 /* ─── 4. SOUNDBOARD-KACHELN: DAS RASTER-SYSTEM SELBST ─────────
-   #grid ist jetzt ein echtes CSS-Grid mit der breakpoint-
-   gesteuerten Spaltenzahl (--grid-cols: 4/4/8/12/12/12) statt der
-   früheren JS-Berechnung (auto-fill/minmax + manuell einstellbare
-   maxCols). Kacheln sind per aspect-ratio quadratisch — die
-   "Spaltenbreite = Zeilenhöhe"-Regel gilt dadurch immer exakt,
-   ganz ohne JS-Messung oder ResizeObserver. Die Zeilenzahl ist
-   nicht mehr gedeckelt (kein maxRows): das Grid fließt einfach in
-   so viele Reihen, wie Inhalt vorhanden ist (siehe renderGrid()
-   in ui.js — Anordnen/Tauschen sind dadurch tatsächlich
-   überflüssig geworden, wie geplant). */
+   #grid ist ein echtes CSS-Grid mit breakpoint-gesteuerter
+   Spaltenzahl (--grid-cols: 4/4/8/12/12/12). Kacheln sind per
+   aspect-ratio quadratisch — die "Spaltenbreite = Zeilenhöhe"-Regel
+   gilt dadurch immer exakt, ganz ohne JS-Messung oder ResizeObserver.
+   Die Zeilenzahl ist nicht gedeckelt (kein maxRows): das Grid fließt
+   einfach in so viele Reihen, wie Inhalt vorhanden ist (siehe
+   renderGrid() in ui/grid.js). */
 #grid {
   display: grid;
   grid-template-columns: repeat(var(--grid-cols), 1fr);

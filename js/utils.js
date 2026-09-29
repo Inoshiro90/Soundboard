@@ -76,7 +76,7 @@ export function fmtDur(s) {
 
 /**
  * Formats a duration in seconds as mm:ss, or h:mm:ss for durations of an
- * hour or more. Used by the music player (Spez. Kap. 13) for track time
+ * hour or more. Used by the music player for track time
  * displays ("02:37", "01:23:17") — never raw fractional seconds.
  * @param {number} s  seconds
  * @returns {string}  e.g. "02:37", "1:23:17", or "—:—" if unknown

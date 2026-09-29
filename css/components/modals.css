@@ -1,0 +1,57 @@
+/* ============================================================
+   components/modals.css — Modals
+   ============================================================ */
+
+/* ─── MODALS ─── */
+.modal-content {
+	background: var(--bg-surface);
+	border: var(--border-whisper);
+	color: var(--text-primary);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-deep);
+}
+/* Modal Header/Footer -> var(--h-menubar) statt individueller fester
+   Höhen. min-height statt height, damit bei 200%-Textvergrößerung nichts
+   abgeschnitten wird. */
+.modal-header {
+	border-bottom: var(--border-whisper);
+	padding: var(--space-3) var(--space-5);
+	min-height: var(--h-menubar);
+}
+.modal-footer {
+	border-top: var(--border-whisper);
+	padding: var(--space-3) var(--space-5);
+	min-height: var(--h-menubar);
+}
+.modal-title {
+	font-family: var(--font-sans);
+	font-size: var(--text-nav);
+	font-weight: var(--fw-bold);
+	letter-spacing: -0.25px;
+}
+/* Bootstraps Default-Icon (SVG als background-image, dunkel/kaum
+   sichtbar im Darkmode) wurde durch das Lucide "x"-Icon (inline SVG mit
+   stroke="currentColor") ersetzt. Dadurch übernimmt es automatisch die
+   normale Textfarbe je Theme — kein eigener Dark-Mode-Filter-Hack mehr nötig. Die var(--h-btn)-
+   Hit-Area bleibt bestehen, das sichtbare Icon selbst bleibt klein
+   (18px, siehe HTML). */
+.btn-close {
+	background: none;
+	opacity: 0.55;
+	color: var(--text-primary);
+	width: var(--h-btn);
+	height: var(--h-btn);
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity var(--dur-fast) var(--ease);
+}
+.btn-close:hover {
+	opacity: 1;
+}
+.btn-close svg {
+	width: 18px;
+	height: 18px;
+	display: block;
+}

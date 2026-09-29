@@ -1,9 +1,9 @@
 /**
  * ui/trim-canvas.js — Trim-Wellenform (Zoom/Drag) + statisches Spektrogramm
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
+import '../analysis.js';
 import { clampFadeDurations } from '../renderPipeline.js';
 import { fft, hannWindow } from '../dsp/fft.js';
 
@@ -41,15 +41,15 @@ export function _initTrimCanvasDrag() {
 
   let panStart = null; // { x, scrollOffset } for middle-button/space pan
 
-  /** Shared hit-test + drag-start logic for both mouse and touch.
-   *  @param isTouch  Fingers are far less precise than a mouse cursor, so
-   *  touch gets a much larger "grab radius" around each handle (Kap. 59:
-   *  Mindestgröße für Touch-Targets) — mouse keeps its tighter, pixel-
-   *  accurate snap. BUGFIX (Nutzer-Feedback): when neither handle was
-   *  within the (very tight) snap distance, this used to unconditionally
-   *  fall back to 'start', so any imprecise touch that missed the end
-   *  handle silently grabbed the start handle instead. Now falls back to
-   *  whichever handle is actually closer. */
+  /**
+   * Shared hit-test + drag-start logic for both mouse and touch.
+   * @param isTouch  Fingers are far less precise than a mouse cursor, so
+   * touch gets a much larger "grab radius" around each handle (minimum size
+   * for touch targets) — mouse keeps its tighter, pixel-accurate snap.
+   * When neither handle is within the snap distance, the handle that is actually
+   * closer is grabbed (instead of always falling back to 'start', which made
+   * imprecise touches that missed the end handle grab the start handle).
+   */
   function _pointerDown(e, isTouch) {
     if (!APP.trim.buf) return;
     const pt = _eventPoint(e);
@@ -238,7 +238,7 @@ export function drawTrimWaveform() {
   ctx.fillStyle = accentClr + '18';
   ctx.fillRect(x1, 0, Math.max(0, x2 - x1), H);
 
-  // P2 Find Clipping: rote Marker an den beim Öffnen erkannten Clipping-
+  // Find Clipping: rote Marker an den beim Öffnen erkannten Clipping-
   // Regionen (siehe openTrimModal() → detectClipping()). Mindestbreite
   // 1.5px, damit auch kurze Regionen bei starkem Zoom-out noch sichtbar
   // bleiben (sonst < 1 Pixel und optisch unsichtbar).
@@ -311,17 +311,16 @@ export function drawTrimWaveform() {
 
 
 
-// ─── STATISCHES SPEKTROGRAMM (P3) ────────────────────────────────
+// ─── STATISCHES SPEKTROGRAMM ─────────────────────────────────────
 // Reine Zusatz-Visualisierung des GESAMTEN Clips (keine Bearbeitung,
 // keine Zoom-Synchronisation mit der Wellenform — bewusst als feste
-// Übersicht gehalten, siehe Plan-Wortlaut "Übersicht des GESAMTEN
-// Clips"). Einmal pro geöffnetem Trim-Modal berechnet (bei openTrimModal),
-// NICHT bei jedem Redraw — FFT-Berechnung ist teurer als die reine
-// Min/Max-Wellenform-Darstellung.
-// Bewusste Abweichung vom Plan: kein Web Worker für Clips > 30s — analog
-// zur Rauschunterdrückung (dsp/noiseReduction.js) sind Soundboard-Clips
-// typischerweise kurz (Sekunden), ein Worker wäre hier unverhältnismäßiger
-// Mehraufwand für einen Randfall, der in der Praxis kaum vorkommt.
+// Übersicht des GESAMTEN Clips gehalten). Einmal pro geöffnetem Trim-Modal
+// berechnet (bei openTrimModal), NICHT bei jedem Redraw — FFT-Berechnung
+// ist teurer als die reine Min/Max-Wellenform-Darstellung.
+// Kein Web Worker für Clips > 30s — analog zur Rauschunterdrückung
+// (dsp/noiseReduction.js) sind Soundboard-Clips typischerweise kurz
+// (Sekunden), ein Worker wäre hier unverhältnismäßiger Mehraufwand für
+// einen Randfall, der in der Praxis kaum vorkommt.
 
 let _trimSpectrogramCache = null; // { frames, fftSize, hopSize, sr } — zum zuletzt in APP.trim.buf geöffneten Buffer
 
@@ -408,11 +407,10 @@ export function updateTrimDurLabel() {
   const el  = document.getElementById('trimDurLabel');
   if (el) el.textContent = `Dauer: ${selDur.toFixed(2)}s`;
 
-  // P3 (Audit-Problem 13): zeigt live an, ob/wie stark die eingegebenen
-  // Fade-Dauern relativ zur AKTUELLEN (Trim-)Clip-Länge geclampt würden —
-  // ohne diese Rückmeldung könnte der Nutzer einen Wert eintragen, der
-  // beim tatsächlichen Abspielen (renderPipeline.js clampFadeDurations())
-  // stillschweigend gekürzt wird.
+  // Zeigt live an, ob/wie stark die eingegebenen Fade-Dauern relativ zur
+  // AKTUELLEN (Trim-)Clip-Länge geclampt würden — ohne diese Rückmeldung
+  // könnte der Nutzer einen Wert eintragen, der beim tatsächlichen Abspielen
+  // (renderPipeline.js clampFadeDurations()) stillschweigend gekürzt wird.
   const fiRaw = parseFloat(document.getElementById('trimFadeIn')?.value)  || 0;
   const foRaw = parseFloat(document.getElementById('trimFadeOut')?.value) || 0;
   const { fadeIn: fiClamped, fadeOut: foClamped } = clampFadeDurations(fiRaw, foRaw, selDur);

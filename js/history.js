@@ -1,5 +1,5 @@
 /**
- * history.js — Undo / Redo System (Phase 4)
+ * history.js — Undo / Redo System
  *
  * Strategy: Snapshot-based hybrid.
  *   - Sound parameters + effects → full JSON snapshot (fast, small)
@@ -92,7 +92,7 @@ async function _apply(entry, direction) {
     if (!b64) { toast('Audio-Snapshot nicht mehr verfügbar', 'err'); return; }
     const sound = _findSound(soundId);
     if (!sound) return;
-    // Prompt 2: Ambient-Dateivarianten werden unter ihrer EIGENEN id +
+    // Ambient-Dateivarianten werden unter ihrer EIGENEN id +
     // festem Index 0 abgelegt (s. editor.js: _slotKeyParts()), nicht unter
     // (trackId, slotIdx) — dieselbe Schlüsselbasis hier verwenden, sonst
     // schreibt Undo/Redo an der falschen IDB-Stelle vorbei.
@@ -152,7 +152,7 @@ function _findSound(soundId) {
     const s = (prof.items || []).find(x => x.id === soundId && x.type === 'sound');
     if (s) return s;
   }
-  // Prompt 2: Undo/Redo für "Dauerhaft bearbeiten" auch für Ambient-Tracks
+  // Undo/Redo für "Dauerhaft bearbeiten" auch für Ambient-Tracks
   // (geteilter Editor, s. editor.js: findSound()) — gleiches `.slots`-Alias
   // auf `.files`, damit sound.slots[slotIdx] oben unverändert funktioniert.
   const t = findAmbientTrack(soundId);

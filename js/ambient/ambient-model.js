@@ -1,7 +1,6 @@
 /**
  * ambient/ambient-model.js — Ambient-Datenmodell: Szenen-/Track-CRUD,
  * Lautstärke/Loop/Fade/Intervall-Setter
- * Ausgelagert aus ambient.js (Phase 5 der Refaktorierung).
  */
 
 import { APP, CAP, CATracks } from '../core/state.js';
@@ -41,10 +40,8 @@ export function ensureAmbientState() {
   if (!['sound', 'ambient', 'music'].includes(APP.viewMode)) APP.viewMode = 'sound';
 }
 
-// Exportiert (Phase 5): _persist() wird auch von ambient-render.js
-// (setViewMode) benötigt; _find() von ambient-playback.js (viele Stellen)
-// und ambient-render.js. Reine Sichtbarkeits-Erweiterung durch den
-// Datei-Split, keine Verhaltensänderung.
+// Exportiert: _persist() wird auch von ambient-render.js (setViewMode) benötigt;
+// _find() von ambient-playback.js (viele Stellen) und ambient-render.js.
 export function _persist() {
   try { _saveRaw(); } catch (e) { console.warn('[ambient] persist failed:', e); }
 }
@@ -87,12 +84,10 @@ function _mkTrack(name) {
     // On each play/interval-firing, one is picked per variantMode.
     files: [], variantMode: 'random', // 'random' | 'rotate'
     vol: 0.7, loop: true, fadeIn: 2, fadeOut: 2,
-    // Prompt 2, Kap. 17/21: Shape der Fade-In/Fade-Out-Rampe (analog zu
-    // s.playback.fadeIn/fadeOut.curve bei Sounds) + Crossfade zwischen
-    // Datei-Varianten in der Loop-Kette (s. _playChainCycle()). Bewusst
-    // eigenständiges Feld statt eines s.playback-Klons — Ambient-Tracks
-    // haben ihr eigenes, historisch gewachsenes Datenmodell (fadeIn/fadeOut
-    // als flache Zahlenfelder statt {enabled,duration}-Objekte).
+    // Shape der Fade-In/Fade-Out-Rampe (analog zu s.playback.fadeIn/fadeOut.curve bei Sounds)
+    // + Crossfade zwischen Datei-Varianten in der Loop-Kette (s. _playChainCycle()). Bewusst
+    // eigenständiges Feld statt eines s.playback-Klons — Ambient-Tracks haben ihr eigenes
+    // Datenmodell (fadeIn/fadeOut als flache Zahlenfelder statt {enabled,duration}-Objekte).
     fadeInCurve: 'linear', fadeOutCurve: 'linear',
     crossfade: { enabled: false, duration: 1, curve: 'linear' },
     // Time-delayed playback: instead of looping continuously, play once then
@@ -121,7 +116,7 @@ export function saveAmbientProfile(id, name, icon, color, audioEffectPreset) {
     const p = APP.ambient.profiles.find(x => x.id === id);
     if (p) {
       p.name = cleanName; p.icon = cleanIcon; p.color = cleanColor;
-      // Prompt 4, Kap. 10: übergeordnetes Preset wird bei jedem Speichern
+      // Übergeordnetes Preset wird bei jedem Speichern
       // mitgesichert (undefined = Aufrufer hat es nicht übergeben → Feld
       // unangetastet lassen, statt es stillschweigend auf null zu setzen).
       if (audioEffectPreset !== undefined) p.audioEffectPreset = audioEffectPreset;
@@ -209,7 +204,7 @@ export async function addAmbientFiles(fileList) {
 }
 
 /**
- * Legt einen neuen Noise-Generator-Track an (P2) — analog zu
+ * Legt einen neuen Noise-Generator-Track an — analog zu
  * addAmbientFiles(), aber ohne Datei: `sourceType:'generator'` statt
  * `files`. playAmbientTrack()/_playGeneratorTrack() erkennen diesen
  * Track-Typ automatisch.
@@ -329,10 +324,9 @@ export function setAmbientTrackIcon(trackId, icon) {
   renderAmbientPanel();
 }
 
-// Prompt 2: Ambient-Tracks unterstützen eine Akzentfarbe (t.color, s.
-// _mkTrack()/_normalizeAmbientTrack() sowie den sichtbaren Zeilen-Akzent
-// in _rowTemplate()) — bislang gab es dafür aber keine Bearbeitungsmöglich-
-// keit; setAmbientTrackColor() analog zu setAmbientTrackIcon() ergänzt.
+// Ambient-Tracks unterstützen eine Akzentfarbe (t.color, s. _mkTrack()/
+// _normalizeAmbientTrack() sowie den sichtbaren Zeilen-Akzent in _rowTemplate());
+// setAmbientTrackColor() analog zu setAmbientTrackIcon().
 export function setAmbientTrackColor(trackId, color) {
   const t = _find(trackId); if (!t) return;
   t.color = color || 'none';

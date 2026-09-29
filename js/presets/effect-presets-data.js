@@ -1,8 +1,8 @@
 /**
  * presets/effect-presets-data.js — Fest eingebaute Effekt-Presets (EFFECT_PRESETS)
- * Ausgelagert aus audio.js (Phase 1 der Refaktorierung). Reine Datentabelle,
- * keine Audio-Engine-Logik. Getrennt von benutzerdefinierten Presets (siehe
- * js/presets.js / APP.userPresets), damit Built-ins nie überschrieben werden.
+ * Reine Datentabelle, keine Audio-Engine-Logik. Getrennt von benutzerdefinierten
+ * Presets (siehe js/presets.js / APP.userPresets), damit Built-ins nie
+ * überschrieben werden.
  */
 
 export const EFFECT_PRESETS = {
@@ -24,17 +24,15 @@ export const EFFECT_PRESETS = {
   dreamy_echo: { lowpass: { enabled: true, frequency: 9000, Q: 0.5 }, highpass: { enabled: false, frequency: 20, Q: 0.7 }, pan: 0, reverb: { enabled: true, amount: 0.55, duration: 2.8, decay: 1.8 }, delay: { enabled: true, time: 0.33, feedback: 0.55, wet: 0.45 }, eq: { enabled: true, low: 2, mid: -3, high: 4 }, eq10: { enabled: false, bands: [0,0,0,0,0,0,0,0,0,0] }, compressor: { enabled: false, threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 }, limiter: { enabled: false, threshold: -1, knee: 0, ratio: 20, attack: 0.001, release: 0.08 }, distortion: { enabled: false, amount: 0, oversample: '4x' }, pitchShift: { enabled: false, semitones: 0 }, irReverb: { enabled: true, impulse: 'hallway', wet: 0.40 }, envelope: { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 }, spatial: { enabled: false, x: 0, y: 0, z: -1, rolloff: 1, maxDistance: 10000, refDistance: 1, coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0 }, noiseGate: { enabled: false, threshold: -50 } },
   broken_speaker:{ lowpass: { enabled: true, frequency: 6000, Q: 2.5 }, highpass: { enabled: true, frequency: 150, Q: 2.0 }, pan: 0, reverb: { enabled: false, amount: 0.10, duration: 0.3, decay: 2.0 }, delay: { enabled: false, time: 0.22, feedback: 0.35, wet: 0.35 }, eq: { enabled: true, low: -5, mid: 10, high: -8 }, eq10: { enabled: false, bands: [0,0,0,0,0,0,0,0,0,0] }, compressor: { enabled: true, threshold: -10, knee: 5, ratio: 20, attack: 0.001, release: 0.05 }, limiter: { enabled: true, threshold: -1, knee: 0, ratio: 20, attack: 0.001, release: 0.08 }, distortion: { enabled: true, amount: 80, oversample: '4x' }, pitchShift: { enabled: false, semitones: 0 }, irReverb: { enabled: false, impulse: null, wet: 0.35 }, envelope: { enabled: false, attack: 0.01, decay: 0.15, sustain: 0.8, release: 0.25 }, spatial: { enabled: false, x: 0, y: 0, z: -1, rolloff: 1, maxDistance: 10000, refDistance: 1, coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0 }, noiseGate: { enabled: false, threshold: -50 } },
 
-  // ── Erweiterung (Preset-Bibliothek Kap. 22): akustisch eigenständige,
-  // nicht-redundante Transformationen, die zugleich bislang von keinem
-  // Preset genutzte Effektmodule sinnvoll einsetzen (ringmod, notch,
-  // wahwah, chorus, flanger, tremolo, envelope, spatial). Nur die hier
-  // gesetzten Felder weichen vom Default ab — fehlende Module werden von
-  // der generischen Preset-Anwendung (presets.js applyPresetEffects())
-  // automatisch mit defaultEffects() aufgefüllt, exakt wie bei den 17
-  // bestehenden Presets oben. Metadaten (Name/Kategorie/Beschreibung)
-  // stehen in presets.js (BUILTIN_PRESET_META), nicht hier — reine
-  // Effektparameter bleiben, wie bei den bestehenden Presets, hier in
-  // audio.js (Audio-Engine-Zuständigkeit).
+  // Akustisch eigenständige, nicht-redundante Transformationen, die zugleich
+  // bislang von keinem Preset genutzte Effektmodule sinnvoll einsetzen (ringmod,
+  // notch, wahwah, chorus, flanger, tremolo, envelope, spatial). Nur die hier
+  // gesetzten Felder weichen vom Default ab — fehlende Module werden von der
+  // generischen Preset-Anwendung (presets.js applyPresetEffects()) automatisch
+  // mit defaultEffects() aufgefüllt, exakt wie bei den übrigen Presets oben.
+  // Metadaten (Name/Kategorie/Beschreibung) stehen in presets.js
+  // (BUILTIN_PRESET_META), nicht hier — reine Effektparameter bleiben hier
+  // (Audio-Engine-Zuständigkeit).
   possessed: {
     lowpass:    { enabled: true,  frequency: 7000, Q: 0.8 },
     notch:      { enabled: true,  frequency: 1000, Q: 8 },
@@ -75,13 +73,12 @@ export const EFFECT_PRESETS = {
     reverb:     { enabled: true, amount: 0.45, duration: 3.0, decay: 1.5 }
   },
 
-  // ── Erweiterung Runde 2 (Nutzer-Vorlage, Kap. 22): 17 weitere Presets.
-  // WICHTIG: Die Vorlage beschreibt teils Effekte, die es in dieser
-  // Audio-Engine nicht gibt (echte Bandpass-/Peaking-/Highshelf-Filter,
-  // Oszillatoren/Rauschgeneratoren, Stereo-Haas-Delay mit getrennten L/R-
-  // Zeiten, Multi-Tap-Delay, Auto-Pan-LFO, Phaser, parallele Pitch-Kopien,
-  // benutzerdefinierte AudioWorklets). Diese wurden NICHT nachgebaut,
-  // sondern mit den tatsächlich vorhandenen Modulen klanglich angenähert:
+  // 17 weitere Presets, angenähert an eine Vorlage mit Effekten, die es in
+  // dieser Audio-Engine nicht gibt (echte Bandpass-/Peaking-/Highshelf-Filter,
+  // Oszillatoren/Rauschgeneratoren, Stereo-Haas-Delay mit getrennten L/R-Zeiten,
+  // Multi-Tap-Delay, Auto-Pan-LFO, Phaser, parallele Pitch-Kopien,
+  // benutzerdefinierte AudioWorklets). Diese wurden NICHT nachgebaut, sondern
+  // mit den tatsächlich vorhandenen Modulen klanglich angenähert:
   // Bandpass  -> highpass+lowpass eng gestapelt
   // Peaking/Highshelf -> eq10-Band möglichst nah an der Zielfrequenz
   // Phaser    -> wahwah (LFO-modulierter Filter) mit sehr langsamer Rate

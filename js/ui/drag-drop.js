@@ -1,6 +1,5 @@
 /**
  * ui/drag-drop.js — Kachel-Drag&Drop (Maus + Touch), Long-Press, Tile-Edit-Modus
- * Ausgelagert aus ui.js (Phase 4 der Refaktorierung).
  */
 
 import { CItems } from '../core/state.js';
@@ -49,35 +48,16 @@ export function setupDrag() {
  * die Ziel-Kachel wechseln ihren Platz; alle übrigen Kacheln (und
  * bestehende Lücken/Platzhalter) bleiben exakt an ihrer Stelle.
  *
- * TATSÄCHLICHER FEHLER (vorherige Implementierung): die Funktion hat
- * NICHT getauscht, sondern per splice()-Remove+Insert ein "Einfügen mit
- * Nachrücken" gemacht (`items.splice(ai,1)` gefolgt von
- * `items.splice(bi,0,moved)`). Dabei rücken ALLE Kacheln, die zwischen
- * Quell- und Zielposition liegen, um genau eine Stelle nach — inklusive
- * bestehender Platzhalter/Lücken, die dabei mitgeschoben wurden statt an
- * ihrem Platz zu bleiben. Das erklärt exakt die gemeldeten Symptome:
- *   - Fehler A: zieht man eine Kachel weiter nach rechts auf eine andere,
- *     werden alle dazwischenliegenden Kacheln um eins nach LINKS
- *     verschoben (und umgekehrt bei einer Bewegung nach links werden
- *     dazwischenliegende Kacheln nach RECHTS verschoben) — obwohl der
- *     Nutzer nur EINE Kachel bewegen wollte.
- *   - Fehler B: eine bestehende Lücke, die zwischen Quelle und Ziel liegt,
- *     wird beim Verschieben unbeabsichtigt mitgenommen/verschoben, statt
- *     an ihrer bisherigen visuellen Stelle stehen zu bleiben bzw. exakt
- *     die freigewordene Zielposition zu übernehmen.
- * Reproduzierbar rein aus der Datenstruktur: bei [A,B,C,D] (order 0..3)
- * ergab ein Drag von D (Index 3) auf B (Index 1) vorher [A,D,B,C] — C
- * (Index 2) wurde nach rechts verschoben, obwohl nur D bewegt werden
- * sollte. Die Anforderung "andere Kacheln dürfen nicht unkontrolliert
- * verschoben werden" verlangt stattdessen einen reinen Swap: [A,D,C,B].
+ * Bewusst KEIN splice()-Remove+Insert ("Einfügen mit Nachrücken"): das würde alle
+ * Kacheln zwischen Quell- und Zielposition um eine Stelle verschieben — inklusive
+ * bestehender Platzhalter/Lücken. Beispiel: bei [A,B,C,D] (order 0..3) ergibt ein
+ * Drag von D (Index 3) auf B (Index 1) per Swap [A,D,C,B] (nicht [A,D,B,C]).
  *
- * Bonus-Fix: `dstId` kann auf eine der rein visuellen, nachträglich in
- * renderGrid() angehängten "+"-Füll-Platzhalter zeigen (siehe
- * TRAILING_PLACEHOLDERS) — die existieren NUR im DOM/in der lokalen
- * Render-Liste, nicht in CItems(). Ein Drop darauf fand bisher keinen
- * Treffer (bi < 0) und tat dadurch kommentarlos gar nichts. Das wird hier
- * als "an eine frische Stelle ans Ende verschieben" behandelt, statt den
- * Drop wirkungslos verpuffen zu lassen.
+ * `dstId` kann auf eine der rein visuellen, nachträglich in renderGrid() angehängten
+ * "+"-Füll-Platzhalter zeigen (siehe TRAILING_PLACEHOLDERS) — die existieren NUR im
+ * DOM/in der lokalen Render-Liste, nicht in CItems(). Ein Drop darauf (bi < 0) wird
+ * als "an eine frische Stelle ans Ende verschieben" behandelt, statt wirkungslos zu
+ * verpuffen.
  */
 function _moveTileOrder(srcId, dstId) {
   const items = CItems();
@@ -107,24 +87,22 @@ export function normaliseOrders() {
 }
 
 // ─── TILE-BEARBEITUNGSMODUS ──────────────────────────────────────
-// Zwei bewusst ENTKOPPELTE Mechanismen (vorher beide an Long-Press
-// gekoppelt, das war der alte "iOS-Homescreen"-Ansatz):
+// Zwei bewusst ENTKOPPELTE Mechanismen:
 //
 // 1) Bearbeitungsmodus (dieser Abschnitt, isTileEditMode()/
 //    setTileEditMode()): wird per Toolbar-Button #btnTileEditMode
-//    (events.js) EIN-/AUSGESCHALTET, nicht mehr per Long-Press. Während
+//    (events/register-tile-events.js) EIN-/AUSGESCHALTET. Während
 //    dieser Modus aktiv ist, öffnet ein Tap auf eine Sound-/Makro-Kachel
 //    direkt den Editor (statt abzuspielen/auszuführen) — bewusst OHNE
 //    Abhängigkeit von einem sichtbaren Stift-Icon, da dessen Sichtbarkeit
-//    sich als unzuverlässig erwiesen hat (siehe makeSoundTile/
-//    makeMacroTile Klick-Handler). Der Stift-Button (.js-edit-btn) bleibt
-//    als zusätzlicher, unabhängiger Weg bestehen (z.B. Desktop-Hover
-//    außerhalb des Bearbeitungsmodus).
+//    unzuverlässig ist (siehe makeSoundTile/makeMacroTile Klick-Handler).
+//    Der Stift-Button (.js-edit-btn) bleibt als zusätzlicher, unabhängiger
+//    Weg bestehen (z.B. Desktop-Hover außerhalb des Bearbeitungsmodus).
 //
 // 2) Kachel verschieben (setupTileEditGestures()/_beginTouchDrag()
 //    unten): auf Touch löst ein Long-Press DIREKT das Ziehen aus,
-//    unabhängig vom Bearbeitungsmodus — kein Zwischenschritt mehr
-//    nötig. Auf Desktop (Maus) unverändert: natives HTML5-Drag&Drop.
+//    unabhängig vom Bearbeitungsmodus. Auf Desktop (Maus): natives
+//    HTML5-Drag&Drop.
 
 let _tileEditMode = false;
 

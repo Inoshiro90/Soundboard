@@ -1,0 +1,120 @@
+/* ============================================================
+   components/icon-color-picker.css — Icon-Grid, Custom-Image-Icons, Farb-Swatches
+   ============================================================ */
+
+/* ─── ICON GRID ─── */
+/* Mindestens 1/2 Rasterspalte pro Icon-Zelle (Hit Area).
+   Icon selbst darf innerhalb der Zelle kleiner bleiben (.icon-opt .icon-img). */
+.icon-grid-makro {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
+  gap: var(--grid-gutter);
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
+  gap: var(--grid-gutter);
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.icon-opt {
+	aspect-ratio: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: var(--border-whisper);
+	border-radius: var(--radius-subtle);
+	cursor: pointer;
+	font-size: 1rem;
+	transition:
+		border-color var(--dur-fast) var(--ease),
+		background var(--dur-fast) var(--ease);
+}
+.icon-opt:hover {
+	border-color: var(--color-accent);
+	background: var(--bg-warm);
+}
+.icon-opt.is-selected {
+	border-color: var(--color-accent);
+	background: var(--badge-bg);
+}
+
+/* ─── CUSTOM IMAGE ICONS ───────────────────────────────────────
+   Rendered wherever an emoji would normally sit — sized in `em` so it
+   scales naturally with each context's font-size (tile / tab / row). */
+.icon-img {
+  width: 1em;
+  height: 1em;
+  object-fit: cover;
+  border-radius: 22%;
+  vertical-align: -0.15em;
+  display: inline-block;
+  pointer-events: none;
+}
+.icon-opt .icon-img { width: 70%; height: 70%; border-radius: 22%; }
+
+/* ─── COLOR SWATCHES ─── */
+.color-row {
+	display: flex;
+	gap: var(--space-1);
+	flex-wrap: wrap;
+	align-items: center;
+}
+/* Quadratisch + gerundet, ZWEI Ebenen:
+     äußerer neutraler Rand (.color-swatch selbst)
+     └── innere farbige Fläche + farbiger Rand (.color-swatch__fill)
+   Der äußere neutrale Rand trennt das Swatch immer sichtbar vom Hintergrund
+   des umgebenden Elements und bleibt auch im ausgewählten Zustand
+   unverändert bestehen; Auswahl/Hover/Fokus werden
+   stattdessen über einen zusätzlichen Ring (box-shadow/outline) markiert,
+   der die äußere Randfarbe nicht überschreibt. */
+.color-swatch {
+	position: relative;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+	border: 2px solid var(--border-color);
+	background: var(--bg-warm);
+	box-sizing: border-box;
+	transition: box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.color-swatch__fill {
+	position: absolute;
+	inset: 3px;
+	border-radius: calc(var(--radius-sm) - 2px);
+	border: 2px solid transparent;
+	pointer-events: none;
+}
+.color-swatch:hover {
+	transform: scale(1.08);
+}
+/* Selection-State: eigener Ring statt Randfarben-Überschreibung — der
+   neutrale äußere Rand (border-color: var(--border-color)) bleibt dabei
+   unangetastet. */
+.color-swatch.is-selected {
+	box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary);
+}
+/* Sichtbarer Fokusring, nicht abgeschnitten (Row erlaubt via flex-wrap +
+   gap genug Raum um jedes Swatch). Klar von Hover/Selected
+   unterscheidbar (eigene Ringfarbe var(--color-accent)). */
+.color-swatch:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--color-accent);
+}
+.color-swatch--none {
+	/* 'none' bleibt ein eigener Zustand ohne innere Farbfläche — nur der
+	   neutrale äußere Rand ist sichtbar. */
+}
+.color-swatch--none::after {
+	content: '';
+	position: absolute;
+	inset: 3px;
+	border-radius: calc(var(--radius-sm) - 2px);
+	background:
+		linear-gradient(to top right, transparent calc(50% - 1px), var(--border-color), transparent calc(50% + 1px));
+}

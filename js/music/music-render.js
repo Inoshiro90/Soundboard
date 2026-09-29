@@ -1,6 +1,5 @@
 /**
  * music/music-render.js — Playlist-Tabs, Track-Liste, Player-UI, View-Mode
- * Ausgelagert aus music.js (Phase 5 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
@@ -8,8 +7,10 @@ import { iconHtmlOr, fmtTime } from '../utils.js';
 import { PENCIL_ICON_SVG, _applyTabAccent } from '../ui/tabs.js';
 // `buildIconGrid`/`buildColorOpts` waren bereits im ursprünglichen music.js
 // importiert, aber nie aufgerufen (toter Import) — mechanisch mit übernommen.
+import '../ui/icon-picker.js';
+import '../ui/color-picker.js';
 import { ensureMusicState, _findTrack } from './music-model.js';
-import { isMusicPlaying, _orderedTracks, _players, _updateProgressUI, _activeSlot } from './music-playback.js';
+import { isMusicPlaying, _orderedTracks, _players, _activeSlot, _updateProgressUI } from './music-playback.js';
 
 function _esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -21,7 +22,7 @@ function _esc(s) {
 // ─── RENDERING ─────────────────────────────────────────────────
 
 /** Mirrors renderProfileTabs()/renderAmbientProfileTabs() — linksbündiger
- *  Name, rechtsbündiger Edit-Button, Lucide-Pencil-Icon (Kap. 47). */
+ *  Name, rechtsbündiger Edit-Button, Lucide-Pencil-Icon. */
 export function renderMusicProfileTabs() {
   ensureMusicState();
   const bar    = document.getElementById('musicProfBar');
@@ -48,8 +49,8 @@ function _trackRowTemplate(t) {
   const isPlaying = isActive && isMusicPlaying();
   const rec       = isActive ? _players?.[_activeSlot] : null;
   const pct       = rec && rec.audio.duration ? Math.min(100, (rec.audio.currentTime / rec.audio.duration) * 100) : 0;
-  // Prompt 1, Kap. 7: t.color als Akzent nutzen (bisher ignoriert) —
-  // analog zu Soundkachel/Ambient-Track, nie als Vollfarben-Hintergrund.
+  // t.color als Akzent nutzen — analog zu Soundkachel/Ambient-Track, nie als
+  // Vollfarben-Hintergrund.
   const hasAccent  = t.color && t.color !== 'none';
   const accentAttr = hasAccent ? ` style="--row-accent:${t.color};"` : '';
   return `
@@ -93,12 +94,6 @@ export function renderMusicPanel() {
   const tracks = _orderedTracks();
   if (empty) empty.style.display = tracks.length ? 'none' : '';
   list.innerHTML = tracks.map(_trackRowTemplate).join('');
-  // Prompt 4, Kap. 4/5: #musicCount (sichtbarer Zähler) wurde aus der
-  // Toolbar entfernt — _orderedTracks()/tracks.length bleiben in Gebrauch
-  // (Leerzustand-Erkennung, Listen-Rendering oben), nur die reine
-  // DOM-Zähler-Ausgabe entfällt.
-  // Prompt 5: dito für die (jetzt entfernte) untere Statusleiste —
-  // updateStatus() gab es nur für #stxt/#scnt/#sdot.
 }
 
 export function renderMusicPlayer() {
@@ -145,11 +140,11 @@ export function renderMusicPlayer() {
   if (apChk) apChk.checked = !!APP.music.autoplay;
 
   _updateProgressUI();
-  // Live-Indikator am Mode-Toggle-Button (Kap. 39) — analog zum Ambient-Muster.
+  // Live-Indikator am Mode-Toggle-Button — analog zum Ambient-Muster.
   document.getElementById('btnModeMusic')?.classList.toggle('has-live-indicator', playing);
-  // Prompt 4: ergänzende, nicht rein farbliche Statusvermittlung (analog zu
-  // den neuen Sound-/Ambient-Indikatoren, s. audio/playback.js/ambient/ambient-render.js) — bislang
-  // trug nur der Punkt (::after) die Information.
+  // Ergänzende, nicht rein farbliche Statusvermittlung (analog zu den Sound-/Ambient-
+  // Indikatoren, s. audio/playback.js/ambient/ambient-render.js) — der Punkt (::after)
+  // allein trägt die Information nicht.
   const liveDesc = document.getElementById('btnModeMusicLiveDesc');
   if (liveDesc) liveDesc.textContent = playing ? 'Wiedergabe aktiv' : '';
   renderMusicProfileTabs();
@@ -157,8 +152,8 @@ export function renderMusicPlayer() {
 
 
 // ─── VIEW-MODE-INTEGRATION (aufgerufen von ambient/ambient-render.js: setViewMode) ────
-// Playback läuft unabhängig von der Sichtbarkeit weiter (Kap. 38) — diese
-// Funktion schaltet nur die DOM-Sichtbarkeit, nie Play/Pause.
+// Playback läuft unabhängig von der Sichtbarkeit weiter — diese Funktion schaltet nur
+// die DOM-Sichtbarkeit, nie Play/Pause.
 
 export function applyMusicViewVisibility(isMusicView) {
   document.getElementById('musicProfBarRow')?.toggleAttribute('hidden', !isMusicView);

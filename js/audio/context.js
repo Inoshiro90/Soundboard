@@ -1,12 +1,11 @@
 /**
  * audio/context.js — AudioContext-Verwaltung + Pitch-Worklet-Ladezustand
- * Ausgelagert aus audio.js (Phase 3 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
 
 // ─── AUDIO CONTEXT ───────────────────────────────────────────
-// BUGFIX: ctx is NEVER created automatically on module load.
+// ctx is NEVER created automatically on module load.
 // It is only created on the first call to actx(), which must
 // happen inside a user-gesture event handler.
 
@@ -27,20 +26,15 @@ export function actx() {
 export function hasAudioContext() { return _ctx !== null; }
 
 // ─── WORKLET INIT ────────────────────────────────────────────
-// BUGFIX (Pitch-Export-Konsistenz): das Pitch-Worklet-Modul muss pro
-// BaseAudioContext einzeln registriert werden (AudioWorklet-Module sind
-// context-gebunden). Der frühere globale `APP.pitchWorkletReady`-Flag
-// bezog sich implizit NUR auf den einen Live-AudioContext — dadurch wurde
-// beim WAV/MP3-Export (der einen eigenen OfflineAudioContext nutzt) nie
-// geprüft/geladen, ob DAS Modul in diesem Context verfügbar ist, obwohl
-// der globale Flag "true" meldete. Ergebnis: Pitch-Shift wurde beim
-// Export stillschweigend ignoriert. Fix: readiness wird jetzt pro Context
-// in einem WeakSet verfolgt, und jeder Aufrufer (Live ODER Offline) MUSS
-// vor dem Bau eines Pitch-Nodes `ensurePitchWorkletFor(ctx)` aufrufen.
+// Das Pitch-Worklet-Modul muss pro BaseAudioContext einzeln registriert
+// werden (AudioWorklet-Module sind context-gebunden). Die Bereitschaft wird
+// deshalb pro Context in einem WeakSet verfolgt, und jeder Aufrufer (Live ODER
+// Offline, z.B. WAV/MP3-Export mit eigenem OfflineAudioContext) MUSS vor dem
+// Bau eines Pitch-Nodes `ensurePitchWorkletFor(ctx)` aufrufen — sonst würde der
+// Pitch-Shift stillschweigend ignoriert.
 
-// Exportiert (Phase 3): buildPitchNode() in audio/effect-graph.js muss den
-// Worklet-Ladezustand für den jeweiligen Context prüfen können. Reine
-// Sichtbarkeits-Erweiterung durch den Datei-Split, keine Verhaltensänderung.
+// Exportiert, damit buildPitchNode() in audio/effect-graph.js den
+// Worklet-Ladezustand für den jeweiligen Context prüfen kann.
 export const _pitchWorkletReadyContexts = new WeakSet();
 
 /**

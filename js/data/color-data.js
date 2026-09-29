@@ -1,11 +1,10 @@
 /**
  * data/color-data.js — Akzent-/Kachelfarben-Palette und Anzeige-Namen
- * Ausgelagert aus state.js (Phase 1 der Refaktorierung).
  */
 
 /**
  * Accent/tile-background colour options.
- * Prompt 1 (Farbsystem): 20 feste Farben + 'none'. 'none' ist ein eigener
+ * 20 feste Farben + 'none'. 'none' ist ein eigener
  * Zustand für "keine Akzentfarbe" und zählt nicht zu den 20 Farben.
  * Reihenfolge ist bewusst so gewählt, wie sie im Picker erscheinen soll.
  */
@@ -19,7 +18,7 @@ export const COLORS = [
 ];
 
 /**
- * Anzeige-Namen der Palette (Prompt 1, Kap. 1) — dienen als Metadaten für
+ * Anzeige-Namen der Palette — dienen als Metadaten für
  * `title`/ARIA-Label im Farbpicker (buildColorOpts() in ui/color-picker.js). Gespeichert
  * wird weiterhin ausschließlich der Hex-Wert; dieses Mapping ist rein
  * kosmetisch und niemals Teil des persistierten Datenmodells.

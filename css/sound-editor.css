@@ -59,10 +59,9 @@
   padding-top: var(--space-2);
 }
 
-/* ─── PROMPT 2, KAP. 5-10: LOOP ⇄ ZEITVERSETZT (AMBIENT) ────────
-   Ehemals eigenes .sm-excl-toggle-Switch-Layout (großer Kasten um
-   das Label) — jetzt echte <button>-Elemente, die exakt dem
+/* ─── LOOP ⇄ ZEITVERSETZT (AMBIENT) ────────
+   Echte <button>-Elemente, die exakt dem
    #ambVariantRandom/#ambVariantRotate-Referenzmuster folgen (siehe
-   .is-active-Regel in css/ambient.css). Keine eigene Optik mehr
-   nötig, daher hier absichtlich keine Ersatzregel. */
+   .is-active-Regel in css/ambient.css). Keine eigene Optik nötig,
+   daher hier absichtlich keine Ersatzregel. */
 

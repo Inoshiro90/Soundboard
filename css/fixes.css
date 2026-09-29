@@ -1,5 +1,5 @@
 /**
- * fixes.css — Phase 5 Bug-Fixes & UI-Verbesserungen
+ * fixes.css — Cross-Browser-Fixes, Button-/Spacing-System, Layout-Feinschliff
  *
  * 1. Range-Input Cross-Browser Fix (Safari, Chrome, Firefox, Mobile)
  * 2. Button-System (sm / md / lg)
@@ -9,12 +9,9 @@
  */
 
 /* ══════════════════════════════════════════════════════════════
-   1. RANGE SLIDER — vormals ein konkurrierendes, universelles
-   input[type="range"]-Regelwerk (Kategorie 0,1,1 Spezifität, als
-   letztes CSS geladen) das die var(--h-btn)-Hit-Area sowie die
-   Kap.-20-EQ10-Breite aus components.css/grid-system.css wieder
-   überschrieben hat (Spez. Kap. 9/39/41: keine zweite,
-   unabhängige Größenlogik / spätere Overrides korrigieren). Alle
+   1. RANGE SLIDER — keine eigene, elementbasierte Größenlogik für
+   input[type="range"]: die var(--h-btn)-Hit-Area sowie die
+   EQ10-Breite kommen aus components.css/grid-system.css. Alle
    <input type="range"> im Projekt tragen bereits die Klasse
    .slider (bzw. .eq10-band__gain/.eq10-band__q für die 10-Band-EQ-
    Regler, s. components.css) —
@@ -26,10 +23,9 @@
 /* ══════════════════════════════════════════════════════════════
    2. BUTTON-SYSTEM (sm / md / lg)
    ══════════════════════════════════════════════════════════════
-   Spez. Kap. 12/49: alle Standard-Buttons teilen sich var(--h-btn)
-   aus components.css — die früheren min-height-Fixwerte (28/32/44px)
-   waren eine zweite, konkurrierende Größenlogik für dieselbe
-   semantische Komponente und sind entfallen. */
+   Alle Standard-Buttons teilen sich var(--h-btn) aus components.css —
+   keine zweite, konkurrierende Größenlogik für dieselbe semantische
+   Komponente. */
 
 .btn {
 	/* Basis bleibt aus components.css */
@@ -139,16 +135,12 @@
    5. LAYOUT-BEREINIGUNG
    ══════════════════════════════════════════════════════════════ */
 
-/* Basics-Bar: Spez. Kap. 31/46 verlangt ausdrücklich, dass die Reihe
-   bei Bedarf umbricht statt Inhalte/Buttons abzuschneiden. Das
-   eigentliche Wrap-/Breiten-Regelwerk für .sm-basics-row/.sm-basics-name/
-   .sm-basics-actions lebt jetzt VOLLSTÄNDIG (nur einmal, nicht dupliziert)
-   in mobile.css — dort wurde ein echter Flexbox-Fehler behoben (vorher
-   `display:grid` ohne grid-template-columns, wodurch das dort ebenfalls
-   vorhandene `flex-wrap` und alle flex-Eigenschaften der Kinder
-   wirkungslos blieben). Hier bleibt nur, was NICHT dupliziert wird:
-   das Input-Feld selbst darf nie eine intrinsische Mindestbreite
-   erzwingen, die den flex-Umbruch der Zeile verhindern würde. */
+/* Basics-Bar: die Reihe soll bei Bedarf umbrechen statt Inhalte/Buttons
+   abzuschneiden. Das eigentliche Wrap-/Breiten-Regelwerk für
+   .sm-basics-row/.sm-basics-name/.sm-basics-actions lebt VOLLSTÄNDIG
+   (nur einmal, nicht dupliziert) in mobile.css. Hier bleibt nur, was
+   NICHT dupliziert wird: das Input-Feld selbst darf nie eine intrinsische
+   Mindestbreite erzwingen, die den flex-Umbruch der Zeile verhindern würde. */
 .sm-name-input {
 	min-width: 0;
 }
@@ -159,8 +151,7 @@
 	padding-bottom: 4px; /* Scrollbar-Platz */
 }
 
-/* Audio-Lab Ops-Grid: 2 Spalten auf kleinen Screens — Spez. Kap. 56:
-   sanktionierter Breakpoint (767px) statt eigenem 600px-Wert. */
+/* Audio-Lab Ops-Grid: 2 Spalten auf kleinen Screens (Breakpoint 767px). */
 @media (max-width: 767px) {
 	.lab-ops-grid {
 		grid-template-columns: 1fr 1fr;

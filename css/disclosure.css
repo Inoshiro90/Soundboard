@@ -190,10 +190,10 @@ label.popover-check {
 }
 
 /* ─── INLINE-ACCORDION-GRUPPEN (data-disclosure-inline) ──────────
-   Prompt 2, Kap. 3: dieselbe Progressive-Disclosure-Logik wie die
-   Popover-Trigger oben (aria-expanded/aria-controls, initDisclosure()),
-   aber ohne Portal-to-body/position:fixed — die Panels bleiben an ihrer
-   Stelle im Formular, wie ein klassisches Accordion. Verwendet z.B. in
+   Dieselbe Progressive-Disclosure-Logik wie die Popover-Trigger oben
+   (aria-expanded/aria-controls, initDisclosure()), aber ohne
+   Portal-to-body/position:fixed — die Panels bleiben an ihrer Stelle im
+   Formular, wie ein klassisches Accordion. Verwendet z.B. in
    #soundAppearanceModal (Icon/Farbe/Organisation). */
 .disclosure-group {
   display: flex;

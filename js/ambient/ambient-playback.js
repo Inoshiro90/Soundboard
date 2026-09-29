@@ -1,7 +1,6 @@
 /**
  * ambient/ambient-playback.js — Ambient-Wiedergabe-Engine (Loop/Interval/
  * Generator-Zyklen), Auto-Duck, Lautstärke-Rampen
- * Ausgelagert aus ambient.js (Phase 5 der Refaktorierung).
  */
 
 import { APP } from '../core/state.js';
@@ -17,8 +16,7 @@ import { buildNoiseGenerator } from '../generators.js';
 // aus ambient-render.js, das wiederum isAmbientPlaying()/isAmbientWaiting()
 // und _active aus DIESEM Modul importiert) — unkritisch, da alle betroffenen
 // Bezeichner Funktionsdeklarationen bzw. nur zur Laufzeit gelesene/
-// geschriebene Objekte sind (analog zum bereits etablierten Muster,
-// z. B. audio/playback.js/ambient.js vor Phase 5).
+// geschriebene Objekte sind (dasselbe Muster wie in audio/playback.js).
 import { _find } from './ambient-model.js';
 import { _updateRowPlayState } from './ambient-render.js';
 
@@ -26,14 +24,12 @@ import { _updateRowPlayState } from './ambient-render.js';
 // trackId → { kind: 'loop' | 'interval', src, gain, timerId }
 // For 'interval' tracks, src/gain are null while waiting between plays —
 // the track still counts as "playing" (scheduled) the whole time.
-// Exportiert (Phase 5): ambient-model.js liest/schreibt _active direkt für
+// Exportiert: ambient-model.js liest/schreibt _active direkt für
 // die Live-Gain-Rampen in setAmbientTrackVolume()/setAmbientMasterVolume();
 // ambient-render.js liest _active.size für den globalen Live-Indikator.
-// Reine Sichtbarkeits-Erweiterung durch den Datei-Split, keine
-// Verhaltensänderung.
 export const _active = new Map();
 
-// P2 Auto Duck: globaler Ducking-Multiplikator (1.0 = kein Ducking, s.
+// Auto Duck: globaler Ducking-Multiplikator (1.0 = kein Ducking, s.
 // duckAmbient()/audio/playback.js notifyDuckTrigger()). Bewusst NICHT in APP.ambient
 // persistiert — reiner Laufzeitzustand, analog zu _active.
 let _duckFactor = 1.0;
@@ -44,7 +40,7 @@ export function _ambientTargetGain(t) {
 }
 
 /**
- * Auto Duck (P2): setzt den globalen Ducking-Multiplikator und rampt alle
+ * Auto Duck: setzt den globalen Ducking-Multiplikator und rampt alle
  * AKTUELL aktiven Ambient-Tracks dorthin. Neu gestartete Tracks (s.
  * _ambientTargetGain() in _playLoopTrack/_playChainCycle/_playIntervalCycle)
  * berücksichtigen _duckFactor automatisch von Anfang an, auch wenn sie
@@ -125,7 +121,7 @@ export async function playAmbientTrack(trackId) {
   const t = _find(trackId); if (!t) return;
   if (_active.has(trackId)) return;
 
-  // P2 Noise-Generator-Tracks haben keine Dateien — eigener Startpfad.
+  // Noise-Generator-Tracks haben keine Dateien — eigener Startpfad.
   if (t.sourceType === 'generator') { await _playGeneratorTrack(trackId); return; }
 
   if (!(t.files || []).some(f => f.data)) { toast('Keine Audiodatei geladen', 'err'); return; }
@@ -140,7 +136,7 @@ export async function playAmbientTrack(trackId) {
 }
 
 /**
- * Startet einen Noise-Generator-Track (P2). Läuft endlos (kein "Ende" wie
+ * Startet einen Noise-Generator-Track. Läuft endlos (kein "Ende" wie
  * bei einer Audiodatei) — wird ausschließlich über stopAmbientTrack()
  * beendet, s. dortige kind==='generator'-Sonderbehandlung (disconnect()
  * statt stop(), AudioWorkletNode kennt kein .stop()).
@@ -246,17 +242,16 @@ async function _startLoopPlayback(trackId) {
  * variant fully, then continues with the next one picked per variantMode —
  * repeating until stopped.
  *
- * Prompt 2, Kap. 21: Crossfade zwischen Varianten ist NUR hier sinnvoll
- * (kontinuierliche Kette mehrerer Dateien) — nicht bei einer einzelnen Datei
- * im Loop (nichts, wohin überblendet werden könnte) und nicht bei
- * Intervall-Wiedergabe (dort sind Pausen zwischen den Plays gewollt, ein
- * Crossfade würde dem widersprechen). Ist t.crossfade.enabled, wird die
- * NÄCHSTE Variante nicht erst im onended der aktuellen gestartet (kein
- * Overlap möglich), sondern vorzeitig per Timer — s. leadMs unten —
- * während die aktuelle noch läuft; beide Gain-Nodes werden dann gegenläufig
- * überblendet (identische Rampen-Technik wie audio/playback.js playSelectedSlot()
- * Sound-Crossfade, hier auf den Ambient-Kettenwechsel übertragen statt aus
- * js/music/music-playback.js kopiert — beide haben einen eigenen Lebenszyklus).
+ * Crossfade zwischen Varianten ist NUR hier sinnvoll (kontinuierliche Kette
+ * mehrerer Dateien) — nicht bei einer einzelnen Datei im Loop (nichts, wohin
+ * überblendet werden könnte) und nicht bei Intervall-Wiedergabe (dort sind
+ * Pausen zwischen den Plays gewollt, ein Crossfade würde dem widersprechen).
+ * Ist t.crossfade.enabled, wird die NÄCHSTE Variante nicht erst im onended der
+ * aktuellen gestartet (kein Overlap möglich), sondern vorzeitig per Timer —
+ * s. leadMs unten — während die aktuelle noch läuft; beide Gain-Nodes werden
+ * dann gegenläufig überblendet (identische Rampen-Technik wie der Sound-Crossfade
+ * in audio/playback.js playSelectedSlot(); nicht mit js/music/music-playback.js
+ * geteilt, da beide einen eigenen Lebenszyklus haben).
  */
 async function _playChainCycle(trackId) {
   let rec = _active.get(trackId);
@@ -420,10 +415,10 @@ export function stopAmbientTrack(trackId, { fade = true } = {}) {
   if (rec.timerId) { clearTimeout(rec.timerId); rec.timerId = null; }
   if (rec.src) {
     const t = _find(trackId);
-    // P2 Noise-Generatoren sind AudioWorkletNodes — die kennen kein
-    // .stop() (laufen endlos, bis man sie trennt). BUGFIX: ein
-    // unbedingtes rec.src.stop() hätte hier nur eine TypeError geworfen
-    // (vom umgebenden try/catch verschluckt) und den Node NIE getrennt —
+    // Noise-Generatoren sind AudioWorkletNodes — die kennen kein
+    // .stop() (laufen endlos, bis man sie trennt). Ein unbedingtes
+    // rec.src.stop() würde hier nur einen TypeError werfen
+    // (vom umgebenden try/catch verschluckt) und den Node NIE trennen —
     // stiller Ressourcen-Leak (Worklet läuft unhörbar, aber weiter,
     // bis die Seite neu geladen wird).
     const stopNode = () => { try {
