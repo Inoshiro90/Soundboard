@@ -1,33 +1,18 @@
 /**
  * mobile.css — Mobile-First Styles
- * Sound Modal Accordion, Sticky Basics Bar, Macro Timeline
+ * Sound-Editor-Basics-Bar, Editor-Body, Macro Timeline
  */
 
 /* ══════════════════════════════════════════════════════════════
    SOUND MODAL
    ══════════════════════════════════════════════════════════════ */
 
-/* Modal sizing: tall, internal scroll */
-.modal-xl .modal-dialog {
-	max-width: min(860px, 98vw);
-}
-
-.sm-content {
-	display: flex;
-	flex-direction: column;
-	max-height: 90dvh;
-	max-height: 90vh; /* fallback */
-}
-
-/* ── Sticky Basics Bar ─────────────────────────────────────── */
+/* ── Basics Bar (liegt außerhalb des Body-Scrollers, daher fix) ── */
 .sm-basics-bar {
 	flex-shrink: 0;
 	border-bottom: var(--border-whisper);
 	background: var(--bg-surface);
 	padding: var(--space-2) var(--space-4);
-	position: sticky;
-	top: 0;
-	z-index: 10;
 	/* min-height statt starrer Höhe — wächst bei notwendigem
      Textumbruch statt Inhalte abzuschneiden. */
 	min-height: var(--h-menubar);
@@ -79,79 +64,24 @@
 	min-width: 0;
 }
 
-/* ── Scrollable Body ───────────────────────────────────────── */
+/* ── Body-Variante (Accordion/Padding) ─────────────────────── */
+/* Scrollen und Höhe kommen aus der Basisregel .modal-body
+   (css/components/modals.css, Phase 5). */
 .sm-body {
-	flex: 1;
-	overflow-y: auto;
-	-webkit-overflow-scrolling: touch;
 	/* padding: 0 !important; */
 	font-size: var(--text-badge);
 	font-weight: var(--fw-medium);
 	color: var(--text-primary);
 }
 
-/* .sm-body is intentionally zero-padding so accordion rows
-   (.sm-section-toggle/.sm-section-body) can go edge-to-edge with their
-   own background. But content that sits DIRECTLY in the body — not
-   inside an .sm-section — has no padding source at all then, so it
-   touches the modal's left/right edge (worst on mobile, where the
-   dialog itself also loses its side margin below). Give exactly those
-   direct children their own horizontal breathing room; nested content
-   inside .sm-section-body is unaffected (not a direct child of
-   .sm-body), so it never gets padded twice. */
+/* Direkte Kinder des .sm-body (Formular-Grid, Disclosure-Gruppen und
+   Level-1-Blöcke) bekommen eigenen horizontalen Innenabstand, damit sie
+   bei allen Editoren (Sound, Ambient, Musik-Track, Makro) bündig
+   untereinander stehen. */
 .sm-body > .sm-grid,
 .sm-body > .sm-level1 {
 	padding-left: var(--space-4);
 	padding-right: var(--space-4);
-}
-
-/* ── Accordion Sections ────────────────────────────────────── */
-.sm-section {
-	border-bottom: var(--border-whisper);
-}
-
-.sm-section-toggle {
-	width: 100%;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: var(--space-3) var(--space-4);
-	background: var(--bg-surface);
-	border: none;
-	cursor: pointer;
-	text-align: left;
-	/* Fix: --text-sm war nie definiert (Legacy-Bug, nicht Teil des
-     Rastersystems) — auf den nächstliegenden definierten Text-Token
-     gemappt. */
-	font-size: var(--text-caption);
-	font-weight: var(--fw-medium);
-	color: var(--text-primary);
-	transition: background var(--dur-base);
-	gap: var(--space-2);
-	/* Accordion Header -> var(--h-menubar) */
-	min-height: var(--h-menubar);
-}
-
-.sm-section-toggle:hover {
-	background: var(--border-color);
-}
-.sm-section-toggle.is-open {
-	background: var(--bg-warm);
-}
-
-.sm-chevron {
-	transition: transform 0.2s ease;
-	color: var(--text-muted);
-	flex-shrink: 0;
-}
-
-.sm-section-toggle.is-open .sm-chevron {
-	transform: rotate(180deg);
-}
-
-.sm-section-body {
-	padding: var(--space-2) var(--space-4) var(--space-3);
-	background: var(--bg-warm);
 }
 
 /* Active FX badge */
@@ -172,15 +102,7 @@
 
 /* Mobile (< 576px) */
 @media (max-width: 575px) {
-	.sm-content {
-		max-height: 95dvh;
-		max-height: 95vh;
-		border-radius: 12px 12px 0 0;
-	}
-	.modal-dialog {
-		margin: auto 0 0 !important;
-		align-items: flex-end !important;
-	}
+	/* Bottom-Sheet-Regeln (Dialog/Content): css/components/modals.css */
 	.sm-basics-bar {
 		padding: var(--space-2) var(--space-3);
 	}
@@ -191,35 +113,12 @@
 		padding: 6px 8px;
 		font-size: 0.8rem;
 	}
-	.sm-section-toggle {
-		padding: var(--space-3);
-		font-size: 0.85rem;
-	}
-	.sm-section-body {
-		padding: var(--space-2) var(--space-3) var(--space-3);
-	}
 	.fx-slider-min {
 		font-size: 0.65rem;
 		min-width: 38px;
 	}
 	.fx-group {
 		margin-bottom: var(--space-3);
-	}
-	/* Stack columns on mobile */
-	.row.g-3 > [class*='col-lg'] {
-		flex: 0 0 100%;
-		max-width: 100%;
-	}
-}
-
-/* Tablet (576px – 767px) */
-@media (min-width: 576px) and (max-width: 767px) {
-	.sm-content {
-		max-height: 92dvh;
-		max-height: 92vh;
-	}
-	.sm-section-body {
-		padding: var(--space-2) var(--space-3) var(--space-3);
 	}
 }
 
@@ -253,7 +152,34 @@
 	-webkit-overflow-scrolling: touch;
 }
 
+/* Toolbar-Innenaufbau (ersetzt frühere Inline-Styles in #macroModal) */
+.macro-tl-toolbar__group {
+	display: flex;
+	align-items: center;
+	flex: 1;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.macro-tl-toolbar__label {
+	font-size: var(--text-badge);
+	white-space: nowrap;
+	color: var(--text-muted);
+	margin: 0;
+}
+.macro-tl-toolbar__snap {
+	width: 76px;
+	font-size: 0.72rem;
+}
+.macro-tl-toolbar__zoom {
+	width: 70px;
+}
+.macro-tl-hint {
+	font-size: var(--text-badge);
+	margin: var(--space-1) var(--space-2) 2px;
+}
+
 #macroTimelineCanvas {
+	width: 100%;
 	display: block;
 	cursor: crosshair;
 	touch-action: none; /* allow pointer events */
@@ -316,20 +242,6 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
-   ACTIVE EFFECTS HIGHLIGHT
-   ══════════════════════════════════════════════════════════════ */
-
-.sm-section-toggle.has-active-fx {
-	border-left: 3px solid var(--color-accent);
-}
-
-.sm-section-toggle.has-active-fx > span::before {
-	content: '● ';
-	color: var(--color-accent);
-	font-size: 0.65em;
-}
-
-/* ══════════════════════════════════════════════════════════════
    ACCESSIBILITY
    ══════════════════════════════════════════════════════════════ */
 
@@ -337,8 +249,4 @@
 	outline: 2px solid var(--color-accent);
 	outline-offset: 2px;
 	border-radius: 3px;
-}
-
-.sm-section-toggle:focus-visible {
-	outline-offset: -2px;
 }

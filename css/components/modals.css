@@ -55,3 +55,134 @@
 	height: 18px;
 	display: block;
 }
+
+/* ============================================================
+   MODAL-GRÖSSEN
+   ============================================================
+   Eine semantische Größenklasse pro Modal, gesetzt am
+   .modal-dialog. Die Breite hängt NICHT vom Seitenraster ab:
+   min(Zielbreite, Viewport − --modal-gap). Die Klassen setzen
+   Bootstraps eigene Variable --bs-modal-width; Bootstrap wendet
+   sie ab 576 px über .modal-dialog{max-width:var(--bs-modal-width)}
+   an (unter 576 px gilt das Bottom-Sheet-Verhalten).
+   Spezifität 0,1,0 — schlägt Bootstrap-Größenklassen per
+   Ladereihenfolge, verliert aber gegen #id .modal-dialog-Regeln.
+
+   modal-size-full ist bewusst reserviert (noch kein Modal). */
+:root {
+	--modal-w-compact:  400px;
+	--modal-w-standard: 520px;
+	--modal-w-wide:     680px;
+	--modal-w-editor:   840px;
+	--modal-w-full:     1120px;
+	--modal-gap:        3rem;
+
+	/* Höhen-Token: vh als Fallback, dvh (später deklariert) gewinnt,
+	   wo unterstützt. */
+	--modal-max-h: calc(100vh - 3.5rem);
+	--modal-max-h: calc(100dvh - 3.5rem);
+	--modal-editor-min-h: min(640px, var(--modal-max-h));
+}
+
+.modal-size-compact  { --bs-modal-width: min(var(--modal-w-compact),  calc(100vw - var(--modal-gap))); }
+.modal-size-standard { --bs-modal-width: min(var(--modal-w-standard), calc(100vw - var(--modal-gap))); }
+.modal-size-wide     { --bs-modal-width: min(var(--modal-w-wide),     calc(100vw - var(--modal-gap))); }
+.modal-size-editor   { --bs-modal-width: min(var(--modal-w-editor),   calc(100vw - var(--modal-gap))); }
+.modal-size-full     { --bs-modal-width: min(var(--modal-w-full),     calc(100vw - var(--modal-gap))); }
+
+/* ============================================================
+   MODAL-HÖHE UND SCROLLEN
+   ============================================================
+   Ein Höhenmechanismus für alle Modals: .modal-content wird durch
+   --modal-max-h begrenzt, nur .modal-body scrollt. Header und Footer
+   sind Bootstrap-seitig flex-shrink:0 und scrollen nie mit.
+   Das äußere .modal scrollt nicht (Content passt immer in den
+   Viewport). */
+.modal-content {
+	max-height: var(--modal-max-h);
+	overflow: hidden;
+}
+.modal-body {
+	overflow-y: auto;
+	min-height: 0;
+	overscroll-behavior: contain;
+}
+
+/* Editor-Modals haben eine Mindesthöhe (Token --modal-editor-min-h =
+   min(640px, --modal-max-h)), damit Accordion-Aufklappen die Höhe nicht
+   springen lässt. */
+.modal-size-editor .modal-content {
+	min-height: var(--modal-editor-min-h);
+}
+
+/* Feste Höhe (Modifier): das Modal füllt immer --modal-max-h. Für Modals,
+   deren Inhalt per Accordion aufklappt (soundFxModal) — sonst springt die
+   Höhe beim Aufklappen vom zugeklappten Zustand auf das Token.
+   Wirkt nur im Dialog-Modus; das Sheet begrenzt mobile.css zusätzlich. */
+.modal-fixed-h .modal-content {
+	height: var(--modal-max-h);
+}
+
+/* ============================================================
+   MOBILE: BOTTOM-SHEET UND NIEDRIGE VIEWPORTS
+   ============================================================ */
+
+/* ── Bottom-Sheet (≤575 px) ───────────────────────────────────
+   Volle Breite, bündig am unteren Viewportrand, obere Ecken 12 px.
+   Der Dialog füllt die volle Höhe (min-height:100%) und richtet den
+   Content unten aus — dadurch entfällt Bootstraps 16-px-Spalt
+   (min-height: calc(100% − 2·margin) am zentrierten Dialog).
+   Höhen-Token: Viewport − max(Safe-Area oben, 2rem). */
+@media (max-width: 575.98px) {
+	:root {
+		--modal-max-h: calc(100vh - max(env(safe-area-inset-top, 0px), 2rem));
+		--modal-max-h: calc(100dvh - max(env(safe-area-inset-top, 0px), 2rem));
+	}
+	.modal-dialog {
+		margin: 0;
+		min-height: 100%;
+		align-items: flex-end;
+	}
+	.modal-content {
+		border-radius: 12px 12px 0 0;
+	}
+	/* Home-Indicator-Schutz: mit Footer auf dem Footer, sonst am Content */
+	.modal-footer {
+		padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+	}
+	.modal-content:not(:has(> .modal-footer)) {
+		padding-bottom: env(safe-area-inset-bottom, 0px);
+	}
+}
+
+/* ── Niedrige Viewports (Höhe ≤500 px, unabhängig von der Breite) ──
+   Z. B. Smartphone im Querformat (812×375): kleiner Rand, kompaktere
+   Header/Footer, seitliche Safe-Area. */
+@media (max-height: 500px) {
+	:root {
+		--modal-max-h: calc(100vh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+		--modal-max-h: calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+	}
+	.modal {
+		--bs-modal-margin: 0.5rem;
+		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+	}
+	.modal-header,
+	.modal-footer {
+		padding-top: var(--space-2);
+		padding-bottom: var(--space-2);
+		min-height: 0;
+	}
+}
+
+/* ============================================================
+   CONTAINER-RELATIVE INNENMASSE
+   ============================================================
+   .modal-body ist Container (inline-size): Inhalte richten sich nach
+   der tatsächlichen Modalbreite statt nach dem Viewport/Seitenraster.
+   V5 (Containment-Nebenwirkungen): per Messung geprüft — keine
+   absolut/fixed positionierten Modal-Nachfahren mit Bezug außerhalb
+   des Bodys. */
+.modal-body {
+	container-type: inline-size;
+}

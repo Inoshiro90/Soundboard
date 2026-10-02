@@ -95,29 +95,6 @@
   flex-shrink: 0;
 }
 
-/* .menubar-volume__number: Styling für #masterVolNum/#ambientMasterVolNum/
-   #musicMasterVolNum (Lautstärke lebt in #soundVolumeModal/#ambientVolumeModal). */
-.menubar-volume__number {
-  /* Breite als Kategorie-C-Ausnahme (kurzes Zahlenfeld), Höhe folgt dem
-     gemeinsamen Control-System (var(--h-btn)). */
-  width: 52px;
-  height: var(--h-btn);
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  padding: 0 var(--space-2);
-  background: var(--bg-warm);
-  border: var(--border-whisper);
-  border-radius: var(--radius-micro);
-  color: var(--text-primary);
-  outline: none;
-  transition: border-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
-}
-.menubar-volume__number:focus {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-focus);
-}
-
 /* Separator */
 .menubar-sep {
   width: 1px;

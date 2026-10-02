@@ -36,7 +36,7 @@ import { openAmbientProfileModal } from '../dialogs/ambient-modal.js';
 import { openMacroModal } from '../dialogs/macro-modal.js';
 import { openSoundModal } from '../dialogs/sound-modal.js';
 import { _fxEditContext, _setAmbVariantMode, _syncPlaybackSettingsIndicator, _markActivePlaybackSummary, _backupAudioKeyOnce, _discardAudioRollback } from '../dialogs/sound-modal.js';
-import { _musicEditId, _musicEditEffects, _setMusicEditEffects, _editMusicProfileId } from '../dialogs/music-modal.js';
+import { _musicEditId, _musicEditEffects, _setMusicEditEffects, _editMusicProfileId, _syncMusicFxCard, setMusicEditFxEnabled, syncMusicAppearancePreview } from '../dialogs/music-modal.js';
 import { _editAmbientProfileId, _editAmbientTrackId } from '../dialogs/ambient-modal.js';
 import { switchProfile, openSoundFxToolbar, openAmbientFxToolbar, openMusicFxToolbar } from './register-toolbar-events.js';
 import { _setSoundDraftGuard, _soundDraftBaseline, _snapshotSoundDraft } from './utils-modal.js';
@@ -188,7 +188,12 @@ export function registerTileEvents() {
   document.getElementById('musicEditFxPreset')?.addEventListener('change', function() {
     const val = this.value;
     if (!val) {
-      _setMusicEditEffects(defaultEffects());
+      // Parameter-Reset, Master-Schalter bleibt wie vom Nutzer gesetzt — gleiche
+      // Regel wie resetEffectParametersPreserveMasterEnabled() beim Sound-Editor.
+      const reset = defaultEffects();
+      reset.enabled = !!_musicEditEffects?.enabled;
+      _setMusicEditEffects(reset);
+      _syncMusicFxCard();
       return;
     }
     const preset = getPresetById(val);
@@ -197,7 +202,22 @@ export function registerTileEvents() {
     merged.enabled = true;
     merged.preset  = val;
     _setMusicEditEffects(merged);
+    _syncMusicFxCard();
   });
+  // Audio-Effekte: Ein/Aus-Schalter + eigene Dialogbox (wie #fxEnabled/#btnOpenFxModal)
+  document.getElementById('musicEditFxEnabled')?.addEventListener('change', function() {
+    setMusicEditFxEnabled(this.checked);
+  });
+  document.getElementById('btnOpenMusicTrackFxModal')?.addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('musicTrackFxModal')).show();
+  });
+  // Darstellung & Organisation: Einstiegskarte -> Dialogbox, Vorschau live nachziehen
+  document.getElementById('btnOpenMusicAppearanceModal')?.addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('musicTrackAppearanceModal')).show();
+  });
+  document.getElementById('musicTrackAppearanceModal')?.addEventListener('hidden.bs.modal', syncMusicAppearancePreview);
+  document.getElementById('musicIconInput')?.addEventListener('input', syncMusicAppearancePreview);
+  document.getElementById('musicClrOpts')?.addEventListener('click', syncMusicAppearancePreview);
   document.getElementById('btnMusicEditSave')?.addEventListener('click', () => {
     if (!_musicEditId) return;
     const icon  = document.getElementById('musicIconInput').value.trim();

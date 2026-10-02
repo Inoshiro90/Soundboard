@@ -65,16 +65,7 @@
 	padding-top: var(--space-1);
 }
 
-/* ─── MENUBAR volume number input ────────────────────────── */
-.menubar-volume__number::-webkit-inner-spin-button,
-.menubar-volume__number::-webkit-outer-spin-button {
-	-webkit-appearance: none;
-}
-.menubar-volume__number {
-	-moz-appearance: textfield;
-}
-
-/* ─── Sound modal vol number ─────────────────────────────── */
+/* ─── Lautstärke-Zahlenfeld (Sound-Editor + alle Lautstärke-Dialoge) ─── */
 .vol-number-input {
 	/* Breite Kategorie-C, Höhe folgt var(--h-btn). */
 	width: 52px;
@@ -165,8 +156,7 @@
 
 /* Emoji grid performance: contain paint for large lists */
 .icon-picker__grid {
-	content-visibility: auto;
-	contain-intrinsic-size: 0 300px;
+	content-visibility: auto; /* contain-intrinsic-size: icon-picker-v2.css */
 }
 
 /* ─── Lucide Icons global sizing ─────────────────────────────────

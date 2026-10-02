@@ -26,6 +26,11 @@ export function buildColorOpts(containerId, current) {
   const co = document.getElementById(containerId);
   if (!co) return;
   co.innerHTML = '';
+  // Einheitliche ARIA-Semantik für ALLE Farbgruppen: radiogroup mit
+  // radio-Kindern. Fehlt am Container Rolle/Beschriftung (HTML), wird beides
+  // ergänzt — vorhandene aria-label/aria-labelledby bleiben unberührt.
+  if (!co.hasAttribute('role')) co.setAttribute('role', 'radiogroup');
+  if (!co.hasAttribute('aria-label') && !co.hasAttribute('aria-labelledby')) co.setAttribute('aria-label', 'Farbe wählen');
 
   const isLegacyCustom = current && current !== 'none' && !COLORS.includes(current);
   const palette = isLegacyCustom ? [...COLORS, current] : COLORS;
@@ -55,17 +60,17 @@ export function buildColorOpts(containerId, current) {
 
     // Color Swatches müssen per Tastatur bedienbar und
     // fokussierbar sein (WCAG 2.1.1 / 2.4.7), nicht nur per Klick.
-    d.setAttribute('role', 'button');
+    d.setAttribute('role', 'radio');
     d.setAttribute('tabindex', '0');
-    d.setAttribute('aria-pressed', String(c === current));
+    d.setAttribute('aria-checked', String(c === current));
     d.setAttribute('aria-label', isNone ? name : `Farbe ${name}`);
     const select = () => {
       co.querySelectorAll('.color-swatch').forEach(x => {
         x.classList.remove('is-selected');
-        x.setAttribute('aria-pressed', 'false');
+        x.setAttribute('aria-checked', 'false');
       });
       d.classList.add('is-selected');
-      d.setAttribute('aria-pressed', 'true');
+      d.setAttribute('aria-checked', 'true');
     };
     d.addEventListener('click', select);
     d.addEventListener('keydown', (ev) => {

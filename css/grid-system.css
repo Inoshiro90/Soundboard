@@ -114,80 +114,16 @@
     / var(--grid-cols)
   );
 
-  /* Breitenformel für N Spalten (Popover/Modal-Breiten):
+  /* Breitenformel für N Spalten (Popover-Breiten):
      width(N) = N·colw + (N-1)·gutter */
   --w-1col:  var(--grid-row-h);
   --w-2col:  calc(var(--grid-row-h) * 2  + var(--grid-gutter) * 1);
   --w-3col:  calc(var(--grid-row-h) * 3  + var(--grid-gutter) * 2);
   --w-4col:  calc(var(--grid-row-h) * 4  + var(--grid-gutter) * 3);
-  --w-5col:  calc(var(--grid-row-h) * 5  + var(--grid-gutter) * 4);
-  --w-6col:  calc(var(--grid-row-h) * 6  + var(--grid-gutter) * 5);
-  --w-7col:  calc(var(--grid-row-h) * 7  + var(--grid-gutter) * 6);
-  --w-8col:  calc(var(--grid-row-h) * 8  + var(--grid-gutter) * 7);
-  --w-9col:  calc(var(--grid-row-h) * 9  + var(--grid-gutter) * 8);
-  --w-10col: calc(var(--grid-row-h) * 10 + var(--grid-gutter) * 9);
-  --w-11col: calc(var(--grid-row-h) * 11 + var(--grid-gutter) * 10);
-  --w-12col: calc(var(--grid-row-h) * 12 + var(--grid-gutter) * 11);
 }
 
-/* ─── 3. MODAL-BREITEN JE DIALOG (siehe Analyse Abschnitt 5) ───
-   Nur ab MD (≥768px) gesetzt — auf XS/SM bleiben Modals bei
-   Bootstraps mobiler Default-Breite (praktisch voll). Jeder
-   Dialog bekommt seine eigene Spaltenbreite statt sich eine
-   Bootstrap-Größenklasse (.modal-lg) mit anderen Dialogen zu
-   teilen, die im Raster unterschiedlich groß sein sollen. */
-@media (min-width: 768px) {
-  #soundModal   .modal-dialog { max-width: var(--w-8col); }  /* Sound-Editor: MD = voll */
-  #soundFxModal .modal-dialog,
-  #slotDestructiveModal .modal-dialog,
-  #macroModal   .modal-dialog { max-width: var(--w-7col); }
-  #trimModal    .modal-dialog { max-width: var(--w-6col); }
-  #profModal    .modal-dialog,
-  #ambProfModal .modal-dialog,
-  #ambTrackIconModal .modal-dialog,
-  #musicTrackModal .modal-dialog,
-  #slotEditModal .modal-dialog { max-width: var(--w-4col); }  /* analog Profil-Gruppe */
-  #macroItemPickerModal .modal-dialog { max-width: var(--w-5col); }
-}
-
-@media (min-width: 912px) {
-  #soundModal   .modal-dialog { max-width: var(--w-10col); }
-  #soundFxModal .modal-dialog,
-  #slotDestructiveModal .modal-dialog,
-  #macroModal   .modal-dialog { max-width: var(--w-8col); }
-  #trimModal    .modal-dialog { max-width: var(--w-7col); }
-}
-
-@media (min-width: 1200px) {
-  #soundModal   .modal-dialog { max-width: var(--w-9col); }
-  #soundFxModal .modal-dialog,
-  #slotDestructiveModal .modal-dialog,
-  #macroModal   .modal-dialog { max-width: var(--w-7col); }
-  #trimModal    .modal-dialog { max-width: var(--w-6col); }
-}
-
-@media (min-width: 1400px) {
-  #soundModal   .modal-dialog { max-width: var(--w-8col); }
-  #soundFxModal .modal-dialog,
-  #slotDestructiveModal .modal-dialog,
-  #macroModal   .modal-dialog { max-width: var(--w-6col); }
-  #trimModal    .modal-dialog { max-width: var(--w-5col); }
-  #profModal    .modal-dialog,
-  #ambProfModal .modal-dialog,
-  #ambTrackIconModal .modal-dialog,
-  #musicTrackModal .modal-dialog { max-width: var(--w-8col); }
-  #slotEditModal .modal-dialog { max-width: var(--w-8col); }
-  #macroItemPickerModal .modal-dialog { max-width: var(--w-4col); }
-}
-
-/* ─── 4. SOUNDBOARD-KACHELN: DAS RASTER-SYSTEM SELBST ─────────
-   #grid ist ein echtes CSS-Grid mit breakpoint-gesteuerter
-   Spaltenzahl (--grid-cols: 4/4/8/12/12/12). Kacheln sind per
-   aspect-ratio quadratisch — die "Spaltenbreite = Zeilenhöhe"-Regel
-   gilt dadurch immer exakt, ganz ohne JS-Messung oder ResizeObserver.
-   Die Zeilenzahl ist nicht gedeckelt (kein maxRows): das Grid fließt
-   einfach in so viele Reihen, wie Inhalt vorhanden ist (siehe
-   renderGrid() in ui/grid.js). */
+/* ─── 3. SOUNDBOARD-KACHELN: DAS RASTER-SYSTEM SELBST ─────────
+*/
 #grid {
   display: grid;
   grid-template-columns: repeat(var(--grid-cols), 1fr);

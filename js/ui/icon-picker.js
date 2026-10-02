@@ -42,6 +42,25 @@ export function syncThemeIcon() {
   }
 }
 
+// ─── EINSTIEGSKARTE „DARSTELLUNG & ORGANISATION“: PREVIEW ─────
+/**
+ * Zieht Icon + Akzentfarbe in der Einstiegskarte nach, damit die aktuelle Wahl
+ * sichtbar bleibt, auch wenn der Dialog mit dem Picker geschlossen ist.
+ * Eine einzige Implementierung für Sound/Ambient, Makro und Musik-Track.
+ */
+export function syncEntryCardPreview({ iconElId, inputId, fallbackIcon, colorElId, colorOptsId }) {
+  const iconEl = document.getElementById(iconElId);
+  if (iconEl) {
+    const val = document.getElementById(inputId)?.value.trim();
+    iconEl.textContent = isCustomIcon(val) ? '🖼️' : (val || fallbackIcon);
+  }
+  const colorEl = document.getElementById(colorElId);
+  if (colorEl) {
+    const color = document.querySelector(`#${colorOptsId} .color-swatch.is-selected`)?.dataset.color;
+    colorEl.style.background = (color && color !== 'none') ? color : 'transparent';
+  }
+}
+
 // ─── CUSTOM ICON IMAGES ──────────────────────────────────────
 // Users can upload their own icon (PNG/JPEG/GIF/WEBP/BMP/SVG) instead of
 // picking an emoji — e.g. a spell icon or an NPC portrait. Stored as a
@@ -214,6 +233,8 @@ export function buildIconGrid(containerId, current) {
     grid.querySelectorAll('.icon-opt').forEach(x => x.classList.remove('is-selected'));
     const match = [...grid.querySelectorAll('.icon-opt')].find(x => x.dataset.emoji === ico);
     if (match) { match.classList.add('is-selected'); match.scrollIntoView({ block: 'nearest' }); }
+    grid.querySelectorAll('.icon-opt').forEach(o => o.setAttribute('aria-selected', o === match ? 'true' : 'false'));
+    _syncRovingTabindex();
     const inputId = inputMap[containerId];
     if (inputId) { const inp = document.getElementById(inputId); if (inp) inp.value = ico; }
   }
@@ -262,17 +283,23 @@ export function buildIconGrid(containerId, current) {
         return;
       }
       _appendEmojiItems(grid, searchResults, current, (ico) => { current = ico; selectIco(ico); });
+      _syncRovingTabindex();
       return;
     }
 
     if (cat === 'all') {
       // Show all categories with section titles — use DocumentFragment for perf
       const frag = document.createDocumentFragment();
-      Object.entries(EMOJI_CATS).forEach(([, catData]) => {
-        const heading = document.createElement('div');
-        heading.className   = 'icon-picker__section-title';
-        heading.textContent = catData.label;
-        frag.appendChild(heading);
+      Object.entries(EMOJI_CATS).forEach(([, catData], idx) => {
+        // Erste Kategorie ohne Überschrift: sie würde eine ganze Raster-Zeile belegen,
+        // und die Auswahl soll initial 5 volle Emoji-Reihen zeigen. Alle weiteren
+        // Kategorien behalten ihre Überschrift zur Orientierung beim Scrollen.
+        if (idx > 0) {
+          const heading = document.createElement('div');
+          heading.className   = 'icon-picker__section-title';
+          heading.textContent = catData.label;
+          frag.appendChild(heading);
+        }
         _appendEmojiItems(frag, catData.emojis, current, (ico) => { current = ico; selectIco(ico); });
       });
       grid.appendChild(frag);
@@ -280,15 +307,49 @@ export function buildIconGrid(containerId, current) {
       // Single category
       const catData = EMOJI_CATS[cat];
       if (!catData) return;
+      // Keine Überschrift: die aktive Kategorie-Pille nennt bereits dasselbe Label,
+      // und die erste Raster-Zeile bleibt so eine volle Emoji-Reihe.
       const frag = document.createDocumentFragment();
-      const heading = document.createElement('div');
-      heading.className   = 'icon-picker__section-title';
-      heading.textContent = catData.label;
-      frag.appendChild(heading);
       _appendEmojiItems(frag, catData.emojis, current, (ico) => { current = ico; selectIco(ico); });
       grid.appendChild(frag);
     }
+    _syncRovingTabindex();
   }
+
+  // ── Tastaturbedienung (Roving Tabindex) ─────────────────────
+  // Ein Tab-Stopp für das ganze Grid statt >1000; Pfeiltasten bewegen den Fokus,
+  // Enter/Leertaste wählen aus. Spaltenzahl wird aus dem tatsächlichen Layout
+  // gelesen (responsiv), nicht angenommen.
+  function _opts() { return [...grid.querySelectorAll('.icon-opt')]; }
+  function _syncRovingTabindex() {
+    const opts = _opts();
+    const start = opts.find(o => o.classList.contains('is-selected')) || opts[0];
+    opts.forEach(o => o.tabIndex = (o === start) ? 0 : -1);
+  }
+  function _columns(opts) {
+    if (!opts.length) return 1;
+    const top = opts[0].offsetTop;
+    const n = opts.findIndex(o => o.offsetTop !== top);
+    return n === -1 ? opts.length : n;
+  }
+  grid.addEventListener('keydown', e => {
+    const cur = e.target.closest?.('.icon-opt');
+    if (!cur) return;
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault(); cur.click(); return;
+    }
+    const opts = _opts();
+    const i = opts.indexOf(cur);
+    const cols = _columns(opts);
+    const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
+    if (delta === undefined) return;
+    e.preventDefault();
+    const next = opts[Math.max(0, Math.min(opts.length - 1, i + delta))];
+    if (!next || next === cur) return;
+    cur.tabIndex = -1; next.tabIndex = 0;
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest' });
+  });
 
   function _appendEmojiItems(container, emojis, selectedEmoji, onSelect) {
     // Use DocumentFragment for batch DOM insertion

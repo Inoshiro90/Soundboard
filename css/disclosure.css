@@ -30,9 +30,6 @@
   transform: rotate(180deg);
 }
 
-/* Small dot shown on a trigger when the panel it opens contains a
-   non-default / active setting — mirrors .has-active-fx in the editor,
-   so advanced state stays visible even while its panel is collapsed. */
 .popover-toggle__dot {
   width: 6px;
   height: 6px;
@@ -144,6 +141,7 @@ label.popover-check {
 
 .sm-entry-card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
@@ -257,6 +255,24 @@ label.popover-check {
 }
 
 .disclosure-section__panel[hidden] { display: none; }
+
+.disclosure-section__toggle.has-active-setting .disclosure-section__label::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.disclosure-section__toggle[aria-expanded="true"] .disclosure-section__label,
+.disclosure-section__toggle[aria-expanded="true"] .disclosure-section__chevron {
+  color: var(--color-accent);
+}
+
+.disclosure-section__panel > .fx-group:first-child {
+  margin-top: 0;
+}
 
 /* ─── SOUND-EDITOR: KOMPAKTER AKTIVE-EFFEKTE-ÜBERBLICK ─── */
 /* Sits inside the "Audio-Effekte" section (Ebene 2) — lists which

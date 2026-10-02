@@ -134,15 +134,54 @@
 	}
 }
 
-.icon-picker__grid {
-	max-height: 180px;
-	overflow-y: auto;
-}
-
 .icon-picker__empty {
 	padding: var(--space-4);
 	text-align: center;
 	color: var(--text-muted);
 	font-size: var(--text-caption);
 	grid-column: 1 / -1;
+}
+
+/* ─── EMOJI-GRID: MAX. 5 REIHEN, EIGENER SCROLLBEREICH ─────────
+   Feste, quadratische Zellen (--emoji-cell) statt 1fr-Spalten: nur so ist die
+   Zeilenhöhe unabhängig von der Containerbreite bekannt (vorher
+   aspect-ratio:1 auf variabel breiten Spalten -> variable Zeilenhöhe).
+   Spaltenzahl bleibt responsiv (auto-fill, Desktop/Tablet/Mobile), die Höhe
+   ergibt sich ausschließlich aus Zellgröße, Gap und Reihenzahl:
+     Höhe = Reihen × Zelle + (Reihen − 1) × Gap
+   -> immer genau 5 vollständige Reihen sichtbar. Nur das Grid scrollt
+   (overflow-y), nicht das Modal; Scrollbar erscheint nur bei Überlänge. */
+.icon-grid.icon-picker__grid {
+	--emoji-cell: 36px; /* Hit Area, wie bisheriges minmax(36px, …) */
+	--emoji-gap: var(--space-2);
+	--emoji-rows: 5;
+	--emoji-grid-h: calc(var(--emoji-rows) * var(--emoji-cell) + (var(--emoji-rows) - 1) * var(--emoji-gap));
+	grid-template-columns: repeat(auto-fill, var(--emoji-cell));
+	grid-auto-rows: var(--emoji-cell);
+	gap: var(--emoji-gap);
+	justify-content: center;
+	max-height: var(--emoji-grid-h);
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain; /* Scroll-Ende reicht nicht ans Modal durch */
+	contain-intrinsic-size: 0 var(--emoji-grid-h);
+}
+.icon-picker__grid .icon-opt {
+	width: 100%;
+	height: 100%;
+	aspect-ratio: auto;
+	user-select: none;
+}
+.icon-picker__grid .icon-opt:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: -2px; /* im Scrollbereich sonst am Rand abgeschnitten */
+}
+/* Abschnittstitel belegen genau eine Raster-Zeile (gleiche Höhe wie eine
+   Emoji-Reihe), damit die 5-Reihen-Rechnung auch in „Alle“ exakt bleibt. */
+.icon-picker__grid .icon-picker__section-title {
+	display: flex;
+	align-items: center;
+	margin-top: 0;
+	padding-block: 0;
+	box-sizing: border-box;
 }

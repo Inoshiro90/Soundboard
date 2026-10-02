@@ -383,36 +383,8 @@
   line-height: 1;
 }
 
-/* Lautstärke lebt ausschließlich in #musicVolumeModal
-   (.menubar-volume__number wird dort verwendet).
-   .music-player__settings lebt im Wiedergabe-Dialog (#musicPlaybackModal)
-   statt permanent im Player — Textfarbe entsprechend auf normalen
-   Vordergrund (im Dialog ist es Hauptinhalt, nicht mehr eine nebensächliche
-   Zeile unter dem Player). */
-.music-player__settings {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  font-size: var(--text-badge);
-  color: var(--text-primary);
-}
-.music-player__settings select {
-  height: var(--h-btn);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-micro);
-  border: var(--border-whisper);
-  background: var(--bg-warm);
-  color: var(--text-primary);
-  font-size: var(--text-badge);
-}
-.music-player__settings label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--h-btn);
-  cursor: pointer;
-}
+/* Lautstärke lebt ausschließlich in #musicVolumeModal (.vol-row / .vol-number-input).
+   Crossfade/Autoplay leben in #musicPlaybackModal (zentrale Form-Controls). */
 
 /* ─── RESPONSIVE (XS/SM) ────────────────────────────────────── */
 @media (max-width: 767px) {
@@ -427,5 +399,4 @@
 }
 @media (max-width: 575px) {
   .music-row__artist { display: none; }
-  .music-player__settings { justify-content: space-between; width: 100%; }
 }

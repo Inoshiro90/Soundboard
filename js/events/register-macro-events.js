@@ -11,7 +11,8 @@ import { runMacro } from '../audio/playback.js';
 import { renderGrid } from '../ui/grid.js';
 import { mkMacro } from '../storage/factories.js';
 import { handleHotkeyRecord } from './register-toolbar-events.js';
-import { _syncMacroAdvancedIndicator } from '../dialogs/sound-modal.js';
+import { _syncMacroPlaybackSummary } from '../dialogs/sound-modal.js';
+import { syncMacroAppearancePreview } from '../dialogs/macro-modal.js';
 
 export function registerMacroEvents() {
   // ── MACRO MODAL ────────────────────────────────────────────
@@ -32,7 +33,21 @@ export function registerMacroEvents() {
       playMode:    document.getElementById('mPlayMode').value
     });
   });
-  document.getElementById('mPlayMode')?.addEventListener('change', () => _syncMacroAdvancedIndicator());
+  // Wiedergabe & Verhalten / Darstellung & Organisation: eigene Dialogboxen
+  // (gleiches Muster wie #btnOpenPlaybackModal/#btnOpenAppearanceModal beim Sound).
+  document.getElementById('btnOpenMacroPlaybackModal')?.addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('macroPlaybackModal')).show();
+  });
+  document.getElementById('btnOpenMacroAppearanceModal')?.addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('macroAppearanceModal')).show();
+  });
+  // Zusammenfassung/Vorschau live nachziehen (Karte bleibt aktuell, auch wenn der Dialog offen ist)
+  document.getElementById('mPlayMode')?.addEventListener('change', () => _syncMacroPlaybackSummary());
+  document.getElementById('mRepDelay')?.addEventListener('input', () => _syncMacroPlaybackSummary());
+  document.getElementById('macroPlaybackModal')?.addEventListener('hidden.bs.modal', _syncMacroPlaybackSummary);
+  document.getElementById('macroAppearanceModal')?.addEventListener('hidden.bs.modal', syncMacroAppearancePreview);
+  document.getElementById('mIcon')?.addEventListener('input', syncMacroAppearancePreview);
+  document.getElementById('mClrOpts')?.addEventListener('click', syncMacroAppearancePreview);
   document.getElementById('btnSaveMacro')?.addEventListener('click', async () => {
     // Convert startTime positions to legacy delay (keeps backward compat)
     let _finalSteps;
@@ -103,19 +118,6 @@ export function registerMacroEvents() {
 
   // Wake AudioContext on first interaction
   document.body.addEventListener('click', () => actx(), { once: true });
-
-  // ── Accordion ────────────────────────────────────────────
-  document.addEventListener('click', e => {
-    const btn = e.target.closest('.sm-section-toggle');
-    if (!btn) return;
-    const targetId = btn.dataset.target;
-    if (!targetId) return;
-    const body = document.getElementById(targetId);
-    if (!body) return;
-    const isOpen = btn.classList.contains('is-open');
-    btn.classList.toggle('is-open', !isOpen);
-    body.style.display = isOpen ? 'none' : '';
-  });
 
   // ── Macro Timeline ───────────────────────────────────────
   document.getElementById('macroTlSnap')?.addEventListener('change', function() {

@@ -13,20 +13,15 @@
    IMMER genau vier Spalten unabhängig von der (variablen) Button-Anzahl;
    der Name muss sich sein 1fr nicht mit den Buttons in derselben Zeile
    teilen.
-   Mobile-first (≤767px, XS/SM = max. 4 Rasterspalten): Ziehgriff+Nummer+
-   Name in Zeile 1, Aktionen als eigene, volle Zeile darunter — der Name
-   konkurriert dadurch gar nicht mehr mit den Buttons. Ab 768px (MD = 8,
-   LG/XL/XXL = 12 Rasterspalten) rutschen die Aktionen wieder in dieselbe
-   Zeile, der Name bekommt dafür fest die Breite von 4 Rasterspalten
-   (var(--w-4col) aus grid-system.css — dieselbe „4 Spalten"-Breite
-   unabhängig davon, ob das Root-Raster an diesem Breakpoint gerade 8
-   oder 12 Spalten hat). */
+   Mobile-first (schmaler Modal-Body): Ziehgriff+Nummer+Name in Zeile 1,
+   Aktionen als eigene, volle Zeile darunter — der Name konkurriert dadurch
+   gar nicht mehr mit den Buttons. Ab ~34 rem Containerbreite (Editor-Modal)
+   rutschen die Aktionen in dieselbe Zeile; der Name nimmt den Rest. Alle
+   Maße sind container-relativ (kein Seitenraster, kein Viewport). */
 .slot-list {
 	display: flex;
 	flex-direction: column;
-	gap: var(--grid-gutter);
-	max-height: 260px;
-	overflow-y: auto;
+	gap: var(--space-3);
 }
 .slot-row {
 	background: var(--bg-warm);
@@ -35,7 +30,7 @@
 	display: grid;
 	grid-template-columns: auto auto minmax(0, 1fr);
 	align-items: center;
-	gap: var(--space-2) var(--grid-gutter);
+	gap: var(--space-2) var(--space-3);
 	padding: var(--space-2) var(--space-3);
 	cursor: default;
 	transition: border-color var(--dur-fast) var(--ease);
@@ -60,16 +55,16 @@
 	gap: var(--space-1);
 }
 
-/* ≥768px (MD = 8, LG/XL/XXL = 12 Rasterspalten): Aktionen zurück in
-   dieselbe Zeile wie Name, Name fest auf 4 Rasterspalten Breite. */
-@media (min-width: 768px) {
+/* Breiter Container (≥34rem): Aktionen zurück in dieselbe Zeile wie der
+   Name; der Name wächst flexibel (min-width:0 verhindert Überlauf). */
+@container (min-width: 34rem) {
 	.slot-row {
 		display: flex;
 		align-items: center;
 	}
 	.slot-name {
-		flex: 0 0 var(--w-4col);
-		width: var(--w-4col);
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.slot-actions {
 		flex-shrink: 0;

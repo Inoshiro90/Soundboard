@@ -84,3 +84,26 @@
 	text-transform: uppercase;
 	margin: var(--space-3) 0 var(--space-2);
 }
+
+/* ─── ICON-DIREKTEINGABE ───
+   Zentrale Klasse für das Emoji-Direkteingabefeld unter jedem
+   Icon-Picker (buildIconGrid). Ersetzt die Inline-Styles
+   (font-size 1rem/1.05rem/1.1rem — uneinheitlich) in allen Modalen. */
+.icon-direct-input {
+	font-size: 1.1rem;
+	text-align: center;
+}
+
+/* ─── LAUTSTÄRKE-ZEILE ───
+   Slider + Zahlenfeld/Label in einer Zeile (Sound-Editor, Musik-Track-
+   Editor, Lautstärke-Dialoge). Ersetzt wiederholte Inline-Styles
+   (align-items:center / flex:1). */
+.vol-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+.vol-row > .slider {
+	flex: 1;
+	min-width: 0;
+}

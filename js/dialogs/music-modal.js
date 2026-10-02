@@ -5,16 +5,16 @@
 import { APP } from '../core/state.js';
 import { defaultEffects } from '../audio/effect-graph.js';
 import { renderPresetOptions } from '../ui/tabs.js';
-import { buildIconGrid } from '../ui/icon-picker.js';
+import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
+import { getPresetById } from '../presets.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import '../music/music-model.js';
 
 // ─── MUSIC TRACK MODAL ───────────────────────────────────────
-// Bewusst ein eigenes, schlankes Modal statt Wiederverwendung des großen
-// geteilten Sound/Ambient-Editors — die Feldmenge ist komplett anders
-// (Name/Artist/Album/Icon/Farbe/Lautstärke, keine Hotkeys/Zufall/Makro)
-// und ein eigenes Modal minimiert das Risiko, den bestehenden
-// Sound-/Ambient-Editor versehentlich zu beschädigen.
+// Eigenes Modal (andere Feldmenge als der geteilte Sound/Ambient-Editor:
+// Name/Artist/Album/Icon/Farbe/Lautstärke, keine Hotkeys/Zufall/Makro),
+// aber mit demselben Editor-Aufbau und denselben zentralen Komponenten
+// (sm-basics-bar, disclosure-group, buildIconGrid/buildColorOpts).
 export let _musicEditId = null;
 // Staged Effekt-Objekt für die aktuelle Editier-Sitzung
 // des Track-Modals — wird NUR beim Speichern in t.effects übernommen
@@ -25,10 +25,53 @@ export let _musicEditEffects = null;
 // Neuzuweisen eines importierten `let`-Bindings).
 export function _setMusicEditEffects(fx) { _musicEditEffects = fx; }
 
+/**
+ * Audio-Effekte-Karte des Track-Modals (gleiches Muster wie #fxEnabled/#smFxBadge/
+ * #smFxActiveSummary im Sound-Editor): Ein/Aus-Schalter, Aktiv-Badge und Überblick
+ * werden ausschließlich aus dem gestagten Effekt-Objekt abgeleitet —
+ * effects.enabled ist dasselbe Feld, das die Wiedergabe auswertet
+ * (music-playback.js _reconnectSlotFx: `effects?.enabled ? buildEffectChain(...)`).
+ */
+export function _syncMusicFxCard() {
+  const fx = _musicEditEffects || {};
+  const on = !!fx.enabled;
+  const chk = document.getElementById('musicEditFxEnabled');
+  if (chk) chk.checked = on;
+  const badge = document.getElementById('musicEditFxBadge');
+  if (badge) badge.style.display = on ? '' : 'none';
+  const summary = document.getElementById('musicEditFxSummary');
+  if (summary) {
+    const name = fx.preset ? getPresetById(fx.preset)?.name : '';
+    summary.innerHTML = '';
+    if (name) {
+      const chip = document.createElement('span');
+      chip.className = 'sm-fx-summary__chip';
+      chip.textContent = name;           // textContent: Preset-Namen können benutzerdefiniert sein
+      summary.appendChild(chip);
+    }
+  }
+}
+
+/** Schalter „Audio-Effekte ein/aus“ — ändert nur effects.enabled, Parameter/Preset bleiben erhalten. */
+export function setMusicEditFxEnabled(on) {
+  if (!_musicEditEffects) return;
+  _musicEditEffects.enabled = !!on;
+  _syncMusicFxCard();
+}
+
+/** Icon + Akzentfarbe in der Einstiegskarte „Darstellung & Organisation“ nachziehen. */
+export function syncMusicAppearancePreview() {
+  syncEntryCardPreview({
+    iconElId: 'musicAppearancePreviewIcon', inputId: 'musicIconInput', fallbackIcon: '🎵',
+    colorElId: 'musicAppearancePreviewColor', colorOptsId: 'musicClrOpts'
+  });
+}
+
 export function openMusicTrackModal(trackId) {
   const t = findMusicTrack(trackId);
   if (!t) return;
   _musicEditId = trackId;
+  document.getElementById('musicTrackModalTitle').textContent = 'MUSIKSTÜCK BEARBEITEN';
   _musicEditEffects = t.effects ? { ...t.effects } : defaultEffects();
 
   document.getElementById('musicEditName').value   = t.name || '';
@@ -40,9 +83,11 @@ export function openMusicTrackModal(trackId) {
   buildIconGrid('musicIconGrid', t.icon || '🎵');
   buildColorOpts('musicClrOpts', t.color || 'none');
   renderPresetOptions(document.getElementById('musicEditFxPreset'), _musicEditEffects.preset || '');
+  _syncMusicFxCard();
+  syncMusicAppearancePreview();
 
-  document.getElementById('musicTrackModal').addEventListener('shown.bs.modal', () => {
-    const bar = document.querySelector('#musicTrackModal .icon-picker__cats');
+  document.getElementById('musicTrackAppearanceModal').addEventListener('shown.bs.modal', () => {
+    const bar = document.querySelector('#musicTrackAppearanceModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
   }, { once: true });
 

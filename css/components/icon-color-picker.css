@@ -3,22 +3,12 @@
    ============================================================ */
 
 /* ─── ICON GRID ─── */
-/* Mindestens 1/2 Rasterspalte pro Icon-Zelle (Hit Area).
+/* Mindestens 36 px pro Icon-Zelle (Hit Area), unabhängig vom Seitenraster.
    Icon selbst darf innerhalb der Zelle kleiner bleiben (.icon-opt .icon-img). */
-.icon-grid-makro {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
-  gap: var(--grid-gutter);
-  max-height: 150px;
-  overflow-y: auto;
-}
-
 .icon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(var(--grid-row-h) * 0.5), 1fr));
-  gap: var(--grid-gutter);
-  max-height: 150px;
-  overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: var(--space-2);
 }
 
 .icon-opt {

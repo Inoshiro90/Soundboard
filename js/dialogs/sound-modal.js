@@ -15,8 +15,9 @@ import '../storage/persistence.js';
 import '../storage/persistence.js';
 import { idbGet, idbSet, idbDelete, isIdbRef, audioKey } from '../db.js';
 import { renderSlotList } from '../ui/slot-editor.js';
-import { buildIconGrid } from '../ui/icon-picker.js';
+import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { buildColorOpts } from '../ui/color-picker.js';
+import { setDisclosureActive } from '../ui/disclosure.js';
 // Zirkulärer Import (utils-modal.js importiert umgekehrt readEffectsFromUI/
 // readPlaybackFromUI/_commitAudioRollback aus diesem Modul) — unkritisch,
 // s. Kommentar in utils-modal.js.
@@ -485,7 +486,7 @@ export function _syncAmbientLoopIntervalExclusivity() {
 }
 
 /**
- * Mark accordion section headers with 'has-active-fx' if they contain active effects.
+ * Mark accordion section headers with 'has-active-setting' (central disclosure indicator) if they contain active effects.
  * Improves visual hierarchy: users can see at a glance which sections are active.
  */
 export function _markActiveAccordionSections(fx) {
@@ -504,7 +505,7 @@ export function _markActiveAccordionSections(fx) {
   Object.entries(sections).forEach(([bodyId, isActive]) => {
     const body   = document.getElementById(bodyId);
     const toggle = body?.previousElementSibling;
-    if (toggle) toggle.classList.toggle('has-active-fx', !!isActive);
+    if (toggle) toggle.classList.toggle('has-active-setting', !!isActive);
   });
   // Show/hide the effects active badge on the master toggle
   const badge = document.getElementById('smFxBadge');
@@ -647,15 +648,26 @@ export function _commitAudioRollback() {
 }
 
 /**
- * Marks the macro modal's "Erweiterte Einstellungen" accordion header when
- * it holds a non-default value (Abspiel-Modus ≠ Parallel) — same idea as
- * has-active-fx in the sound editor, so a relevant setting made inside a
- * collapsed section stays visible without opening it.
+ * Übersicht in der Makro-Einstiegskarte „Wiedergabe & Verhalten“ — gleiches Muster
+ * wie _markActivePlaybackSummary() beim Sound: Chips für abweichende Einstellungen
+ * (Abspiel-Modus ≠ Parallel, Wiederholungs-Pause ≠ 500 ms), sonst Platzhalter.
  */
-export function _syncMacroAdvancedIndicator() {
-  const nonDefault = document.getElementById('mPlayMode')?.value !== 'parallel';
-  const toggle = document.querySelector('#macroModal .sm-section-toggle[data-target="mAdvanced"]');
-  toggle?.classList.toggle('has-active-fx', !!nonDefault);
+export function _syncMacroPlaybackSummary() {
+  const mode  = document.getElementById('mPlayMode')?.value || 'parallel';
+  const delay = parseInt(document.getElementById('mRepDelay')?.value);
+  const chips = [];
+  if (mode === 'sequential') chips.push('Sequenziell');
+  if (mode === 'random')     chips.push('Zufällig');
+  if (!isNaN(delay) && delay !== 500) chips.push(`Pause ${delay} ms`);
+
+  const summaryEl = document.getElementById('mPlaybackSummary');
+  if (summaryEl) {
+    summaryEl.innerHTML = chips.length
+      ? chips.map(label => `<span class="sm-fx-summary__chip">${label}</span>`).join('')
+      : '<span class="u-text-muted u-text-badge" style="font-style:italic">Standardwiedergabe</span>';
+  }
+  const badge = document.getElementById('mPlaybackBadge');
+  if (badge) badge.style.display = chips.length ? '' : 'none';
 }
 
 /**
@@ -665,17 +677,10 @@ export function _syncMacroAdvancedIndicator() {
  * gleiches Prinzip wie die Aktive-Effekte-Übersicht bei Audio-Effekte.
  */
 export function _syncAppearancePreview() {
-  const iconEl = document.getElementById('smAppearancePreviewIcon');
-  if (iconEl) {
-    const val = document.getElementById('eIcon')?.value.trim();
-    iconEl.textContent = isCustomIcon(val) ? '🖼️' : (val || '🔊');
-  }
-  const colorEl = document.getElementById('smAppearancePreviewColor');
-  if (colorEl) {
-    const selected = document.querySelector('#clrOpts .color-swatch.is-selected');
-    const color = selected?.dataset.color;
-    colorEl.style.background = (color && color !== 'none') ? color : 'transparent';
-  }
+  syncEntryCardPreview({
+    iconElId: 'smAppearancePreviewIcon', inputId: 'eIcon', fallbackIcon: '🔊',
+    colorElId: 'smAppearancePreviewColor', colorOptsId: 'clrOpts'
+  });
 }
 
 

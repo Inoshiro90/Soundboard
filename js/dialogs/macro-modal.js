@@ -3,12 +3,20 @@
  */
 
 import { APP, CItems } from '../core/state.js';
-import { buildIconGrid } from '../ui/icon-picker.js';
+import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import { renderMacroSteps } from '../ui/macro-steps.js';
-import { _syncMacroAdvancedIndicator } from '../dialogs/sound-modal.js';
+import { _syncMacroPlaybackSummary } from '../dialogs/sound-modal.js';
 
 // ─── MACRO MODAL ─────────────────────────────────────────────
+
+/** Icon + Akzentfarbe in der Einstiegskarte „Darstellung & Organisation“ nachziehen. */
+export function syncMacroAppearancePreview() {
+  syncEntryCardPreview({
+    iconElId: 'mAppearancePreviewIcon', inputId: 'mIcon', fallbackIcon: '🪄',
+    colorElId: 'mAppearancePreviewColor', colorOptsId: 'mClrOpts'
+  });
+}
 
 export function openMacroModal(id, placeholderId = null) {
   APP.editMacroId = id;
@@ -27,7 +35,7 @@ export function openMacroModal(id, placeholderId = null) {
   set('mTileH',     m && m.tileH ? m.tileH : '');
   set('mPlayMode',  m ? m.playMode || 'parallel' : 'parallel');
   set('mTileClr',   m && m.tileColor ? m.tileColor : '#ffffff');
-  _syncMacroAdvancedIndicator();
+  _syncMacroPlaybackSummary();
 
   const delBtn = document.getElementById('btnDelMacro');
   if (delBtn) delBtn.style.display = id ? '' : 'none';
@@ -40,9 +48,10 @@ export function openMacroModal(id, placeholderId = null) {
   buildColorOpts('mClrOpts', m ? m.color : 'none');
   buildColorOpts('mTileClrOpts', m && m.tileColor ? m.tileColor : 'none');
   buildIconGrid('mIconGrid',  m ? m.icon  : '🪄');
+  syncMacroAppearancePreview();
   renderMacroSteps();
   document.getElementById('macroModal').addEventListener('shown.bs.modal', () => {
-    const bar = document.querySelector('#macroModal .icon-picker__cats');
+    const bar = document.querySelector('#macroAppearanceModal .icon-picker__cats');
     if (bar && typeof lucide !== 'undefined') lucide.createIcons({ nodes: [...bar.querySelectorAll('[data-lucide]')] });
     // Init macro timeline canvas
     const canvas = document.getElementById('macroTimelineCanvas');

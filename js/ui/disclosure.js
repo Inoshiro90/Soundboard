@@ -18,6 +18,11 @@
  *     </div>
  *   </div>
  *
+ * Inline-Variante (Accordion im Formular): data-disclosure-inline auf dem
+ * Toggle, Panels innerhalb einer .disclosure-group. Standard = exklusiv
+ * (nur eine Sektion der Gruppe offen); data-disclosure-multi auf der Gruppe
+ * erlaubt mehrere gleichzeitig offene Sektionen.
+ *
  * This module only handles open/close + a11y. It never touches the
  * app/audio state and never removes or renames the IDs that
  * events/*.js already binds to — existing behaviour for the wrapped
@@ -128,7 +133,12 @@ export function initDisclosure(root = document) {
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const willOpen = toggle.getAttribute('aria-expanded') !== 'true';
-      _closeAll(willOpen ? panel : null, _scopeFor(toggle));
+      // data-disclosure-multi (auf der .disclosure-group): Sektionen sind
+      // voneinander unabhängig (z. B. die Effektgruppen im Audio-Effekte-
+      // Editor) — kein gegenseitiges Schließen.
+      if (!toggle.closest('[data-disclosure-multi]')) {
+        _closeAll(willOpen ? panel : null, _scopeFor(toggle));
+      }
       _setOpen(toggle, panel, willOpen);
       if (willOpen) {
         const focusable = panel.querySelector('button, input, select, textarea, [tabindex]');
@@ -160,6 +170,10 @@ export function initDisclosure(root = document) {
     document.addEventListener('click', (e) => {
       document.querySelectorAll(SELECTOR_TOGGLE).forEach(toggle => {
         if (toggle.getAttribute('aria-expanded') !== 'true') return;
+        // Inline-Accordions (data-disclosure-inline) verhalten sich wie ein
+        // klassisches Accordion: ein Klick auf ein anderes Formularfeld
+        // klappt sie NICHT zu. Click-outside gilt nur für echte Popovers.
+        if (toggle.hasAttribute('data-disclosure-inline')) return;
         const panel = _panelFor(toggle);
         if (!panel) return;
         if (panel.contains(e.target) || toggle.contains(e.target)) return;
@@ -172,7 +186,7 @@ export function initDisclosure(root = document) {
 /**
  * Marks a popover trigger with a small accent dot so an advanced
  * setting that differs from its default stays visible even while its
- * panel is collapsed (mirrors .has-active-fx in the sound editor).
+ * panel is collapsed (mirrors .has-active-setting on disclosure sections).
  */
 export function setDisclosureActive(toggleId, isActive) {
   document.getElementById(toggleId)?.classList.toggle('has-active-setting', !!isActive);

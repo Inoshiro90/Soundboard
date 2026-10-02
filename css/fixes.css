@@ -73,15 +73,6 @@
 	gap: var(--space-2);
 }
 
-/* Accordion-Sektionen gleichmäßig */
-.sm-section-body {
-	padding: var(--space-3) var(--space-4);
-}
-
-.sm-section-body > .fx-group:first-child {
-	margin-top: 0;
-}
-
 /* Konsistente Abstände in Effekt-Gruppen */
 .fx-group + .fx-group {
 	margin-top: var(--space-3);
@@ -110,25 +101,11 @@
 	font-size: 0.8rem;
 }
 
-/* Section-Toggles: Icon-Farbe für aktive Sektionen */
-.sm-section-toggle.is-open {
-	color: var(--color-accent);
-}
-.sm-section-toggle.is-open .sm-chevron {
-	color: var(--color-accent);
-}
-
 /* Muted secondary content */
 .fx-slider-min,
 .fx-slider-max {
 	font-size: 0.65rem;
 	color: var(--text-muted);
-}
-
-/* Aktive Effekte: Badge im Accordion-Header anzeigen */
-.sm-section-toggle.has-active-fx {
-	border-left: 3px solid var(--color-accent);
-	padding-left: calc(var(--space-4) - 3px);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -181,19 +158,6 @@
 	flex: 1;
 	min-width: 0;
 	justify-content: center;
-}
-
-/* ══════════════════════════════════════════════════════════════
-   6. ACCORDION-HEADER EMOJI → TEXT FALLBACK-ICONS
-   (Emojis in span-Elementen bleiben; FA-Icons für Buttons)
-   ══════════════════════════════════════════════════════════════ */
-
-/* Sektion-Emoji-Icons standardisiert */
-.sm-section-toggle > span {
-	display: flex;
-	align-items: center;
-	gap: var(--space-2);
-	font-size: 0.85rem;
 }
 
 /* ══════════════════════════════════════════════════════════════
