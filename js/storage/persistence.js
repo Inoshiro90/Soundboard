@@ -28,6 +28,8 @@ export async function decodeAllAudio() {
 
 // ─── SAVE ────────────────────────────────────────────────────
 
+// Rückgabewert: true = geschrieben, false = fehlgeschlagen (z.B. Quota). Bestehende
+// Aufrufer ignorieren ihn; storage/transfer.js nutzt ihn für den Rollback.
 export function _saveRaw() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -54,7 +56,8 @@ export function _saveRaw() {
       userPresets:     APP.userPresets || [],
       _idbMigrated:    true
     }));
-  } catch(e) { console.error('[storage] save error:', e); }
+    return true;
+  } catch(e) { console.error('[storage] save error:', e); return false; }
 }
 
 export function save() {

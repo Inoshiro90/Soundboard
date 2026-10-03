@@ -20,6 +20,8 @@ export let _musicEditId = null;
 // des Track-Modals — wird NUR beim Speichern in t.effects übernommen
 // (setMusicTrackEffects()), analog zum Draft-Prinzip der übrigen Editoren.
 export let _musicEditEffects = null;
+/** Beendet die Editiersitzung (z.B. nach Verschieben/Duplizieren) — kein Rest-Bezug auf das bearbeitete Stück. */
+export function _resetMusicEditId() { _musicEditId = null; _musicEditEffects = null; }
 // Exportierter Setter: wird von events/register-tile-events.js beim Anwenden eines
 // Audio-Effekt-Presets im Track-Modal neu zugewiesen (ES-Module erlauben kein
 // Neuzuweisen eines importierten `let`-Bindings).

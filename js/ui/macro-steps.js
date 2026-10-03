@@ -2,7 +2,7 @@
  * ui/macro-steps.js — Makro-Schritte-Editor-Liste (Makro-Modal)
  */
 
-import { APP, CItems } from '../core/state.js';
+import { APP, CItems, findItemAnyProfile, resolveItemById } from '../core/state.js';
 import { iconGlyph } from '../utils.js';
 
 // ─── MACRO STEPS RENDER ───────────────────────────────────────
@@ -15,6 +15,15 @@ export function renderMacroSteps() {
   const allTargets = CItems().filter(x =>
     (x.type === 'sound' || x.type === 'macro') && x.id !== APP.editMacroId
   );
+  // Referenzierte Ziele, die inzwischen in einem ANDEREN Profil liegen (Sound wurde
+  // per „Verschieben“ übertragen): als Option mit Profilnamen ergänzen, damit der
+  // Schritt im Editor nicht fälschlich als „-- wählen --“ erscheint.
+  APP.macroSteps.forEach(st => {
+    if (!st.targetId || st.targetId === APP.editMacroId) return;
+    if (allTargets.some(x => x.id === st.targetId)) return;
+    const hit = findItemAnyProfile(st.targetId);
+    if (hit) allTargets.push({ ...hit.item, name: `${hit.item.name} (${hit.container.name})` });
+  });
 
   APP.macroSteps.forEach((step, i) => {
     const div    = document.createElement('div');
@@ -86,7 +95,7 @@ export function renderMacroSteps() {
       sl.addEventListener('input', e => { APP.macroSteps[i].volumeVal = parseFloat(e.target.value); vv.textContent = Math.round(parseFloat(e.target.value) * 100) + '%'; });
       div.querySelector('.js-delay').addEventListener('change', e => { APP.macroSteps[i].delay = parseInt(e.target.value) || 0; });
     } else {
-      const selType = step.targetId ? (CItems().find(x => x.id === step.targetId)?.type || 'sound') : 'sound';
+      const selType = step.targetId ? (resolveItemById(step.targetId)?.type || 'sound') : 'sound';
       div.innerHTML = `
         <span class="mstep-num">${i + 1}.</span>
         <select class="form-select mstep-type js-type" aria-label="Typ">

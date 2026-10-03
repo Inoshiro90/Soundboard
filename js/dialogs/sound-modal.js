@@ -753,6 +753,11 @@ export function openSoundModal(id, placeholderId = null) {
   if (delBtn) delBtn.style.display = id ? '' : 'none';
   const expBtn = document.getElementById('btnExportSound');
   if (expBtn) expBtn.style.display = id ? '' : 'none';
+  // Verschieben/Duplizieren nur für einen bereits gespeicherten Sound (nicht bei „Neuer Sound“).
+  ['btnEditMove', 'btnEditDuplicate'].forEach(bid => {
+    const b = document.getElementById(bid);
+    if (b) b.style.display = id ? '' : 'none';
+  });
 
   // _idbSlot: merkt sich, an welcher Position die Audiodaten dieses Slots
   // GERADE physisch in IndexedDB liegen (= ihre Position im bestehenden

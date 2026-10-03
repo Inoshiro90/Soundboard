@@ -1,0 +1,53 @@
+<!--
+  Fragment: transfer.html  ·  Familie: Organisation
+  Zweck:    Zielauswahl-Modal für „Verschieben“ / „Duplizieren“
+  Modals:   transferModal
+  JS:       js/dialogs/transfer-modal.js (UI), js/storage/transfer.js (Transferlogik)
+  Geladen:  js/fragmentLoader.js (Liste in js/main.js), VOR registerEvents().
+
+  Reines Auswahl-/Bestätigungs-Modal für Sound (Profile), Ambient (Szenen) und Musik
+  (Playlists). Titel, Beschriftungen und die Zielliste werden zur Laufzeit aus dem
+  Datenmodell befüllt (dialogs/transfer-modal.js) — hier steht nur das Gerüst.
+  Wird vom jeweiligen „… bearbeiten“-Modal aus geöffnet, das dabei kurz ausgeblendet und
+  bei Abbruch wieder eingeblendet wird (kein gleichzeitiges Stapeln zweier Modals).
+-->
+
+  <div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-size-standard">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title" id="transferModalTitle">Verschieben</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
+              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg></button>
+        </div>
+
+        <div class="modal-body sm-body">
+          <div class="transfer-summary">
+            <div class="transfer-summary__name" id="transferItemName"></div>
+            <div class="transfer-summary__source u-text-muted">
+              <span id="transferSourceLabel">Aktuelles Profil:</span> <strong id="transferSourceName"></strong>
+            </div>
+          </div>
+
+          <span class="form-label" id="transferTargetLabel">Zielprofil:</span>
+          <div class="transfer-list" id="transferList" role="radiogroup" aria-labelledby="transferTargetLabel"></div>
+
+          <div class="transfer-notes u-text-muted u-text-badge" id="transferNotes" aria-live="polite"></div>
+        </div>
+
+        <div class="modal-footer u-flex-between">
+          <span></span>
+          <div class="u-flex u-gap-2">
+            <button type="button" class="btn btn--sm" data-bs-dismiss="modal" id="btnTransferCancel">Abbrechen</button>
+            <button type="button" class="btn btn--sm btn--accent" id="btnTransferConfirm" disabled>Verschieben</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>

@@ -97,3 +97,53 @@ export function CMTracks() { return CMP()?.tracks || []; }
 
 export function CP()       { return APP.profiles.find(p => p.id === APP.activeProfileId) || APP.profiles[0]; }
 export function CItems()   { return CP()?.items || []; }
+
+// ─── GLOBALE LOOKUPS (container-übergreifend) ─────────────────
+// CItems()/CATracks() sehen nur den AKTIVEN Container. Für Transfers zwischen
+// Containern (storage/transfer.js) und für Wiedergabe, die ein Element auch
+// nach einem Verschieben in einen anderen Container finden muss, gibt es diese
+// Helfer. Rückgabe jeweils { item, container } oder null; container ist das
+// Profil / die Szene / die Playlist, in dem das Element aktuell liegt.
+
+export function findSoundAnyProfile(id) {
+  for (const container of APP.profiles) {
+    const item = (container.items || []).find(x => x.id === id && x.type === 'sound');
+    if (item) return { item, container };
+  }
+  return null;
+}
+
+/** Sound ODER Makro in irgendeinem Profil (Makro-Schritte referenzieren beides per targetId). */
+export function findItemAnyProfile(id) {
+  for (const container of APP.profiles) {
+    const item = (container.items || []).find(x => x.id === id && (x.type === 'sound' || x.type === 'macro'));
+    if (item) return { item, container };
+  }
+  return null;
+}
+
+export function findAmbientTrackAnyScene(id) {
+  for (const container of (APP.ambient?.profiles || [])) {
+    const item = (container.tracks || []).find(x => x.id === id);
+    if (item) return { item, container };
+  }
+  return null;
+}
+
+export function findMusicTrackAnyPlaylist(id) {
+  for (const container of (APP.music?.profiles || [])) {
+    const item = (container.tracks || []).find(x => x.id === id);
+    if (item) return { item, container };
+  }
+  return null;
+}
+
+/**
+ * Löst eine Makro-Schritt-Referenz (targetId) auf: zuerst im aktiven Profil
+ * (bisheriges Verhalten, unverändert), danach in allen übrigen Profilen. So
+ * bleibt ein Makro funktionsfähig, wenn der referenzierte Sound per
+ * „Verschieben“ in ein anderes Profil gewandert ist.
+ */
+export function resolveItemById(id) {
+  return CItems().find(x => x.id === id) || findItemAnyProfile(id)?.item || undefined;
+}

@@ -10,6 +10,7 @@ import { registerEffectsEvents } from './register-effects-events.js';
 import { registerSlotEvents } from './register-slot-events.js';
 import { registerMacroEvents } from './register-macro-events.js';
 import { registerToolbarEvents } from './register-toolbar-events.js';
+import { registerTransferEvents } from '../dialogs/transfer-modal.js';
 
 // ─── REGISTER ALL LISTENERS ───────────────────────────────────
 
@@ -20,6 +21,7 @@ export function registerEvents() {
   registerEffectsEvents();
   registerSlotEvents();
   registerMacroEvents();
+  registerTransferEvents();
 
   // ── Autosave ─────────────────────────────────────────────
   _startAutosave();

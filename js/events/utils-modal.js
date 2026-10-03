@@ -90,6 +90,11 @@ export function _snapshotSoundDraft() {
   return JSON.stringify(snap);
 }
 
+/** True, wenn der Sound-/Ambient-Editor ungespeicherte Änderungen gegenüber der Öffnungs-Baseline hat. */
+export function _isSoundDraftDirty() {
+  return _soundDraftBaseline !== null && _snapshotSoundDraft() !== _soundDraftBaseline;
+}
+
 /** Markiert den aktuellen Zustand als Ausgangspunkt einer neuen Editiersitzung. */
 export function _armSoundDraftGuard() {
   _soundDraftBaseline = _snapshotSoundDraft();

@@ -3,7 +3,7 @@
  * Lautstärke/Loop/Fade/Intervall-Setter
  */
 
-import { APP, CAP, CATracks } from '../core/state.js';
+import { APP, CAP, CATracks, findAmbientTrackAnyScene } from '../core/state.js';
 import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
@@ -47,7 +47,10 @@ export function _persist() {
 }
 
 export function _find(trackId) {
-  return CATracks().find(t => t.id === trackId);
+  // Aktive Szene zuerst (bisheriges Verhalten), danach alle Szenen: ein Track,
+  // der per „Verschieben“ in eine andere Szene gewandert ist, aber noch läuft,
+  // muss für Intervall-/Ketten-Zyklen, Stop-Fade und Lautstärke auffindbar bleiben.
+  return CATracks().find(t => t.id === trackId) || findAmbientTrackAnyScene(trackId)?.item;
 }
 
 /** Finds a track across ALL scenes (not just the active one) — used by the effects editor modal. */

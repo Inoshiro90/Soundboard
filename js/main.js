@@ -28,6 +28,7 @@ const FRAGMENT_URLS = [
   'fragments/modals/ambient.html',
   'fragments/modals/music.html',
   'fragments/modals/shared.html',
+  'fragments/modals/transfer.html',
 ];
 
 async function init() {

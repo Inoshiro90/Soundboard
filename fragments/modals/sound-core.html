@@ -39,6 +39,16 @@
                 title="Diesen Sound als Datei exportieren" aria-label="Sound exportieren">
                 <i class="fa-solid fa-file-export" aria-hidden="true"></i><span class="btn__label">Export</span>
               </button>
+              <!-- Organisation: öffnet das Zielauswahl-Modal (#transferModal). Gilt für Sound UND
+                   Ambient (geteilter Editor); Sichtbarkeit setzt openSoundModal()/openAmbientEffectsModal(). -->
+              <button type="button" class="btn btn--sm" id="btnEditMove" style="display:none"
+                title="In ein anderes Profil bzw. eine andere Szene verschieben" aria-label="Verschieben">
+                <i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><span class="btn__label">Verschieben</span>
+              </button>
+              <button type="button" class="btn btn--sm" id="btnEditDuplicate" style="display:none"
+                title="In ein Profil bzw. eine Szene duplizieren" aria-label="Duplizieren">
+                <i class="fa-solid fa-clone" aria-hidden="true"></i><span class="btn__label">Duplizieren</span>
+              </button>
               <button type="button" class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
               <button type="button" class="btn btn--sm btn--accent" id="btnSaveSound">
                 <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Speichern

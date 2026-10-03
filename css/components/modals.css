@@ -186,3 +186,82 @@
 .modal-body {
 	container-type: inline-size;
 }
+
+
+/* ============================================================
+   ZIELAUSWAHL-MODAL (Verschieben / Duplizieren) — #transferModal
+   Nutzt die vorhandenen Modal-Bausteine; nur die Auswahlliste ist neu.
+   ============================================================ */
+.transfer-summary { margin-bottom: var(--space-3); }
+.transfer-summary__name {
+	font-size: 1rem;
+	font-weight: var(--fw-semibold);
+	overflow-wrap: anywhere;
+}
+.transfer-summary__source { font-size: var(--text-badge); margin-top: 2px; }
+
+.transfer-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin-top: var(--space-2);
+	max-height: min(50vh, 360px);
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+.transfer-option {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	min-height: 48px; /* Touch-Ziel */
+	padding: var(--space-2) var(--space-3);
+	background: var(--bg-surface);
+	color: var(--text-primary);
+	border: var(--border-whisper);
+	border-radius: var(--radius-md);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.transfer-option:hover:not(:disabled) { background: var(--bg-warm); }
+.transfer-option:disabled { opacity: .5; cursor: not-allowed; }
+.transfer-option.is-selected {
+	border-color: var(--color-accent);
+	box-shadow: 0 0 0 1px var(--color-accent) inset;
+	background: var(--bg-warm);
+}
+
+.transfer-option--accent { box-shadow: inset 4px 0 0 0 var(--transfer-accent); }
+.transfer-option--accent.is-selected {
+	box-shadow: inset 4px 0 0 0 var(--transfer-accent), 0 0 0 1px var(--color-accent) inset;
+}
+.transfer-option__radio {
+	flex: 0 0 18px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 2px solid var(--text-muted);
+}
+.transfer-option.is-selected .transfer-option__radio {
+	border-color: var(--color-accent);
+	background: radial-gradient(circle, var(--color-accent) 0 45%, transparent 50%);
+}
+.transfer-option__icon { flex: 0 0 auto; line-height: 1; }
+.transfer-option__icon .icon-img { width: 1.25em; height: 1.25em; vertical-align: middle; }
+.transfer-option__name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.transfer-option__meta {
+	flex: 0 0 auto;
+	font-size: var(--text-badge);
+	color: var(--text-muted);
+}
+.transfer-notes { margin-top: var(--space-3); }
+.transfer-notes p { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
+.transfer-notes p:last-child { margin-bottom: 0; }

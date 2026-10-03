@@ -4,7 +4,7 @@
  * Decode-Wrapper, den Makro-Runner, WAV-Export sowie die zugehörige Tile-UI-Synchronisation.
  */
 
-import { APP, CItems } from '../core/state.js';
+import { APP, CItems, resolveItemById } from '../core/state.js';
 import { bk, sleep }   from '../utils.js';
 import { toast }       from '../notifications.js';
 import '../db.js';
@@ -293,10 +293,10 @@ export async function runMacro(m, callStack = []) {
             if (action === 'stop_all') {
               stopAll();
             } else if (action === 'stop') {
-              const t = CItems().find(x => x.id === step.targetId);
+              const t = resolveItemById(step.targetId);
               if (t) stopItem(t.id);
             } else if (action === 'play' || !action) {
-              const t = CItems().find(x => x.id === step.targetId);
+              const t = resolveItemById(step.targetId);
               if (t) {
                 if (t.type === 'sound') {
                   if (mode === 'sequential') await playSoundAndWait(t);
@@ -309,7 +309,7 @@ export async function runMacro(m, callStack = []) {
               APP.globalSettings.masterVol = Math.max(0, Math.min(1, step.volumeVal ?? APP.globalSettings.masterVol));
               const el = document.getElementById('masterVol'); if (el) el.value = APP.globalSettings.masterVol;
             } else if (action === 'fadeout') {
-              const t = CItems().find(x => x.id === step.targetId);
+              const t = resolveItemById(step.targetId);
               if (t) {
                 const fadeDur = (step.fadeDuration || 1000) / 1000;
                 (APP.activeAudio[t.id] || []).forEach(a => {
@@ -327,9 +327,9 @@ export async function runMacro(m, callStack = []) {
       for (const step of steps) {
         const action = step.action || 'play';
         if (action === 'stop_all') { stopAll(); }
-        else if (action === 'stop')    { const t = CItems().find(x => x.id === step.targetId); if (t) stopItem(t.id); }
+        else if (action === 'stop')    { const t = resolveItemById(step.targetId); if (t) stopItem(t.id); }
         else if (action === 'play' || !action) {
-          const t = CItems().find(x => x.id === step.targetId);
+          const t = resolveItemById(step.targetId);
           if (t) {
             if (t.type === 'sound')  { if (mode === 'sequential') await playSoundAndWait(t); else playSound(t); }
             else if (t.type === 'macro') await runMacro(t, stack);
@@ -338,7 +338,7 @@ export async function runMacro(m, callStack = []) {
           APP.globalSettings.masterVol = Math.max(0, Math.min(1, step.volumeVal ?? APP.globalSettings.masterVol));
           const el = document.getElementById('masterVol'); if (el) el.value = APP.globalSettings.masterVol;
         } else if (action === 'fadeout') {
-          const t = CItems().find(x => x.id === step.targetId);
+          const t = resolveItemById(step.targetId);
           if (t) {
             const fadeDur = (step.fadeDuration || 1000) / 1000;
             (APP.activeAudio[t.id] || []).forEach(a => {

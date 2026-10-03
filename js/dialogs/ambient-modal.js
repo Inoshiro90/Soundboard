@@ -64,6 +64,11 @@ export function openAmbientEffectsModal(trackId) {
 
   const delBtn = document.getElementById('btnDelSound');
   if (delBtn) delBtn.style.display = 'none'; // deletion is handled from the ambient row itself
+  // Verschieben/Duplizieren (Szenenwechsel) sind im Ambient-Kontext verfügbar.
+  ['btnEditMove', 'btnEditDuplicate'].forEach(bid => {
+    const b = document.getElementById(bid);
+    if (b) b.style.display = '';
+  });
 
   APP.editSlots = (t.files || []).map(f => ({
     data: f.data, name: f.fileName || 'Datei', trimStart: f.trimStart || 0, trimEnd: f.trimEnd ?? null, _fileId: f.id, _tempId: uid()

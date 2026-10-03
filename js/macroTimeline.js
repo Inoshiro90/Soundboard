@@ -12,7 +12,7 @@
  */
 
 import { APP }    from './core/state.js';
-import { CItems } from './core/state.js';
+import { CItems, resolveItemById } from './core/state.js';
 import './notifications.js';
 import { bk } from './utils.js';
 
@@ -225,7 +225,7 @@ export function previewPlay(audioCtx) {
     if (step.action !== 'play' && step.action) return;
     const targetId = step.targetId;
     if (!targetId) return;
-    const sound = CItems().find(x => x.id === targetId);
+    const sound = resolveItemById(targetId);
     if (!sound) return;
     const slotIdx = sound.curSlot || 0;
     const buf   = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
@@ -410,7 +410,7 @@ function _totalDuration() {
 
 function _stepDuration(step) {
   if (step.action === 'play' || !step.action) {
-    const sound = CItems().find(x => x.id === step.targetId);
+    const sound = resolveItemById(step.targetId);
     if (sound) {
       const slotIdx = sound.curSlot || 0;
       const buf     = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
@@ -443,7 +443,7 @@ function _uniqueRows() {
       const label = step.action === 'volume' ? 'Volume' :
                     step.action === 'stop_all' ? 'Stop All' :
                     step.action === 'stop' ? 'Stop' :
-                    (CItems().find(x => x.id === step.targetId)?.name || step.targetId || '?');
+                    (resolveItemById(step.targetId)?.name || step.targetId || '?');
       seen.set(k, { key: k, label });
     }
   });
@@ -464,7 +464,7 @@ function _stepLabel(step) {
   if (step.action === 'stop_all') return 'Stop All';
   if (step.action === 'stop')     return 'Stop';
   if (step.action === 'fadeout')  return 'Fade';
-  const s = CItems().find(x => x.id === step.targetId);
+  const s = resolveItemById(step.targetId);
   return s ? s.name : (step.action || '?');
 }
 
