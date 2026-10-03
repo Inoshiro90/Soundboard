@@ -82,7 +82,7 @@ function _rowTemplate(t) {
       ${iconSvg('trash')}
     </button>
         <div class="ambient-row__vol">
-      ${iconSvg('volume-1')}
+      ${iconSvg('volume-2')}
       <input type="range" class="slider ambient-row__vol-slider" data-act="vol" min="0" max="1" step=".01"
         value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}">
       <span class="ambient-row__vol-pct">${Math.round(t.vol * 100)}%</span>
