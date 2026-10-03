@@ -3,7 +3,6 @@
  */
 
 import '../core/state.js';
-import { EMOJI_CATS, EMOJI_KEYWORDS } from '../data/emoji-data.js';
 import { isCustomIcon, iconHtml } from '../utils.js';
 import { toast } from '../notifications.js';
 
@@ -120,14 +119,169 @@ async function _processIconFile(file) {
 }
 
 // ─── ICON PICKER (v2) ─────────────────────────────────────────
-// Uses new EMOJI_CATS structure with categories, icons, keyword search
+// Kategorien, Stichwortsuche, Custom-Upload. Performance-Konzept (Messung: Engpass war nicht die
+// Suche, sondern Layout/Paint von ~1640 Zellen + deren Aufbau bei jedem Modal-Öffnen):
+//   1. Daten per dynamic import erst beim ersten Aufbau eines Pickers (nicht beim App-Start);
+//      die Stichwort-Tabelle (~210 KB) erst bei Fokus/erster Suche. Beides In-Memory gecacht.
+//   2. Fenster-Rendering: nur die sichtbaren Reihen + Puffer liegen im DOM (ein zusammenhängendes „Fenster“
+//      von Entries). Zwei unsichtbare Spacer (grid-row: span N) vor/nach dem Fenster halten die Scrollhöhe
+//      konstant → stabile Scrollleiste, kein Springen. Beim Scrollen wächst das Fenster nach oben/unten
+//      (bestehende Zellen bleiben unangetastet: Fokus, Auswahl, Hover); springt der Benutzer per
+//      Scrollleiste/Fling außerhalb des Fensters, wird das Fenster dort neu aufgesetzt (keine Lücken,
+//      keine Zwischen-Reihen rendern). Dasselbe Prinzip zeigt das ausgewählte Emoji, ohne den Bestand davor zu rendern.
+//   3. Ein Click-Handler auf dem Grid (Event Delegation) statt eines Listeners je Emoji.
+//   4. Auswahl-/Roving-Zustand wird gezielt aktualisiert statt über alle Zellen zu iterieren.
+
+const PREFETCH_ROWS   = 10;  // Puffer oberhalb/unterhalb des sichtbaren Bereichs (≈ 2 Viewports bei 5 Reihen)
+const BATCH_ROWS      = 4;   // Nachladen in Reihen-Paketen (weniger, dafür etwas größere DOM-Updates)
+
+// ── Daten: einmal laden, dann für alle Picker/Modals wiederverwenden ──
+let _data = null, _dataPromise = null;     // Kategorien (~20 KB)
+let _kwIndex = null, _kwPromise = null;    // Suchindex (Stichwörter ~210 KB)
+
+// Browser merken sich einen fehlgeschlagenen import() pro URL dauerhaft (Modul-Map). Damit ein späterer Versuch
+// (z.B. nach kurzem Netzausfall) wirklich neu lädt, bekommt jeder Retry eine eigene URL (?r=n).
+let _dataTries = 0, _kwTries = 0;
+const _retryQuery = n => (n ? `?r=${n}` : '');
+
+/** Kategorien laden (single-flight; Fehlschlag wird nicht gecacht → nächster Picker versucht es erneut). */
+function loadEmojiData() {
+  if (_data) return Promise.resolve(_data);
+  if (!_dataPromise) {
+    _dataPromise = import('../data/emoji-data.js' + _retryQuery(_dataTries))
+      .then(mod => (_data = _prepareData(mod.EMOJI_CATS)))
+      .catch(err => { _dataPromise = null; _dataTries++; throw err; });
+  }
+  return _dataPromise;
+}
+
+/** Stichwort-Tabelle laden und EINMAL zum Suchindex aufbereiten (single-flight). */
+function loadSearchIndex() {
+  if (_kwIndex) return Promise.resolve(_kwIndex);
+  if (!_kwPromise) {
+    _kwPromise = import('../data/emoji-keywords.js' + _retryQuery(_kwTries)).then(mod => {
+      const kw = mod.EMOJI_KEYWORDS;
+      const keys = Object.keys(kw);
+      // Pro Emoji ein String '\nbegriff1\nbegriff2…': „Begriff beginnt mit q“ = includes('\n'+q),
+      // „Wort im Begriff beginnt mit q“ = includes(' '+q) → keine split()/Array-Allokationen je Suche.
+      const hay = keys.map(k => '\n' + kw[k].join('\n'));
+      return (_kwIndex = { keys, hay });
+    }).catch(err => { _kwPromise = null; _kwTries++; throw err; });
+  }
+  return _kwPromise;
+}
+
+/** Listen-Modell: entries = Emoji-Strings und {h:label}-Überschriften; segs = Zeilen-Geometrie; optIdx = Option→Entry. */
+function _flatList(emojis) {
+  return { entries: emojis, segs: [{ h: false, start: 0, end: emojis.length }], optIdx: null, optOf: null, nOpts: emojis.length };
+}
+
+function _prepareData(cats) {
+  const keys = Object.keys(cats);
+  const allSet = new Set();
+  const entries = [], segs = [], optIdx = [], optOf = [];
+  keys.forEach((key, idx) => {
+    cats[key].emojis.forEach(e => allSet.add(e));
+    // Erste Kategorie ohne Überschrift: sie würde eine ganze Raster-Zeile belegen,
+    // und die Auswahl soll initial 5 volle Emoji-Reihen zeigen. Alle weiteren
+    // Kategorien behalten ihre Überschrift zur Orientierung beim Scrollen.
+    if (idx > 0) { segs.push({ h: true, start: entries.length, end: entries.length + 1 }); optOf[entries.length] = -1; entries.push({ h: cats[key].label }); }
+    const start = entries.length;
+    cats[key].emojis.forEach(e => { optOf[entries.length] = optIdx.length; optIdx.push(entries.length); entries.push(e); });
+    segs.push({ h: false, start, end: entries.length });
+  });
+  return {
+    cats, keys, allSet,
+    all: { entries, segs, optIdx, optOf, nOpts: optIdx.length },
+    catLists: new Map(),                                   // key → Listenmodell (lazy)
+    labelWords: keys.map(k => cats[k].label.toLowerCase().split(/\s+/))
+  };
+}
+
+function _listFor(data, cat) {
+  if (cat === 'all') return data.all;
+  let l = data.catLists.get(cat);
+  if (!l && data.cats[cat]) { l = _flatList(data.cats[cat].emojis); data.catLists.set(cat, l); }
+  return l || null;
+}
+
+/** Suche auf dem VOLLEN Datensatz (unabhängig vom DOM). Semantik wie zuvor: Wortanfang-Treffer in
+ *  Stichwörtern, dann Kategorie-Label-Wörter, dann exakter Emoji-Treffer. null = leere Anfrage. */
+function _search(data, index, query) {
+  const q = query.toLowerCase().trim();
+  if (!q) return null;
+  const results = new Set();
+  const needle = '\n' + q, wordNeedle = ' ' + q, multiWord = /\s/.test(q);
+  const { keys, hay } = index;
+  for (let i = 0; i < keys.length; i++) {
+    const h = hay[i];
+    if (h.includes(needle) || (!multiWord && h.includes(wordNeedle))) results.add(keys[i]);
+  }
+  data.keys.forEach((k, i) => {
+    if (data.labelWords[i].some(w => w.startsWith(q))) data.cats[k].emojis.forEach(e => results.add(e));
+  });
+  if (data.allSet.has(query)) results.add(query);
+  return [...results];
+}
+
+/** Zeilen, die die ersten k Entries belegen (Überschrift = 1 Zeile; Emoji-Läufe umbrechen nach `cols`). */
+function _rowsFor(list, k, cols) {
+  let rows = 0;
+  for (const sg of list.segs) {
+    if (k <= sg.start) break;
+    rows += sg.h ? 1 : Math.ceil((Math.min(k, sg.end) - sg.start) / cols);
+  }
+  return rows;
+}
+/** Kleinstes k, für das mindestens R Zeilen belegt sind (max. alle Entries). */
+function _entriesForRows(list, R, cols) {
+  if (R <= 0) return 0;
+  let rows = 0;
+  for (const sg of list.segs) {
+    if (sg.h) { rows += 1; if (rows >= R) return sg.start + 1; continue; }
+    const n = sg.end - sg.start, r = Math.ceil(n / cols);
+    if (rows + r >= R) return sg.start + Math.min(n, (R - rows) * cols);
+    rows += r;
+  }
+  return list.entries.length;
+}
+
+/** Reihe (0-basiert), in der Entry idx liegt. */
+function _rowOfEntry(list, idx, cols) {
+  let rows = 0;
+  for (const sg of list.segs) {
+    if (idx < sg.start) break;
+    if (sg.h) { if (idx < sg.end) return rows; rows += 1; continue; }
+    if (idx < sg.end) return rows + Math.floor((idx - sg.start) / cols);
+    rows += Math.ceil((sg.end - sg.start) / cols);
+  }
+  return rows;
+}
+
+let _cellProto = null;
+function _newCell() {
+  if (!_cellProto) {
+    _cellProto = document.createElement('div');
+    _cellProto.className = 'icon-opt';
+    _cellProto.setAttribute('role', 'option');
+    _cellProto.setAttribute('aria-selected', 'false');
+    _cellProto.tabIndex = -1; // Roving Tabindex: nur eine Zelle bekommt 0
+  }
+  return _cellProto.cloneNode(false);
+}
 
 export function buildIconGrid(containerId, current) {
   const ig = document.getElementById(containerId);
   if (!ig) return;
+  // Vorherige Instanz an diesem Container abbauen (Observer, ausstehende Async-Fortsetzungen)
+  if (typeof ig._iconPickerDispose === 'function') ig._iconPickerDispose();
   const parent = ig.parentNode;
   parent.querySelectorAll('.icon-picker-wrap').forEach(x => x.remove());
   ig.style.display = 'none';
+
+  let disposed = false;
+  let ro = null;
+  ig._iconPickerDispose = () => { disposed = true; if (ro) ro.disconnect(); ro = null; ig._iconPickerDispose = null; };
 
   const wrap = document.createElement('div');
   wrap.className = 'icon-picker-wrap';
@@ -200,14 +354,9 @@ export function buildIconGrid(containerId, current) {
 
   let activeCat = 'all';
 
-  // "All" pill
+  // "All" pill (braucht keine Daten) — die Kategorie-Pillen folgen, sobald die Daten geladen sind
   const allPill = _mkCatPill('all', 'Alle', 'layout-grid', true);
   catBar.appendChild(allPill);
-
-  // Category pills
-  Object.entries(EMOJI_CATS).forEach(([key, cat]) => {
-    catBar.appendChild(_mkCatPill(key, cat.label, cat.icon, false));
-  });
   wrap.appendChild(catBar);
 
   // ── Emoji grid ──
@@ -215,6 +364,7 @@ export function buildIconGrid(containerId, current) {
   grid.className = 'icon-grid icon-picker__grid';
   grid.setAttribute('role', 'listbox');
   grid.setAttribute('aria-label', 'Emojis');
+  grid.setAttribute('aria-busy', 'true');
   wrap.appendChild(grid);
 
   // Insert into the live DOM BEFORE calling lucide.createIcons().
@@ -229,178 +379,366 @@ export function buildIconGrid(containerId, current) {
   // Input ID map
   const inputMap = { iconGrid: 'eIcon', mIconGrid: 'mIcon', profIconGrid: 'profIconInput', ambProfIconGrid: 'ambProfIconInput', ambTrackIconGrid: 'ambTrackIconInput', musicIconGrid: 'musicIconInput', musicProfIconGrid: 'musicProfIconInput' };
 
+  // ── Zustand dieser Picker-Instanz ──────────────────────────
+  let data = null;                    // Kategorien (nach Laden)
+  let list = null;                    // aktuell angezeigtes Listenmodell
+  let winStart = 0, winEnd = 0;       // gerendertes Fenster: Entries [winStart, winEnd) liegen im DOM
+  const optByNum = new Map();         // Optionsnummer → Zelle (nur gerenderte)
+  const elByEmoji = new Map();        // Emoji → Zelle (nur gerenderte)
+  let selectedEl = null, rovingEl = null;
+  let geom = null;                    // { cols, stride } — nur bekannt, solange das Grid sichtbar ist
+  let revealPending = true;           // beim ersten sichtbaren Layout zum ausgewählten Emoji scrollen
+  let searchSeq = 0;                  // verwirft veraltete (asynchrone) Suchläufe
+
+  // Unsichtbare Platzhalter für die nicht gerenderten Zeilen vor/nach dem Fenster (halten die Scrollhöhe konstant)
+  const mkSpacer = () => {
+    const sp = document.createElement('div');
+    sp.className = 'icon-picker__spacer';
+    sp.setAttribute('aria-hidden', 'true');
+    sp.hidden = true;
+    return sp;
+  };
+  const spaceTop = mkSpacer(), spaceBot = mkSpacer();
+
   function selectIco(ico) {
-    grid.querySelectorAll('.icon-opt').forEach(x => x.classList.remove('is-selected'));
-    const match = [...grid.querySelectorAll('.icon-opt')].find(x => x.dataset.emoji === ico);
-    if (match) { match.classList.add('is-selected'); match.scrollIntoView({ block: 'nearest' }); }
-    grid.querySelectorAll('.icon-opt').forEach(o => o.setAttribute('aria-selected', o === match ? 'true' : 'false'));
+    if (selectedEl) {
+      selectedEl.classList.remove('is-selected');
+      selectedEl.setAttribute('aria-selected', 'false');
+      selectedEl = null;
+    }
+    const match = elByEmoji.get(ico);
+    if (match) {
+      match.classList.add('is-selected');
+      match.setAttribute('aria-selected', 'true');
+      selectedEl = match;
+      match.scrollIntoView({ block: 'nearest' });
+    }
     _syncRovingTabindex();
     const inputId = inputMap[containerId];
     if (inputId) { const inp = document.getElementById(inputId); if (inp) inp.value = ico; }
   }
 
-  function searchEmojis(query) {
-    const q = query.toLowerCase().trim();
-    if (!q) return null; // null = show category
-
-    // Word-start matching: keyword must start with q OR be exactly q
-    // This prevents "elf" from matching "shelf", "self", "myself" etc.
-    function kwMatch(kw) {
-      if (kw === q) return true;              // exact
-      if (kw.startsWith(q)) return true;      // word starts with query
-      // word boundary: space-separated word inside keyword starts with q
-      return kw.split(/\s+/).some(word => word.startsWith(q));
-    }
-
-    const results = new Set();
-    // 1. Keyword map — strict word-start matching
-    Object.entries(EMOJI_KEYWORDS).forEach(([emoji, keywords]) => {
-      if (keywords.some(kw => kwMatch(kw))) results.add(emoji);
-    });
-    // 2. Category label fallback (whole-word only)
-    Object.entries(EMOJI_CATS).forEach(([, cat]) => {
-      if (cat.label.toLowerCase().split(/\s+/).some(w => w.startsWith(q))) {
-        cat.emojis.forEach(e => results.add(e));
+  // ── Rendering (Fenster) ─────────────────────────────────────
+  /** Erzeugt die DOM-Knoten für Entries [from, to). */
+  function _makeNodes(from, to) {
+    const frag = document.createDocumentFragment();
+    let foundSelected = false;
+    for (let i = from; i < to; i++) {
+      const en = list.entries[i];
+      if (typeof en === 'string') {
+        const d = _newCell();
+        d.textContent = en;
+        d.setAttribute('data-emoji', en);
+        d.setAttribute('aria-label', en);
+        const num = list.optOf ? list.optOf[i] : i;
+        d._oi = num;
+        if (en === current && !selectedEl) {
+          d.classList.add('is-selected');
+          d.setAttribute('aria-selected', 'true');
+          selectedEl = d; foundSelected = true;
+        }
+        optByNum.set(num, d);
+        if (!elByEmoji.has(en)) elByEmoji.set(en, d);
+        frag.appendChild(d);
+      } else {
+        const heading = document.createElement('div');
+        heading.className   = 'icon-picker__section-title';
+        heading.textContent = en.h;
+        frag.appendChild(heading);
       }
-    });
-    // 3. Direct emoji character match
-    Object.values(EMOJI_CATS).flatMap(c => c.emojis).forEach(e => {
-      if (e === query) results.add(e);
-    });
-    return [...results];
+    }
+    if (foundSelected) _syncRovingTabindex();
+    return frag;
   }
 
-  function renderEmojis(cat = 'all', searchResults = null) {
-    grid.innerHTML = '';
+  /** Fenster nach unten erweitern bis Entry k (exklusiv). */
+  function _appendTo(k) {
+    k = Math.min(k, list.entries.length);
+    if (k <= winEnd) return;
+    grid.insertBefore(_makeNodes(winEnd, k), spaceBot);
+    winEnd = k;
+    _updateSpacers();
+  }
+  /** Fenster nach oben erweitern ab Entry k (muss am Beginn einer Reihe liegen). */
+  function _prependTo(k) {
+    k = Math.max(0, k);
+    if (k >= winStart) return;
+    grid.insertBefore(_makeNodes(k, winStart), spaceTop.nextSibling);
+    winStart = k;
+    _updateSpacers();
+  }
+  /** Verwirft das Fenster und rendert neu ab Reihe `row` (Sprung außerhalb des Fensters / Ausrichtung nach Resize). */
+  function _resetAt(row) {
+    const { cols, stride } = geom;
+    const viewRows = Math.ceil(grid.clientHeight / stride);     // VOR dem Leeren lesen (kein Layout dazwischen!)
+    optByNum.clear(); elByEmoji.clear(); selectedEl = null; rovingEl = null;
+    grid.replaceChildren(spaceTop, spaceBot);
+    const firstRow = Math.max(0, row);
+    winStart = winEnd = _entriesForRows(list, firstRow, cols);
+    // Leeres Fenster: Spacer geben zusammen exakt die alte Gesamthöhe zurück, bevor ein Layout stattfindet —
+    // sonst würde der Browser scrollTop auf die kurzzeitig kleinere Scrollhöhe zurückklemmen.
+    _updateSpacers();
+    _appendTo(_entriesForRows(list, firstRow + viewRows + 2 * PREFETCH_ROWS + BATCH_ROWS, cols));
+    _syncRovingTabindex();
+  }
 
-    if (searchResults !== null) {
-      // Search results: flat list, no section headers
-      if (searchResults.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'icon-picker__empty';
-        empty.textContent = 'Keine Ergebnisse';
-        grid.appendChild(empty);
-        return;
-      }
-      _appendEmojiItems(grid, searchResults, current, (ico) => { current = ico; selectIco(ico); });
+  function _updateSpacers() {
+    if (!geom) { spaceTop.hidden = spaceBot.hidden = true; return; }
+    const total = _rowsFor(list, list.entries.length, geom.cols);
+    const topRows = _rowsFor(list, winStart, geom.cols);
+    const botRows = total - _rowsFor(list, winEnd, geom.cols);
+    spaceTop.hidden = topRows <= 0;
+    if (topRows > 0) spaceTop.style.gridRow = `span ${topRows}`;
+    spaceBot.hidden = botRows <= 0;
+    if (botRows > 0) spaceBot.style.gridRow = `span ${botRows}`;
+  }
+
+  /** Liest die aktuelle Raster-Geometrie (nur sinnvoll, wenn das Grid sichtbar ist). */
+  function _measure() {
+    if (!grid.clientWidth) { geom = null; return false; }
+    const cs = getComputedStyle(grid);
+    const cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length;
+    const rowH = parseFloat(cs.gridAutoRows);
+    const gap  = parseFloat(cs.rowGap) || 0;
+    if (!(cols > 0) || !(rowH > 0)) { geom = null; return false; }
+    geom = { cols, stride: rowH + gap };
+    return true;
+  }
+
+  /** Sorgt dafür, dass sichtbarer Bereich + Puffer gerendert sind — nach Scrollen (Rad, Touch, Leiste, Tastatur). */
+  function _fill() {
+    if (!geom || !list || !list.entries.length) return;
+    const { cols, stride } = geom;
+    const top = grid.scrollTop, bottom = top + grid.clientHeight;
+    const total     = _rowsFor(list, list.entries.length, cols);
+    const needFirst = Math.max(0, Math.floor(top / stride) - PREFETCH_ROWS);
+    const needLast  = Math.min(total, Math.ceil(bottom / stride) + PREFETCH_ROWS);
+    const winFirstRow = _rowsFor(list, winStart, cols);
+    const winLastRow  = _rowsFor(list, winEnd, cols);
+    // Leeres Fenster oder Sprung komplett außerhalb: neu aufsetzen statt eine Lücke aufzufüllen
+    if (winEnd <= winStart || needLast <= winFirstRow || needFirst >= winLastRow) { _resetAt(needFirst); return; }
+    if (winLastRow < needLast)  _appendTo(_entriesForRows(list, needLast + BATCH_ROWS, cols));
+    if (winFirstRow > needFirst) _prependTo(_entriesForRows(list, Math.max(0, needFirst - BATCH_ROWS), cols));
+  }
+
+  /** Stellt sicher, dass Option t gerendert ist (Tastaturnavigation) — Ziel liegt immer direkt am Fenster. */
+  function _ensureOpt(t) {
+    if (optByNum.has(t)) return;
+    const e = list.optIdx ? list.optIdx[t] : t;
+    const cols = geom ? geom.cols : 1;
+    if (e >= winEnd) _appendTo(e + 1 + cols);
+    else if (e < winStart) _prependTo(_entriesForRows(list, Math.max(0, _rowOfEntry(list, e, cols) - 1), cols));
+  }
+
+  /** Ersetzt die angezeigte Liste (Kategorie / Suchergebnis). Rendert nur Fenster um die Scrollposition. */
+  function setList(newList, { reveal = false } = {}) {
+    list = newList;
+    optByNum.clear(); elByEmoji.clear(); selectedEl = null; rovingEl = null;
+    winStart = winEnd = 0;
+    grid.setAttribute('aria-busy', 'false');
+    if (!newList.entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'icon-picker__empty';
+      empty.textContent = 'Keine Ergebnisse';
+      grid.classList.remove('is-pending');
+      grid.replaceChildren(empty);
+      grid.scrollTop = 0;
+      return;
+    }
+    grid.replaceChildren(spaceTop, spaceBot);
+    grid.scrollTop = 0;
+    // Ist das Grid (noch) unsichtbar — z.B. eingeklappter Icon-Abschnitt —, wird NICHTS gerendert;
+    // der ResizeObserver rendert beim ersten sichtbaren Layout (_layoutPass).
+    if (!_measure()) {
+      // Wartezustand: .is-pending reserviert die endgültige Höhe (CSS), damit das erste Rendern im
+      // ResizeObserver-Callback die Größe des Grids nicht mehr ändert (sonst „ResizeObserver loop"-Fehler + Aufpoppen).
+      spaceTop.hidden = spaceBot.hidden = true;
+      grid.classList.add('is-pending');
+      return;
+    }
+    grid.classList.remove('is-pending');
+    _updateSpacers();                       // gesamte Scrollhöhe steht → Scrollposition kann gesetzt werden
+    if (reveal) { revealPending = false; _revealSelected(); }
+    _fill();
+    _syncRovingTabindex();
+  }
+
+  /** Scrollt (nur innerhalb des Grids) so, dass das ausgewählte Emoji mittig liegt — ohne den Bestand davor zu rendern. */
+  function _revealSelected() {
+    if (!current || typeof current !== 'string') return;
+    const idx = list.entries.indexOf(current);
+    if (idx === -1) return;
+    const row = _rowOfEntry(list, idx, geom.cols);
+    const cell = geom.stride - (parseFloat(getComputedStyle(grid).rowGap) || 0);
+    grid.scrollTop = Math.max(0, row * geom.stride - (grid.clientHeight - cell) / 2);
+  }
+
+  function _showStatus(text, extraClass) {
+    const msg = document.createElement('div');
+    msg.className = 'icon-picker__empty ' + (extraClass || '');
+    msg.textContent = text;
+    grid.classList.remove('is-pending');
+    grid.replaceChildren(msg);
+    list = null; winStart = winEnd = 0; optByNum.clear(); elByEmoji.clear(); selectedEl = null; rovingEl = null;
+  }
+
+  /** Layout-Pass bei Größen-/Sichtbarkeitsänderung (ResizeObserver): Geometrie, Fenster, Spacer, ausgewähltes Emoji. */
+  function _layoutPass() {
+    if (disposed || !list || !list.entries.length) return;
+    const old = geom;
+    if (!_measure()) return;
+    if (winEnd <= winStart) {               // erstes sichtbares Layout (oder noch nichts gerendert)
+      grid.classList.remove('is-pending');
+      _updateSpacers();
+      if (revealPending) _revealSelected();
+      revealPending = false;
+      _fill();
       _syncRovingTabindex();
       return;
     }
-
-    if (cat === 'all') {
-      // Show all categories with section titles — use DocumentFragment for perf
-      const frag = document.createDocumentFragment();
-      Object.entries(EMOJI_CATS).forEach(([, catData], idx) => {
-        // Erste Kategorie ohne Überschrift: sie würde eine ganze Raster-Zeile belegen,
-        // und die Auswahl soll initial 5 volle Emoji-Reihen zeigen. Alle weiteren
-        // Kategorien behalten ihre Überschrift zur Orientierung beim Scrollen.
-        if (idx > 0) {
-          const heading = document.createElement('div');
-          heading.className   = 'icon-picker__section-title';
-          heading.textContent = catData.label;
-          frag.appendChild(heading);
-        }
-        _appendEmojiItems(frag, catData.emojis, current, (ico) => { current = ico; selectIco(ico); });
-      });
-      grid.appendChild(frag);
-    } else {
-      // Single category
-      const catData = EMOJI_CATS[cat];
-      if (!catData) return;
-      // Keine Überschrift: die aktive Kategorie-Pille nennt bereits dasselbe Label,
-      // und die erste Raster-Zeile bleibt so eine volle Emoji-Reihe.
-      const frag = document.createDocumentFragment();
-      _appendEmojiItems(frag, catData.emojis, current, (ico) => { current = ico; selectIco(ico); });
-      grid.appendChild(frag);
+    if (old && old.cols !== geom.cols && winStart > 0) {
+      // Spaltenzahl hat sich geändert (Resize/Rotation): Fenster ist nicht mehr reihen-ausgerichtet →
+      // an der bisher obersten sichtbaren Reihe neu aufsetzen und dort bleiben.
+      const topEntry = _entriesForRows(list, Math.floor(grid.scrollTop / old.stride), old.cols);
+      const row = _rowOfEntry(list, topEntry, geom.cols);
+      _updateSpacers();
+      grid.scrollTop = row * geom.stride;
+      _resetAt(Math.max(0, row - PREFETCH_ROWS));
+      return;
     }
-    _syncRovingTabindex();
+    _updateSpacers();
+    _fill();
   }
 
   // ── Tastaturbedienung (Roving Tabindex) ─────────────────────
   // Ein Tab-Stopp für das ganze Grid statt >1000; Pfeiltasten bewegen den Fokus,
   // Enter/Leertaste wählen aus. Spaltenzahl wird aus dem tatsächlichen Layout
   // gelesen (responsiv), nicht angenommen.
-  function _opts() { return [...grid.querySelectorAll('.icon-opt')]; }
   function _syncRovingTabindex() {
-    const opts = _opts();
-    const start = opts.find(o => o.classList.contains('is-selected')) || opts[0];
-    opts.forEach(o => o.tabIndex = (o === start) ? 0 : -1);
-  }
-  function _columns(opts) {
-    if (!opts.length) return 1;
-    const top = opts[0].offsetTop;
-    const n = opts.findIndex(o => o.offsetTop !== top);
-    return n === -1 ? opts.length : n;
+    const start = selectedEl || grid.querySelector('.icon-opt');
+    if (rovingEl && rovingEl !== start) rovingEl.tabIndex = -1;
+    if (start) start.tabIndex = 0;
+    rovingEl = start || null;
   }
   grid.addEventListener('keydown', e => {
     const cur = e.target.closest?.('.icon-opt');
-    if (!cur) return;
+    if (!cur || !list) return;
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
       e.preventDefault(); cur.click(); return;
     }
-    const opts = _opts();
-    const i = opts.indexOf(cur);
-    const cols = _columns(opts);
+    const cols = geom ? geom.cols : 1;
     const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
     if (delta === undefined) return;
     e.preventDefault();
-    const next = opts[Math.max(0, Math.min(opts.length - 1, i + delta))];
+    const target = Math.max(0, Math.min(list.nOpts - 1, cur._oi + delta));
+    _ensureOpt(target);               // Ziel kann direkt hinter dem gerenderten Fenster liegen
+    const next = optByNum.get(target);
     if (!next || next === cur) return;
-    cur.tabIndex = -1; next.tabIndex = 0;
+    cur.tabIndex = -1; next.tabIndex = 0; rovingEl = next;
     next.focus({ preventScroll: true });
     next.scrollIntoView({ block: 'nearest' });
   });
 
-  function _appendEmojiItems(container, emojis, selectedEmoji, onSelect) {
-    // Use DocumentFragment for batch DOM insertion
-    const frag = container.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? container : document.createDocumentFragment();
-    emojis.forEach(ico => {
-      const d = document.createElement('div');
-      d.className     = 'icon-opt' + (ico === selectedEmoji ? ' is-selected' : '');
-      d.textContent   = ico;
-      d.dataset.emoji = ico;
-      d.setAttribute('role', 'option');
-      d.setAttribute('aria-label', ico);
-      d.setAttribute('aria-selected', ico === selectedEmoji ? 'true' : 'false');
-      d.addEventListener('click', () => onSelect(ico));
-      frag.appendChild(d);
-    });
-    // Only append if container is a real DOM node (not already a fragment)
-    if (container.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
-      container.appendChild(frag);
-    }
+  // Event Delegation: ein Handler für alle Zellen (auch später nachgerenderte)
+  grid.addEventListener('click', e => {
+    const opt = e.target.closest?.('.icon-opt');
+    if (!opt || !grid.contains(opt)) return;
+    const ico = opt.getAttribute('data-emoji');
+    current = ico;
+    selectIco(ico);
+  });
+
+  // Nachrendern beim Scrollen (Mausrad, Touch, Scrollleiste, Tastatur) — passiv, kein Throttling nötig:
+  // _fill() ist ein Vergleich und rendert nur, wenn der Puffer unterschritten wird.
+  grid.addEventListener('scroll', _fill, { passive: true });
+
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(_layoutPass);
+    ro.observe(grid);
+  } else {
+    requestAnimationFrame(_layoutPass);
   }
 
-  // Category pill click
+  // ── Kategorien / Suche ─────────────────────────────────────
+  function _showCategory(cat) {
+    const l = _listFor(data, cat);
+    if (l) setList(l);
+  }
+
   catBar.addEventListener('click', e => {
     const pill = e.target.closest('.icon-picker__cat-pill');
-    if (!pill) return;
+    if (!pill || !data) return;
     activeCat = pill.dataset.cat;
     catBar.querySelectorAll('.icon-picker__cat-pill').forEach(p => {
       p.classList.toggle('is-active', p.dataset.cat === activeCat);
       p.setAttribute('aria-selected', p.dataset.cat === activeCat ? 'true' : 'false');
     });
     srch.value = '';
-    renderEmojis(activeCat, null);
+    searchSeq++;            // ausstehende Suche verwerfen
+    revealPending = false;
+    _showCategory(activeCat);
   });
 
-  // Search input
-  srch.addEventListener('input', () => {
-    const q = srch.value.trim();
-    if (q) {
-      // Clear category selection visually
-      catBar.querySelectorAll('.icon-picker__cat-pill').forEach(p => {
-        p.classList.remove('is-active');
-        p.setAttribute('aria-selected', 'false');
-      });
-      renderEmojis('all', searchEmojis(srch.value));
-    } else {
+  async function _onSearchInput() {
+    const raw = srch.value;
+    const seq = ++searchSeq;
+    revealPending = false;
+    if (!raw.trim()) {
       catBar.querySelector(`[data-cat="${activeCat}"]`)?.classList.add('is-active');
-      renderEmojis(activeCat, null);
+      if (data) _showCategory(activeCat);
+      return;
     }
-  });
+    // Clear category selection visually
+    catBar.querySelectorAll('.icon-picker__cat-pill').forEach(p => {
+      p.classList.remove('is-active');
+      p.setAttribute('aria-selected', 'false');
+    });
+    if (!data) return;      // Daten noch nicht da → init() spielt die Eingabe danach ab
+    let index = _kwIndex;
+    if (!index) {
+      // Erste Suche: Stichwörter nachladen. Status nur zeigen, wenn es spürbar dauert (kein Flackern).
+      const slow = setTimeout(() => { if (!disposed && seq === searchSeq) _showStatus('Suche wird vorbereitet…', 'icon-picker__loading'); }, 150);
+      try { index = await loadSearchIndex(); }
+      catch (err) {
+        clearTimeout(slow);
+        console.error('[ui] emoji search index failed:', err);
+        if (!disposed && seq === searchSeq) _showStatus('Suche nicht verfügbar');
+        return;
+      }
+      clearTimeout(slow);
+      if (disposed || seq !== searchSeq) return;   // zwischenzeitlich neu getippt / Kategorie gewählt / Picker neu gebaut
+    }
+    const results = _search(data, index, raw);
+    setList(_flatList(results));
+  }
+  srch.addEventListener('input', _onSearchInput);
+  // Stichwörter schon beim Fokussieren vorladen → erste Suche meist ohne Wartezeit
+  srch.addEventListener('focus', () => { if (!_kwIndex) loadSearchIndex().catch(() => {}); }, { once: true });
 
-  renderEmojis('all', null);
+  // ── Daten bereitstellen (synchron, wenn schon gecacht — sonst per dynamic import) ──
+  function init(d) {
+    data = d;
+    const newIcons = [];
+    d.keys.forEach(key => {
+      const pill = _mkCatPill(key, d.cats[key].label, d.cats[key].icon, false);
+      newIcons.push(...pill.querySelectorAll('[data-lucide]'));
+      catBar.appendChild(pill);
+    });
+    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: newIcons });
+    if (srch.value.trim()) _onSearchInput(); else setList(d.all, { reveal: revealPending });
+  }
+
+  if (_data) {
+    init(_data);
+  } else {
+    _showStatus('Emojis werden geladen…', 'icon-picker__loading');
+    grid.setAttribute('aria-busy', 'true');
+    loadEmojiData().then(d => { if (!disposed) init(d); }).catch(err => {
+      // Das Bearbeiten-Modal bleibt voll benutzbar (Upload, Direkteingabe, Speichern) — nur die Emoji-Liste fehlt.
+      console.error('[ui] emoji data failed to load:', err);
+      if (!disposed) _showStatus('Emojis konnten nicht geladen werden');
+    });
+  }
 }
 
 // Known-valid Lucide icon names used in this app.

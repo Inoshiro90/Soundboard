@@ -166,6 +166,18 @@
 	overscroll-behavior: contain; /* Scroll-Ende reicht nicht ans Modal durch */
 	contain-intrinsic-size: 0 var(--emoji-grid-h);
 }
+/* Inkrementelles Rendering (ui/icon-picker.js): Der Spacer belegt per `grid-row: span N` die Zeilen der
+   noch nicht gerenderten Emojis → Scrollhöhe/Scrollleiste bleiben konstant, nichts springt beim Nachladen.
+   overflow-anchor:none, damit der Browser beim Einfügen neuer Zellen die Scrollposition nicht "korrigiert". */
+.icon-picker__grid { overflow-anchor: none; }
+/* Solange das Grid unsichtbar gebaut wurde und noch nichts gerendert ist, die endgültige Höhe reservieren
+   (Liste hat immer deutlich mehr als 5 Reihen) → erstes Rendern ändert die Grid-Größe nicht mehr. */
+.icon-grid.icon-picker__grid.is-pending { min-height: var(--emoji-grid-h); }
+.icon-picker__grid .icon-picker__spacer {
+	grid-column: 1 / -1;
+	min-height: 0;
+	pointer-events: none;
+}
 .icon-picker__grid .icon-opt {
 	width: 100%;
 	height: 100%;
