@@ -234,7 +234,7 @@
 	/* Ambient Icon/Edit Target -> var(--h-btn) */
 	width: var(--h-btn);
 	height: var(--h-btn);
-	font-size: 1.05rem;
+	font-size: 1.5em;
 	background: none;
 	border: none;
 	cursor: pointer;
