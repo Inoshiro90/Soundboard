@@ -72,7 +72,7 @@ function _rowTemplate(t) {
     ${generatorBadge}
     <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
     <button class="ambient-row__opt" data-act="fx" title="Bearbeiten — Grundeinstellungen &amp; Audio-Effekte" aria-label="Ambient-Sound bearbeiten">
-      ${iconSvg('square-pen')}
+      ${iconSvg('pencil')}
     </button>
     <button class="ambient-row__opt" data-act="export" title="Als Datei exportieren" aria-label="Ambient-Sound exportieren">
       ${iconSvg('download')}
@@ -122,7 +122,7 @@ export function _updateRowPlayState(trackId, playing) {
     if (btn) {
       btn.title = playing ? 'Stoppen' : 'Abspielen';
       btn.setAttribute('aria-label', btn.title);
-      setIcon(btn.querySelector('.ui-icon'), playing ? 'square' : 'play');
+      setIcon(btn.querySelector('.ambient-row__opt'), playing ? 'square' : 'play');
     }
     const badge = row.querySelector('.ambient-row__state');
     if (badge) badge.textContent = waiting ? 'wartet…' : (playing ? 'spielt…' : '');

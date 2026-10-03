@@ -80,7 +80,7 @@ function _trackRowTemplate(t) {
       <button class="music-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben">${iconSvg('chevron-up')}</button>
       <button class="music-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben">${iconSvg('chevron-down')}</button>
     </div>
-    <button class="music-row__opt" data-act="edit" title="Bearbeiten" aria-label="${_esc(t.name)} bearbeiten">${PENCIL_ICON_SVG}</button>
+    <button class="music-row__opt" data-act="edit" title="Bearbeiten" aria-label="${_esc(t.name)} bearbeiten">${iconSvg('pencil')}</button>
     <button class="music-row__opt music-row__opt--danger" data-act="remove" title="Löschen" aria-label="${_esc(t.name)} löschen">
       ${iconSvg('trash')}
     </button>

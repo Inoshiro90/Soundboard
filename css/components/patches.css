@@ -170,8 +170,8 @@
    `.menubar-btn .ui-icon` gelten unverändert. vertical-align wie bei .fa-solid.
    KEIN display hier: `.tile__lock-icon { display: none }` o. Ä. müssen gewinnen. */
 .ui-icon {
-	width: 1em;
-	height: 1em;
+	width: 1.5em;
+	height: 1.5em;
 	flex-shrink: 0;
 	vertical-align: -0.125em;
 	overflow: visible;

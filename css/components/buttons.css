@@ -241,7 +241,7 @@
 	transition: color var(--dur-fast) var(--ease);
 	flex-shrink: 0;
 }
-.profile-tab__edit svg { width: 14px; height: 14px; display: block; }
+.profile-tab__edit svg { width: 1.5em; height: 1.5em; display: block; }
 .profile-tab__edit:hover {
 	color: var(--color-accent);
 }

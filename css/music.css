@@ -257,10 +257,8 @@
   flex-shrink: 0;
   transition: all var(--dur-fast) var(--ease);
 }
-.music-row__opt svg { width: 14px; height: 14px; display: block; }
-/* Lucide-Icons (.ui-icon) in den Optionsbuttons folgen der font-size (1em) wie früher die FA-Glyphen;
-   nur der Edit-Stift (PENCIL_ICON_SVG, ohne .ui-icon) bleibt fest 14px. */
-.music-row__opt .ui-icon { width: 1em; height: 1em; }
+.music-row__opt svg { width: 1.5em; height: 1.5em; display: block; }
+.music-row__opt .ui-icon { width: 1.5em; height: 1.5em; }
 .music-row__opt--danger:hover { color: var(--color-orange); border-color: var(--color-orange); }
 
 /* ─── GLOBALE STEUERLEISTE (PLAYER) ───────────────────────────
