@@ -2,6 +2,7 @@
  * ui/macro-steps.js — Makro-Schritte-Editor-Liste (Makro-Modal)
  */
 
+import { iconSvg } from './icons.js';
 import { APP, CItems, findItemAnyProfile, resolveItemById } from '../core/state.js';
 import { iconGlyph } from '../utils.js';
 
@@ -34,17 +35,17 @@ export function renderMacroSteps() {
       div.innerHTML = `
         <span class="mstep-num">${i + 1}.</span>
         <span class="u-text-badge u-text-danger" style="flex:1">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i> Alle stoppen
+          ${iconSvg('square')} Alle stoppen
         </span>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>
-        <button class="mstep-remove" aria-label="Schritt entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="mstep-remove" aria-label="Schritt entfernen">${iconSvg('x')}</button>
       `;
     } else if (action === 'stop') {
       div.innerHTML = `
         <span class="mstep-num">${i + 1}.</span>
         <span class="u-text-badge u-text-danger u-nowrap">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i> Stop
+          ${iconSvg('square')} Stop
         </span>
         <select class="form-select mstep-select js-sel" aria-label="Ziel-Sound">
           <option value="">-- wählen --</option>
@@ -54,14 +55,14 @@ export function renderMacroSteps() {
         </select>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>
-        <button class="mstep-remove" aria-label="Schritt entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="mstep-remove" aria-label="Schritt entfernen">${iconSvg('x')}</button>
       `;
       div.querySelector('.js-sel').addEventListener('change', e => { APP.macroSteps[i].targetId = e.target.value; });
     } else if (action === 'fadeout') {
       div.innerHTML = `
         <span class="mstep-num">${i + 1}.</span>
         <span class="u-text-badge u-text-accent u-nowrap">
-          <i class="fa-solid fa-volume-xmark" aria-hidden="true"></i> Fade
+          ${iconSvg('volume-x')} Fade
         </span>
         <select class="form-select mstep-select js-sel" aria-label="Ziel-Sound">
           <option value="">-- wählen --</option>
@@ -73,7 +74,7 @@ export function renderMacroSteps() {
         <span class="mstep-ms-label">ms</span>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>
-        <button class="mstep-remove" aria-label="Schritt entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="mstep-remove" aria-label="Schritt entfernen">${iconSvg('x')}</button>
       `;
       div.querySelector('.js-sel').addEventListener('change',      e => { APP.macroSteps[i].targetId     = e.target.value; });
       div.querySelector('.js-fade-dur').addEventListener('change', e => { APP.macroSteps[i].fadeDuration = parseInt(e.target.value) || 1000; });
@@ -82,13 +83,13 @@ export function renderMacroSteps() {
       div.innerHTML = `
         <span class="mstep-num">${i + 1}.</span>
         <span class="u-text-badge u-text-accent u-nowrap">
-          <i class="fa-solid fa-sliders" aria-hidden="true"></i> Vol
+          ${iconSvg('sliders-horizontal')} Vol
         </span>
         <input type="range" class="slider js-vol-sl" style="flex:1;min-width:70px" min="0" max="1" step=".05" value="${step.volumeVal != null ? step.volumeVal : 1}" aria-label="Lautstärke">
         <span class="js-vol-val u-text-mono u-text-badge u-text-accent" style="min-width:36px">${Math.round((step.volumeVal != null ? step.volumeVal : 1) * 100)}%</span>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>
-        <button class="mstep-remove" aria-label="Schritt entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="mstep-remove" aria-label="Schritt entfernen">${iconSvg('x')}</button>
       `;
       const sl = div.querySelector('.js-vol-sl');
       const vv = div.querySelector('.js-vol-val');
@@ -110,7 +111,7 @@ export function renderMacroSteps() {
         </select>
         <input type="number" class="form-control mstep-delay js-delay" value="${step.delay || 0}" min="0" max="60000" aria-label="Verzögerung ms">
         <span class="mstep-ms-label">ms</span>
-        <button class="mstep-remove" aria-label="Schritt entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="mstep-remove" aria-label="Schritt entfernen">${iconSvg('x')}</button>
       `;
       const typeEl = div.querySelector('.js-type');
       const selEl  = div.querySelector('.js-sel');

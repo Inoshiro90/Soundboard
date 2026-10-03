@@ -7,7 +7,6 @@
   <title>SoundBoard</title>
 
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/grid-system.css"><!-- Fluides Spalten-Raster (XS–XXL) -->
@@ -20,7 +19,7 @@
   <link rel="stylesheet" href="css/disclosure.css"><!-- Progressive Disclosure: popover toolbars -->
   <link rel="stylesheet" href="css/sound-editor.css"><!-- Sound-Editor: Grid-System-Layout + radikale Disclosure -->
   <link rel="stylesheet" href="css/fixes.css">
-  <!-- Lucide Icons — https://lucide.dev (replaces broken FA icon variants) -->
+  <!-- Lucide Icons — https://lucide.dev (einziges Icon-System; statische Icons als Inline-SVG, dynamische über js/ui/icons.js, data-lucide über createIcons()) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <!-- lamejs for MP3 encoding -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
@@ -37,7 +36,7 @@
     <nav class="app-navbar" aria-label="Hauptnavigation">
 
       <!-- <div class="app-logo" aria-label="SoundBoard Pro">
-        <i class="fa-solid fa-sliders app-logo__icon" aria-hidden="true"></i>
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-sliders-horizontal app-logo__icon" aria-hidden="true"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
         SoundBoard
       </div> -->
       <div class="guide-nav-brand">
@@ -128,9 +127,9 @@
         <button class="menubar-btn menubar-btn--wide popover-toggle" id="btnAppSettingsToggle" data-disclosure-toggle
           aria-expanded="false" aria-controls="appSettingsPopover" title="Verwalten, Speichern, Rückgängig/Wiederholen"
           aria-label="Einstellungen ein-/ausblenden">
-          <i class="fa-solid fa-gear" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-settings" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
           <span class="menubar-btn__label">Einstellungen</span>
-          <i class="fa-solid fa-chevron-down popover-toggle__chevron" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down popover-toggle__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
         <div class="popover-panel" id="appSettingsPopover" hidden>
 
@@ -138,16 +137,16 @@
           <div class="popover-panel__group">
             <button class="btn btn--sm" id="btnExport" title="Alle Profile als JSON-Datei herunterladen"
               aria-label="Daten exportieren">
-              <i class="fa-solid fa-download" aria-hidden="true"></i> Export
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-download" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Export
             </button>
             <button class="btn btn--sm" id="btnImportTrigger" title="JSON-Datei laden und Profile importieren"
               aria-label="Daten importieren">
-              <i class="fa-solid fa-upload" aria-hidden="true"></i> Import
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-upload" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg> Import
             </button>
             <input type="file" id="importFile" accept=".json" class="u-hidden" aria-hidden="true">
             <button class="btn btn--sm btn--danger" id="btnReset" title="Alle Daten löschen und App zurücksetzen"
               aria-label="Alles zurücksetzen">
-              <i class="fa-solid fa-trash" aria-hidden="true"></i> Reset
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-trash" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Reset
             </button>
           </div>
 
@@ -155,15 +154,15 @@
           <div class="popover-panel__group">
             <button class="menubar-btn menubar-btn--save" id="btnSave" title="Alle Profile und Sounds speichern"
               aria-label="Speichern">
-              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-save" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
               Speichern
             </button>
             <button class="menubar-btn" id="btnUndo" title="Rückgängig (Ctrl+Z)" aria-label="Rückgängig" disabled>
-              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-rotate-ccw" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
               Undo
             </button>
             <button class="menubar-btn" id="btnRedo" title="Wiederholen (Ctrl+Y)" aria-label="Wiederholen" disabled>
-              <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-rotate-cw" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               Redo
             </button>
           </div>
@@ -191,7 +190,7 @@
         <!-- Tabs rendered by JS (renderProfileTabs) -->
         <button class="profile-add" id="btnAddProfile" disabled data-await-fragments title="Neues Profil erstellen"
           aria-label="Neues Profil erstellen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           Profil
         </button>
       </nav>
@@ -208,7 +207,7 @@
       <div class="board-toolbar fx-toolbar" id="fxToolbar">
         <button class="btn board-toolbar__btn btn--danger" id="btnStop" title="Alle Sounds stoppen"
           aria-label="Alle Sounds stoppen">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-square" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
           <span class="board-toolbar__label">Stop</span>
         </button>
 
@@ -220,12 +219,12 @@
              eingebettet. -->
         <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddSound" disabled data-await-fragments
           title="Neuen Sound hinzufügen" aria-label="Neuen Sound hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           <span class="board-toolbar__label">Sound</span>
         </button>
         <button class="btn board-toolbar__btn btn--accent" id="btnToolbarAddMacro" disabled data-await-fragments
           title="Neues Makro hinzufügen" aria-label="Neues Makro hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           <span class="board-toolbar__label">Makro</span>
         </button>
 
@@ -294,7 +293,7 @@
         </button>
         <button class="btn board-toolbar__btn" id="btnExportProfileTab"
           title="Aktives Soundeffekt-Profil als Datei exportieren" aria-label="Aktives Profil exportieren">
-          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Profil-Export
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-download" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Profil-Export
         </button>
       </div>
       <div class="edit-mode-bar" id="editModeBar" hidden>
@@ -318,10 +317,10 @@
          wird von ui/grid.js (_openTileAddChoice) per JS positioniert. -->
     <div class="popover-panel popover-panel--row" id="tileAddChoicePopover" role="menu" aria-label="Hinzufügen" hidden>
       <button class="btn btn--sm" id="tileAddChoiceSound" role="menuitem">
-        <i class="fa-solid fa-music" aria-hidden="true"></i> Sound
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-music" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Sound
       </button>
       <button class="btn btn--sm" id="tileAddChoiceMacro" role="menuitem">
-        <i class="fa-solid fa-scroll" aria-hidden="true"></i> Makro
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-scroll" aria-hidden="true"><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></svg> Makro
       </button>
     </div>
 
@@ -336,7 +335,7 @@
         <!-- Tabs rendered by JS (renderAmbientProfileTabs) -->
         <button class="profile-add" id="btnAddAmbientProfile" disabled data-await-fragments
           title="Neue Ambient-Szene erstellen" aria-label="Neue Ambient-Szene erstellen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           Szene
         </button>
       </nav>
@@ -359,13 +358,13 @@
       <div class="board-toolbar ambient-board__toolbar">
         <button class="btn board-toolbar__btn btn--danger" id="btnAmbientStopAll"
           title="Alle Ambient-Sounds dieser Szene stoppen" aria-label="Alle Ambient-Sounds stoppen">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-square" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
           <span class="board-toolbar__label">Stop</span>
         </button>
 
         <button class="btn board-toolbar__btn btn--accent" id="btnAmbientAdd" title="Ambient-Sound hinzufügen"
           aria-label="Ambient-Sound hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           <span class="board-toolbar__label">Ambient</span>
         </button>
 
@@ -403,7 +402,7 @@
         <input type="file" id="ambientReplaceFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
         <button class="btn board-toolbar__btn" id="btnExportAmbientProfileTab"
           title="Aktive Ambient-Szene als Datei exportieren" aria-label="Aktive Szene exportieren">
-          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Szenen-Export
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-download" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Szenen-Export
         </button>
       </div>
 
@@ -426,7 +425,7 @@
         <!-- Tabs rendered by JS (renderMusicProfileTabs) -->
         <button class="profile-add" id="btnAddMusicProfile" disabled data-await-fragments
           title="Neue Playlist erstellen" aria-label="Neue Playlist erstellen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           Playlist
         </button>
       </nav>
@@ -448,13 +447,13 @@
       <div class="board-toolbar music-toolbar">
         <button class="btn board-toolbar__btn btn--danger" id="btnMusicStop" title="Musik stoppen"
           aria-label="Musik stoppen">
-          <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-square" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
           <span class="board-toolbar__label">Stop</span>
         </button>
 
         <button class="btn board-toolbar__btn btn--accent" id="btnMusicAdd" title="Musikstück hinzufügen"
           aria-label="Musikstück hinzufügen">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           <span class="board-toolbar__label">Musik</span>
         </button>
 
@@ -502,7 +501,7 @@
         </button>
         <button class="btn board-toolbar__btn" id="btnExportMusicProfileTab"
           title="Aktive Musik-Playlist als Datei exportieren" aria-label="Aktive Playlist exportieren">
-          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Playlist-Export
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-download" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Playlist-Export
         </button>
         <input type="file" id="musicFile" accept="audio/*" multiple class="u-hidden" aria-hidden="true">
       </div>
@@ -532,20 +531,20 @@
         <div class="music-player__transport">
           <button class="music-toggle-btn" id="btnMusicShuffle" title="Shuffle" aria-label="Shuffle ein-/ausschalten"
             aria-pressed="false">
-            <i class="fa-solid fa-shuffle" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-shuffle" aria-hidden="true"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/></svg>
           </button>
           <button class="music-transport-btn" id="btnMusicPrev" title="Vorheriger Track" aria-label="Vorheriger Track">
-            <i class="fa-solid fa-backward-step" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-skip-back" aria-hidden="true"><path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z"/><path d="M3 20V4"/></svg>
           </button>
           <button class="music-transport-btn" id="btnMusicPlayPause" title="Abspielen" aria-label="Abspielen" disabled>
-            <i class="fa-solid fa-play" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
           </button>
           <button class="music-transport-btn" id="btnMusicNext" title="Nächster Track" aria-label="Nächster Track">
-            <i class="fa-solid fa-forward-step" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-skip-forward" aria-hidden="true"><path d="M21 4v16"/><path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/></svg>
           </button>
           <button class="music-toggle-btn" id="btnMusicRepeat" title="Wiederholen: Aus" aria-label="Wiederholen: Aus"
             aria-pressed="false">
-            <i class="fa-solid fa-repeat" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-repeat" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
           </button>
         </div>
       </div>

@@ -31,7 +31,7 @@
   color: var(--text-secondary);
 }
 
-.fx-header__title .fa-waveform-lines {
+.fx-header__title .ui-icon {
   color: var(--color-accent);
 }
 

@@ -2,6 +2,7 @@
  * ambient/ambient-render.js — Szenen-Tabs, Track-Listen-Rendering, View-Mode
  */
 
+import { iconSvg, setIcon } from '../ui/icons.js';
 import { APP, CAP, CATracks } from '../core/state.js';
 import { iconHtmlOr, iconGlyph } from '../utils.js';
 import { PENCIL_ICON_SVG, _applyTabAccent } from '../ui/tabs.js';
@@ -63,7 +64,7 @@ function _rowTemplate(t) {
   <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}${hasAccent ? ' ambient-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
     <button class="ambient-row__play" data-act="play" ${loaded ? '' : 'disabled'}
       title="${playing ? 'Stoppen' : 'Abspielen'}" aria-label="${playing ? 'Stoppen' : 'Abspielen'}">
-      <i class="fa-solid ${playing ? 'fa-stop' : 'fa-play'}" aria-hidden="true"></i>
+      ${iconSvg(playing ? 'square' : 'play')}
     </button>
     <button class="ambient-row__icon" data-act="icon" title="Icon auswählen" aria-label="Icon auswählen">${iconHtmlOr(t.icon, '🌫️', 'ambient-row__icon-img')}</button>
     <input type="text" class="ambient-row__name" data-act="name" value="${_esc(t.name)}" maxlength="30"
@@ -71,17 +72,17 @@ function _rowTemplate(t) {
     ${generatorBadge}
     <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
     <button class="ambient-row__opt" data-act="fx" title="Bearbeiten — Grundeinstellungen &amp; Audio-Effekte" aria-label="Ambient-Sound bearbeiten">
-      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+      ${iconSvg('square-pen')}
     </button>
     <button class="ambient-row__opt" data-act="export" title="Als Datei exportieren" aria-label="Ambient-Sound exportieren">
-      <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+      ${iconSvg('download')}
     </button>
     <button class="ambient-row__opt ambient-row__opt--danger" data-act="remove" title="Entfernen"
       aria-label="Ambient-Sound entfernen">
-      <i class="fa-solid fa-trash" aria-hidden="true"></i>
+      ${iconSvg('trash')}
     </button>
         <div class="ambient-row__vol">
-      <i class="fa-solid fa-volume-low" aria-hidden="true"></i>
+      ${iconSvg('volume-1')}
       <input type="range" class="slider ambient-row__vol-slider" data-act="vol" min="0" max="1" step=".01"
         value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}">
       <span class="ambient-row__vol-pct">${Math.round(t.vol * 100)}%</span>
@@ -121,8 +122,7 @@ export function _updateRowPlayState(trackId, playing) {
     if (btn) {
       btn.title = playing ? 'Stoppen' : 'Abspielen';
       btn.setAttribute('aria-label', btn.title);
-      const icon = btn.querySelector('i');
-      if (icon) icon.className = `fa-solid ${playing ? 'fa-stop' : 'fa-play'}`;
+      setIcon(btn.querySelector('.ui-icon'), playing ? 'square' : 'play');
     }
     const badge = row.querySelector('.ambient-row__state');
     if (badge) badge.textContent = waiting ? 'wartet…' : (playing ? 'spielt…' : '');

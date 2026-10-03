@@ -2,6 +2,7 @@
  * ui/icon-picker.js — Lucide-Icon-Picker (v2) + Theme-Icon-Sync + Custom-Icon-Upload
  */
 
+import { iconSvg } from './icons.js';
 import '../core/state.js';
 import { isCustomIcon, iconHtml } from '../utils.js';
 import { toast } from '../notifications.js';
@@ -293,11 +294,11 @@ export function buildIconGrid(containerId, current) {
     <div class="icon-picker__upload-preview">${isCustomIcon(current) ? iconHtml(current) : (current || '🙂')}</div>
     <div class="icon-picker__upload-text"><strong>Eigenes Bild</strong><br>PNG, JPG, GIF, WEBP, BMP, SVG</div>
     <button type="button" class="btn btn--sm" data-act="upload-icon" aria-label="Eigenes Bild hochladen">
-      <i class="fa-solid fa-upload" aria-hidden="true"></i>
+      ${iconSvg('image-up')}
     </button>
     <button type="button" class="icon-picker__upload-clear" data-act="clear-icon" title="Bild entfernen"
       aria-label="Bild entfernen" ${isCustomIcon(current) ? '' : 'hidden'}>
-      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      ${iconSvg('x')}
     </button>
     <input type="file" class="u-hidden" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml,.svg" aria-hidden="true">
   `;

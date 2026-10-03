@@ -21,7 +21,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="playbackSettingsModalTitle">
-            <i class="fa-solid fa-play" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
             Wiedergabe
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
@@ -66,7 +66,7 @@
         <div class="modal-footer u-flex-between">
           <span></span>
           <button type="button" class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Fertig
           </button>
         </div>
       </div>
@@ -82,7 +82,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="soundVolumeModalTitle">
-            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-volume-2" aria-hidden="true"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></svg>
             Lautstärke
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
@@ -94,7 +94,7 @@
         </div>
         <div class="modal-body sm-body">
           <div class="vol-row">
-            <i class="fa-solid fa-volume-high" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-volume-2" aria-hidden="true"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></svg>
             <input type="range" id="masterVol" class="slider" min="0" max="1" step=".01" value="1"
               aria-label="Lautstärke Slider">
             <input type="number" id="masterVolNum" class="vol-number-input" min="0" max="100" value="100"
@@ -105,7 +105,7 @@
         <div class="modal-footer u-flex-between">
           <span></span>
           <button type="button" class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Fertig
           </button>
         </div>
       </div>
@@ -143,15 +143,15 @@
             </div>
             <div class="sm-basics-actions">
               <button type="button" class="btn btn--sm" id="btnTestMacro" aria-label="Makro testen">
-                <i class="fa-solid fa-play u-text-accent" aria-hidden="true"></i><span class="btn__label">Test</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play u-text-accent" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg><span class="btn__label">Test</span>
               </button>
               <button type="button" class="btn btn--sm btn--danger" id="btnDelMacro" style="display:none"
                 aria-label="Makro löschen">
-                <i class="fa-solid fa-trash" aria-hidden="true"></i><span class="btn__label">Löschen</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-trash" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span class="btn__label">Löschen</span>
               </button>
               <button type="button" class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
               <button type="button" class="btn btn--sm btn--accent" id="btnSaveMacro">
-                <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Speichern
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-save" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Speichern
               </button>
             </div>
           </div>
@@ -175,12 +175,12 @@
           <div class="sm-entry-card">
             <div class="sm-entry-card__head">
               <span class="sm-entry-card__title">
-                <i class="fa-solid fa-play" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
                 Wiedergabe &amp; Verhalten
                 <span class="sm-fx-badge" id="mPlaybackBadge" style="display:none">●</span>
               </span>
               <button type="button" class="btn btn--sm" id="btnOpenMacroPlaybackModal">
-                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-sliders-horizontal" aria-hidden="true"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
                 Bearbeiten
               </button>
             </div>
@@ -195,7 +195,7 @@
                 <span class="sm-entry-card__preview-dot" id="mAppearancePreviewColor" aria-hidden="true"></span>
               </span>
               <button type="button" class="btn btn--sm" id="btnOpenMacroAppearanceModal">
-                <i class="fa-solid fa-palette" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-palette" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg>
                 Bearbeiten
               </button>
             </div>
@@ -216,17 +216,17 @@
                 <div class="macro-tl-toolbar__group">
                   <button type="button" class="btn btn--sm btn--accent" id="btnAddStep"
                     aria-label="Sound oder Makro hinzufügen">
-                    <i class="fa-solid fa-plus" aria-hidden="true"></i> Sound/Makro
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Sound/Makro
                   </button>
 
                   <div class="menubar-sep" aria-hidden="true"></div>
 
                   <button type="button" class="btn btn--sm" id="btnMacroTlPreview" title="Timeline vorhören"
                     aria-label="Vorhören">
-                    <i class="fa-solid fa-play" aria-hidden="true"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
                   </button>
                   <button type="button" class="btn btn--sm" id="btnMacroTlStop" title="Stop" aria-label="Stop">
-                    <i class="fa-solid fa-square" aria-hidden="true"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-square" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                   </button>
 
                   <div class="menubar-sep" aria-hidden="true"></div>
@@ -244,7 +244,7 @@
                 </div>
               </div>
               <p class="macro-tl-hint u-text-muted">
-                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-info" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                 Ziehen = verschieben · Rechtsklick = entfernen · Mausrad = Zoom
               </p>
               <div class="macro-tl-scroll">
@@ -272,7 +272,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="macroPlaybackModalTitle">
-            <i class="fa-solid fa-play" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
             Wiedergabe &amp; Verhalten
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
@@ -305,7 +305,7 @@
         <div class="modal-footer u-flex-between">
           <span class="u-text-muted u-text-badge">Änderungen wirken erst nach dem Speichern des Makros.</span>
           <button type="button" class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Fertig
           </button>
         </div>
       </div>
@@ -321,7 +321,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="macroAppearanceModalTitle">
-            <i class="fa-solid fa-palette" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-palette" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg>
             Darstellung &amp; Organisation
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
@@ -338,9 +338,9 @@
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="true" aria-controls="mSecIcon" id="mSecIconToggle">
                 <span class="disclosure-section__label">
-                  <i class="fa-solid fa-face-smile" aria-hidden="true"></i> Icon
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-face-slightly-smiling" aria-hidden="true"><path d="M15 10V9"/><path d="M16.472 15a6 6 0 01-8.943 0"/><path d="M9 10V9"/><circle cx="12" cy="12" r="10"/></svg> Icon
                 </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="disclosure-section__panel" id="mSecIcon">
                 <!-- Icon picker injected by buildIconGrid() -->
@@ -356,9 +356,9 @@
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="false" aria-controls="mSecColor" id="mSecColorToggle">
                 <span class="disclosure-section__label">
-                  <i class="fa-solid fa-palette" aria-hidden="true"></i> Farbe
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-palette" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg> Farbe
                 </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="disclosure-section__panel" id="mSecColor" hidden>
                 <div class="sm-grid">
@@ -380,16 +380,16 @@
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="false" aria-controls="mSecOrg" id="mSecOrgToggle">
                 <span class="disclosure-section__label">
-                  <i class="fa-solid fa-folder-tree" aria-hidden="true"></i> Organisation
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-folder-tree" aria-hidden="true"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></svg> Organisation
                 </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="disclosure-section__panel" id="mSecOrg" hidden>
                 <label class="form-label" for="mHotkey">Hotkey</label>
                 <input type="text" class="hotkey-field" id="mHotkey" placeholder="Klick + Tasten…" readonly
                   aria-describedby="mHotkeyHelp">
                 <small id="mHotkeyHelp" class="u-text-muted u-text-badge u-block u-mt-1">
-                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-info" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                   Shift / Alt / Ctrl + Taste. ESC = löschen.
                 </small>
               </div>
@@ -400,7 +400,7 @@
         <div class="modal-footer u-flex-between">
           <span class="u-text-muted u-text-badge">Änderungen wirken erst nach dem Speichern des Makros.</span>
           <button type="button" class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <i class="fa-solid fa-check" aria-hidden="true"></i> Fertig
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Fertig
           </button>
         </div>
       </div>
@@ -437,9 +437,9 @@
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="false" aria-controls="profSecIcon" id="profSecIconToggle">
                 <span class="disclosure-section__label">
-                  <i class="fa-solid fa-face-smile" aria-hidden="true"></i> Icon
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-face-slightly-smiling" aria-hidden="true"><path d="M15 10V9"/><path d="M16.472 15a6 6 0 01-8.943 0"/><path d="M9 10V9"/><circle cx="12" cy="12" r="10"/></svg> Icon
                 </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="disclosure-section__panel" id="profSecIcon" hidden>
                 <!-- Icon picker injected by buildIconGrid() -->
@@ -452,9 +452,9 @@
               <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
                 aria-expanded="false" aria-controls="profSecColor" id="profSecColorToggle">
                 <span class="disclosure-section__label">
-                  <i class="fa-solid fa-palette" aria-hidden="true"></i> Farbe
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-palette" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg> Farbe
                 </span>
-                <i class="fa-solid fa-chevron-down disclosure-section__chevron" aria-hidden="true"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="disclosure-section__panel" id="profSecColor" hidden>
                 <!-- Color picker injected by buildColorOpts() -->
@@ -467,7 +467,7 @@
         <div class="modal-footer u-flex-between">
           <div class="u-flex u-gap-2">
             <button type="button" class="btn btn--sm btn--danger" id="btnDelProfile" style="display:none" aria-label="Profil löschen">
-              <i class="fa-solid fa-trash" aria-hidden="true"></i> Löschen
+              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-trash" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Löschen
             </button>
           </div>
           <div class="u-flex u-gap-2">
@@ -487,7 +487,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="macroItemPickerTitle">
-            <i class="fa-solid fa-music" aria-hidden="true"></i> Sound oder Makro wählen
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-music" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Sound oder Makro wählen
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
               xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -505,7 +505,7 @@
         <div class="modal-footer" style="padding:8px 12px">
           <button type="button" class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
           <button type="button" class="btn btn--sm btn--accent" id="btnMacroItemInsert" disabled>
-            <i class="fa-solid fa-plus" aria-hidden="true"></i> Hinzufügen
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Hinzufügen
           </button>
         </div>
       </div>

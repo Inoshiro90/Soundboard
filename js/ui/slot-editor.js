@@ -2,6 +2,7 @@
  * ui/slot-editor.js — Slot-Liste, Slot-Bearbeiten-Dialog, Trim-Modal-Guard
  */
 
+import { iconSvg } from './icons.js';
 import { APP, CItems } from '../core/state.js';
 import '../utils.js';
 import { playBufferPreview } from '../audio/playback.js';
@@ -58,7 +59,7 @@ export function renderSlotList() {
     const hasUsableData = sl && sl.data && !sl._loading;
     const previewHtml = hasUsableData
       ? `<button class="slot-btn slot-btn--preview js-prev-btn" title="Vorschau abspielen" aria-label="Slot vorschau">
-           <i class="fa-solid fa-play" aria-hidden="true"></i>
+           ${iconSvg('play')}
          </button>` : '';
 
     // Sounddauer/Start/Ende/Zuschneiden leben gebündelt im slotEditModal
@@ -77,13 +78,13 @@ export function renderSlotList() {
       <div class="slot-actions">
         ${previewHtml}
         <button class="slot-btn slot-btn--load js-load-btn" title="Datei laden" aria-label="Audio laden">
-          <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+          ${iconSvg('folder-open')}
         </button>
         <button class="slot-btn slot-btn--load js-gen-btn" title="Testton/Sweep generieren" aria-label="Ton generieren">
-          <i class="fa-solid fa-wave-square" aria-hidden="true"></i>
+          ${iconSvg('audio-waveform')}
         </button>
         ${hasUsableData ? `<button class="slot-btn slot-btn--edit js-slot-edit-btn" title="Bearbeiten (Dauer, Start, Ende, Zuschneiden)" aria-label="Slot bearbeiten"><i data-lucide="pencil" aria-hidden="true"></i></button>` : ''}
-        <button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        <button class="slot-btn slot-btn--remove js-rm-btn" title="Entfernen" aria-label="Slot entfernen">${iconSvg('x')}</button>
       </div>
     `;
 

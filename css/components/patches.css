@@ -163,6 +163,30 @@
    lucide.createIcons() replaces [data-lucide] with inline <svg>.
    Ensure consistent sizing wherever Lucide SVGs appear.          */
 
+/* ─── Inline-Lucide-Icons als Ersatz für Font Awesome (.ui-icon) ───────────
+   Größe = 1em, also exakt wie das FA-Glyph: sie folgt der font-size des Icons
+   bzw. seines Containers und damit auch allen bestehenden Media-Queries.
+   Alle Rules wie `.tile__lock-icon { font-size: .6rem }` oder
+   `.menubar-btn .ui-icon` gelten unverändert. vertical-align wie bei .fa-solid.
+   KEIN display hier: `.tile__lock-icon { display: none }` o. Ä. müssen gewinnen. */
+.ui-icon {
+	width: 1em;
+	height: 1em;
+	flex-shrink: 0;
+	vertical-align: -0.125em;
+	overflow: visible;
+}
+/* Ersatz für fa-spin (gleiche Dauer/Kurve wie Font Awesome) */
+.ui-icon--spin {
+	animation: ui-icon-spin 2s linear infinite;
+}
+@keyframes ui-icon-spin {
+	to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.ui-icon--spin { animation-duration: 6s; }
+}
+
 /* Navbar theme toggle */
 .navbar-theme-btn svg {
 	width: 18px;

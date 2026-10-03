@@ -2,6 +2,7 @@
  * audio/preview.js — Effekt-Editor-Vorschau + Analyzer
  */
 
+import { setIcon } from '../ui/icons.js';
 import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
 import { bk } from '../utils.js';
@@ -229,16 +230,16 @@ function _updatePreviewButton() {
   ['btnPreviewSound', 'btnPreviewFx'].forEach(id => {
     const btn = document.getElementById(id);
     if (!btn) return;
-    const icon = btn.querySelector('i');
+    const icon = btn.querySelector('.ui-icon');
     btn.disabled = p.loading;
     if (p.loading) {
-      if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+      setIcon(icon, 'loader-circle', 'ui-icon--spin');
       btn.setAttribute('aria-label', 'Vorschau wird geladen…');
     } else if (p.playing) {
-      if (icon) icon.className = 'fa-solid fa-stop u-text-accent';
+      setIcon(icon, 'square', 'u-text-accent');
       btn.setAttribute('aria-label', 'Vorschau stoppen');
     } else {
-      if (icon) icon.className = 'fa-solid fa-play u-text-accent';
+      setIcon(icon, 'play', 'u-text-accent');
       btn.setAttribute('aria-label', 'Vorschau');
     }
   });

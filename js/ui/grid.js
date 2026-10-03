@@ -2,6 +2,7 @@
  * ui/grid.js — Kachel-Grid-Rendering (Sound/Makro/Platzhalter) + "+"-Kachel
  */
 
+import { iconSvg } from './icons.js';
 import { APP, CItems } from '../core/state.js';
 // `uid` und `stopItem` (Zeile darunter) waren bereits im ursprünglichen
 // ui.js importiert, aber nie aufgerufen (toter Import) — mechanisch mit
@@ -194,8 +195,8 @@ export function makeSoundTile(s) {
       <div class="tile__icon" aria-hidden="true">${iconHtmlOr(s.icon, '🔊', 'tile__icon-img')}</div>
       <div class="tile__label tile__label--autofit">${s.name || 'SOUND'}</div>
       <div class="tile__slot-badge" aria-hidden="true"></div>
-      <i class="fa-solid fa-rotate tile__loop-icon" aria-hidden="true"></i>
-      <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
+      ${iconSvg('refresh-cw', 'tile__loop-icon')}
+      ${iconSvg('lock', 'tile__lock-icon')}
       <div class="tile__progress" aria-hidden="true"></div>
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
@@ -247,7 +248,7 @@ export function makeMacroTile(m) {
       <div class="tile__icon" aria-hidden="true">${iconHtmlOr(m.icon, '🪄', 'tile__icon-img')}</div>
       <div class="tile__label">${m.name || 'MAKRO'}</div>
       <div class="tile__macro-badge" aria-hidden="true">MAKRO${m.repeat > 1 ? ' ×' + m.repeat : ''}</div>
-      <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
+      ${iconSvg('lock', 'tile__lock-icon')}
       <div class="tile__progress" aria-hidden="true"></div>
     </div>
     <div class="tile-controls" aria-label="Kachel-Aktionen">
@@ -280,11 +281,11 @@ export function makePHTile(ph) {
 
   wrap.innerHTML = `
     <div class="tile tile--placeholder" aria-label="Leerer Slot">
-      <i class="fa-solid fa-lock tile__lock-icon" aria-hidden="true"></i>
+      ${iconSvg('lock', 'tile__lock-icon')}
       <div class="tile-controls">
         <button class="tile-ctrl-btn js-add-btn" title="Sound oder Makro hinzufügen" aria-label="Hinzufügen"
           aria-haspopup="menu" aria-expanded="false">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          ${iconSvg('plus')}
         </button>
       </div>
     </div>

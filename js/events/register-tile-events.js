@@ -4,6 +4,7 @@
  * (inkl. Race-Condition-Schutz), Ton-Generator
  */
 
+import { iconSvg } from '../ui/icons.js';
 import { APP, CP } from '../core/state.js';
 import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
@@ -423,7 +424,7 @@ export function registerTileEvents() {
 
     const btn = document.getElementById('btnToneGenerate');
     const origHtml = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    btn.disabled = true; btn.innerHTML = iconSvg('loader-circle', 'ui-icon--spin');
     try {
       const ctx  = actx();
       const buf  = generateToneBuffer(ctx, opts);

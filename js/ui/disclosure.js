@@ -11,7 +11,7 @@
  *             data-disclosure-toggle
  *             aria-expanded="false"
  *             aria-controls="appSettingsPopover">
- *       Einstellungen <i class="fa-solid fa-chevron-down popover-toggle__chevron"></i>
+ *       Einstellungen <svg class="ui-icon lucide lucide-chevron-down popover-toggle__chevron">…</svg>
  *     </button>
  *     <div class="popover-panel" id="appSettingsPopover" hidden>
  *       …existing buttons/inputs, IDs untouched…

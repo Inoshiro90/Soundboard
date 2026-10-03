@@ -4,6 +4,7 @@
  * -Reduzieren/Lautheit/Truncate)
  */
 
+import { iconSvg } from '../ui/icons.js';
 import { APP } from '../core/state.js';
 import '../utils.js';
 import { toast } from '../notifications.js';
@@ -240,7 +241,7 @@ export function registerSlotEvents() {
 
     const origHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    btn.innerHTML = iconSvg('loader-circle', 'ui-icon--spin');
     try {
       switch (action) {
         case 'trim': {

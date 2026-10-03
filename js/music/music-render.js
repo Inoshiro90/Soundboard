@@ -2,6 +2,7 @@
  * music/music-render.js — Playlist-Tabs, Track-Liste, Player-UI, View-Mode
  */
 
+import { iconSvg, setIcon } from '../ui/icons.js';
 import { APP } from '../core/state.js';
 import { iconHtmlOr, fmtTime } from '../utils.js';
 import { PENCIL_ICON_SVG, _applyTabAccent } from '../ui/tabs.js';
@@ -56,11 +57,11 @@ function _trackRowTemplate(t) {
   return `
   <div class="music-row${isActive ? ' is-active' : ''}${isPlaying ? ' is-playing' : ''}${hasAccent ? ' music-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
     <span class="music-row__handle" draggable="true" title="Ziehen zum Neuanordnen" aria-label="${_esc(t.name)} neu anordnen">
-      <i class="fa-solid fa-grip-vertical" aria-hidden="true"></i>
+      ${iconSvg('grip-vertical')}
     </span>
     <button class="music-row__play" data-act="play" ${t.data ? '' : 'disabled'}
       title="${isPlaying ? 'Pause' : 'Abspielen'}" aria-label="${isPlaying ? 'Pause' : 'Abspielen'} — ${_esc(t.name)}">
-      <i class="fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}" aria-hidden="true"></i>
+      ${iconSvg(isPlaying ? 'pause' : 'play')}
     </button>
     <span class="music-row__icon" aria-hidden="true">${iconHtmlOr(t.icon, '🎵', 'music-row__icon-img')}</span>
     <div class="music-row__info">
@@ -76,12 +77,12 @@ function _trackRowTemplate(t) {
         value="${Math.round((t.vol ?? 1) * 100)}" aria-label="Lautstärke ${_esc(t.name)} in Prozent">
     </div>
     <div class="music-row__reorder">
-      <button class="music-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
-      <button class="music-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
+      <button class="music-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben">${iconSvg('chevron-up')}</button>
+      <button class="music-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben">${iconSvg('chevron-down')}</button>
     </div>
     <button class="music-row__opt" data-act="edit" title="Bearbeiten" aria-label="${_esc(t.name)} bearbeiten">${PENCIL_ICON_SVG}</button>
     <button class="music-row__opt music-row__opt--danger" data-act="remove" title="Löschen" aria-label="${_esc(t.name)} löschen">
-      <i class="fa-solid fa-trash" aria-hidden="true"></i>
+      ${iconSvg('trash')}
     </button>
   </div>`;
 }
@@ -109,8 +110,7 @@ export function renderMusicPlayer() {
     playBtn.disabled = !track;
     playBtn.title = playing ? 'Pause' : 'Abspielen';
     playBtn.setAttribute('aria-label', playBtn.title);
-    const icon = playBtn.querySelector('i');
-    if (icon) icon.className = `fa-solid ${playing ? 'fa-pause' : 'fa-play'}`;
+    setIcon(playBtn.querySelector('.ui-icon'), playing ? 'pause' : 'play');
   }
 
   const repeatBtn = document.getElementById('btnMusicRepeat');

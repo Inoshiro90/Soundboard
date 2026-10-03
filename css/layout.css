@@ -128,7 +128,7 @@
   user-select: none;
   min-height: var(--h-btn);
 }
-.menubar-btn i { font-size: 0.82rem; }
+.menubar-btn .ui-icon { font-size: 0.82rem; }
 .menubar-btn:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -491,8 +491,8 @@
   .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) .menubar-btn__label {
     display: none;
   }
-  .app-menubar > .menubar-btn:not(.menubar-btn--wide) i,
-  .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) i {
+  .app-menubar > .menubar-btn:not(.menubar-btn--wide) .ui-icon,
+  .app-menubar > .popover-wrap > .menubar-btn:not(.menubar-btn--wide) .ui-icon {
     font-size: 0.9rem;
   }
   .menubar-btn--wide {
