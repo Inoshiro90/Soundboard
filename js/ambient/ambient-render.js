@@ -88,8 +88,7 @@ function _rowTemplate(t) {
     <button class="ambient-row__icon" data-act="icon" title="Icon auswählen" aria-label="Icon auswählen">${iconHtmlOr(t.icon, '🌫️', 'ambient-row__icon-img')}</button>
     <input type="text" class="ambient-row__name" data-act="name" value="${_esc(t.name)}" maxlength="30"
       aria-label="Name des Ambient-Sounds" placeholder="Ambient-Name">
-    ${generatorBadge}
-    <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
+    ${generatorBadge}    
     <div class="ambient-row__reorder">
       <button class="ambient-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben">${iconSvg('chevron-up')}</button>
       <button class="ambient-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben">${iconSvg('chevron-down')}</button>
@@ -150,7 +149,6 @@ export function _updateRowPlayState(trackId, playing) {
       setIcon(btn.querySelector('svg'), s.icon);
     }
     const badge = row.querySelector('.ambient-row__state');
-    if (badge) badge.textContent = waiting ? 'wartet…' : (playing ? 'spielt…' : '');
   }
   // Live-dot on the scene tab, since a track keeps playing across scene/mode switches.
   renderAmbientProfileTabs();
