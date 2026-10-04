@@ -7,6 +7,7 @@
 import { APP, CP, CAP, CMP } from '../core/state.js';
 import { hotkeyStr } from '../utils.js';
 import { toast } from '../notifications.js';
+import { iconSvg } from '../ui/icons.js';
 import { stopAll } from '../audio/playback.js';
 import { applyPresetToCollection } from '../presets.js';
 import { _saveRaw } from '../storage/persistence.js';
@@ -51,12 +52,70 @@ export function handleHotkeyRecord(e) {
 // duplizieren. Die eigentliche Anwendungslogik steckt zentral in
 // applyPresetToCollection() (presets.js); diese Funktion kümmert sich nur um die
 // DOM-Verdrahtung.
+// ─── MODUS-ERKLÄRUNG (Alle / Gleiche / Keine) ──────────────────
+// Einzige Quelle für Beschriftung und Erklärung der drei Modi — Sound-, Ambient- und Musik-Toolbar
+// rendern sie über _wireAudioEffectPresetSection() aus DIESER Tabelle (nur das Nomen unterscheidet
+// sich). Die Semantik selbst liegt unverändert in applyPresetToCollection() (presets.js).
+export const FX_APPLY_MODES = [
+  { mode: 'all',  label: 'Alle',
+    text: n => `Preset auf alle ${n} anwenden – bereits vorhandene Presets werden überschrieben.` },
+  { mode: 'same', label: 'Gleiche',
+    text: n => `${n} ohne Preset erhalten es; ${n} mit genau diesem Preset werden neu abgeglichen. Andere Presets bleiben unverändert.` },
+  { mode: 'none', label: 'Keine',
+    text: n => `Nur ${n} ändern, die noch kein Preset haben. Vorhandene Presets bleiben unverändert.` }
+];
+export const FX_APPLY_MODES_GROUP_LABEL = 'Umgang mit bereits vorhandenen Presets';
+
+/**
+ * Ergänzt die (in den Fragmenten statisch vorhandene) Modus-Buttongruppe um die Erklärung:
+ *  - sichtbare Legende mit je einer Zeile pro Modus (Name + Satz), aktiver Modus mit Haken + fett
+ *    (nicht nur Farbe) und aria-current,
+ *  - Haken-Symbol im aktiven Button (zusätzlich zu .is-active/aria-pressed),
+ *  - Tooltip (title) und aria-describedby auf jedem Button, Gruppenbeschriftung.
+ * Idempotent pro Gruppe. Gibt eine Funktion zurück, die die Legende zum aktiven Modus synchronisiert.
+ */
+function _renderModeExplanation(group, nounPlural) {
+  if (!group) return () => {};
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', FX_APPLY_MODES_GROUP_LABEL);
+  let legend = group.nextElementSibling;
+  if (!legend || !legend.classList.contains('fx-mode-legend')) {
+    legend = document.createElement('ul');
+    legend.className = 'fx-mode-legend';
+    legend.id = `${group.id}Legend`;
+    legend.innerHTML = FX_APPLY_MODES.map(m => `
+      <li class="fx-mode-legend__item" data-mode="${m.mode}" id="${group.id}Desc-${m.mode}">
+        <span class="fx-mode-legend__mark" aria-hidden="true">${iconSvg('check')}</span>
+        <span class="fx-mode-legend__name">${m.label}</span>
+        <span class="fx-mode-legend__text"></span>
+      </li>`).join('');
+    group.insertAdjacentElement('afterend', legend);
+  }
+  FX_APPLY_MODES.forEach(m => {
+    const text = m.text(nounPlural);
+    const li = legend.querySelector(`[data-mode="${m.mode}"]`);
+    if (li) li.querySelector('.fx-mode-legend__text').textContent = text;
+    const btn = group.querySelector(`button[data-mode="${m.mode}"]`);
+    if (btn) {
+      btn.title = `${m.label}: ${text}`;
+      btn.setAttribute('aria-describedby', `${group.id}Desc-${m.mode}`);
+      if (!btn.querySelector('.fx-mode-check')) btn.insertAdjacentHTML('beforeend', `<span class="fx-mode-check" aria-hidden="true">${iconSvg('check')}</span>`);
+    }
+  });
+  return activeMode => legend.querySelectorAll('.fx-mode-legend__item').forEach(li => {
+    const on = li.dataset.mode === activeMode;
+    li.classList.toggle('is-active', on);
+    if (on) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
+  });
+}
+
 export function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, getItems, persist, itemLabel }) {
   const sel      = document.getElementById(selectId);
   const group    = document.getElementById(groupId);
   const applyBtn = document.getElementById(applyBtnId);
   let mode = 'none'; // Default ist immer "Keine"
 
+  const syncLegend = _renderModeExplanation(group, itemLabel);
   const setMode = (m) => {
     mode = m;
     group?.querySelectorAll('button[data-mode]').forEach(b => {
@@ -64,7 +123,9 @@ export function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, g
       b.classList.toggle('is-active', active);
       b.setAttribute('aria-pressed', String(active));
     });
+    syncLegend(m);
   };
+  setMode(mode);
 
   group?.querySelectorAll('button[data-mode]').forEach(btn => {
     btn.addEventListener('click', () => setMode(btn.dataset.mode));
@@ -82,7 +143,7 @@ export function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, g
     const items = getItems();
     const { changed, total } = applyPresetToCollection({ items, presetId, overwriteMode: mode });
     persist();
-    const modeLbl = mode === 'all' ? 'Alle' : mode === 'same' ? 'Gleiche' : 'Keine';
+    const modeLbl = FX_APPLY_MODES.find(x => x.mode === mode)?.label || 'Keine';
     toast(`Preset auf ${changed} von ${total} ${itemLabel} angewendet (Modus „${modeLbl}“)`, 'ok');
   });
 

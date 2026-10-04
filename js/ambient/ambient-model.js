@@ -318,6 +318,37 @@ export function removeAmbientTrack(trackId) {
   renderAmbientPanel();
 }
 
+/**
+ * Manuelle Umsortierung per Positionstausch (Swap) — Drag&Drop und ↑/↓.
+ * Die Reihenfolge einer Szene IST die Reihenfolge ihres `tracks`-Arrays (so werden Szenen
+ * ohnehin gespeichert, exportiert/importiert und in renderAmbientPanel() ausgegeben) — daher kein
+ * zusätzliches `.order`-Feld und keine Migration: Altdaten funktionieren unverändert, jede Szene
+ * behält ihre eigene Reihenfolge. Tauscht NUR die Positionen von A und B; alle übrigen Tracks
+ * bleiben stehen (A,B,C: A auf C → C,B,A — nicht B,C,A). Beide müssen in derselben (aktiven) Szene liegen.
+ * Laufende Wiedergabe (_active, Gain-Nodes, Timer) wird nicht berührt — nur die Liste neu gezeichnet.
+ * @returns {boolean} true, wenn getauscht wurde
+ */
+export function reorderAmbientTrack(idA, idB) {
+  if (!idA || !idB || idA === idB) return false;
+  const tracks = CATracks();
+  const ai = tracks.findIndex(t => t.id === idA);
+  const bi = tracks.findIndex(t => t.id === idB);
+  if (ai < 0 || bi < 0) return false;
+  [tracks[ai], tracks[bi]] = [tracks[bi], tracks[ai]];
+  _persist();
+  renderAmbientPanel();
+  return true;
+}
+
+/** ↑/↓: Tausch mit dem direkten Nachbarn (dir = -1 | +1). */
+export function moveAmbientTrack(trackId, dir) {
+  const tracks = CATracks();
+  const idx = tracks.findIndex(t => t.id === trackId);
+  const other = idx + dir;
+  if (idx < 0 || other < 0 || other >= tracks.length) return false;
+  return reorderAmbientTrack(trackId, tracks[other].id);
+}
+
 export function renameAmbientTrack(trackId, name) {
   const t = _find(trackId); if (!t) return;
   t.name = (name || '').trim() || 'Ambient';

@@ -1,7 +1,7 @@
 <!--
   Fragment: music.html  ·  Familie: Musik
   Zweck:    Musik-Playlist-Dialoge
-  Modals:   musicProfileModal, musicTrackModal, musicPlaybackModal, musicVolumeModal, musicFxToolbarModal
+  Modals:   musicProfileModal, musicTrackModal, musicTrackAppearanceModal, musicPlaybackModal, musicVolumeModal, musicFxToolbarModal
   JS:       js/dialogs/music-modal.js, js/music/music-events.js
   Geladen:  js/fragmentLoader.js (Liste in js/main.js), VOR registerEvents() — IDs/Klassen/ARIA unverändert.
 -->
@@ -91,8 +91,8 @@
        sm-body): Name + Aktionen sticky in der Basics-Bar, Kernfelder
        (Künstler/Album/Lautstärke) direkt sichtbar. „Darstellung & Organisation“
        und „Audio-Effekte“ sind — wie beim Sound — Einstiegskarten, die je eine
-       eigene Dialogbox öffnen (#musicTrackAppearanceModal, #musicTrackFxModal,
-       s.u.); die Audio-Effekte-Karte trägt denselben Ein/Aus-Schalter
+       eigene Dialogbox öffnen (#musicTrackAppearanceModal und den geteilten
+       #soundFxModal im Musik-Kontext, s.u.); die Audio-Effekte-Karte trägt denselben Ein/Aus-Schalter
        (.fx-toggle) wie #soundModal. Kein „Wiedergabe & Verhalten“: ein
        Musik-Track hat kein eigenes Wiedergabe-Datenmodell (Crossfade/Autoplay
        gelten für die Playlist -> #musicPlaybackModal), die Lautstärke bleibt
@@ -273,49 +273,12 @@
     </div>
   </div>
 
-  <!-- ═════════════ MUSIK-TRACK: AUDIO-EFFEKTE (DIALOGBOX) ═════════════
-       Effekt-Preset des Tracks — dieselbe zentrale Preset-Infrastruktur wie
-       Sound/Ambient (renderPresetOptions()/applyPresetEffects()); der
-       Ein/Aus-Schalter liegt in der Einstiegskarte (#musicEditFxEnabled). -->
-  <div class="modal fade" id="musicTrackFxModal" tabindex="-1" aria-labelledby="musicTrackFxModalTitle"
-    aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-size-standard">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="musicTrackFxModalTitle">
-            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-audio-lines" aria-hidden="true"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>
-            Audio-Effekte
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"><svg
-              xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg></button>
-        </div>
-        <div class="modal-body sm-body">
-          <div class="sm-level1">
-            <label class="form-label" for="musicEditFxPreset">Preset</label>
-            <select class="form-select form-select-sm fx-preset-select" id="musicEditFxPreset"
-              aria-describedby="musicEditFxHint">
-              <option value="">— Kein Preset —</option>
-            </select>
-            <p class="u-text-muted u-text-badge u-mt-2 u-mb-0" id="musicEditFxHint">
-              <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-info" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              Ein Preset schaltet die Audio-Effekte automatisch ein. Der Schalter in der Karte
-              „Audio-Effekte“ aktiviert oder deaktiviert sie, ohne das Preset zu verlieren.
-            </p>
-          </div>
-        </div>
-        <div class="modal-footer u-flex-between">
-          <span class="u-text-muted u-text-badge">Änderungen wirken erst nach dem Speichern des Musikstücks.</span>
-          <button type="button" class="btn btn--sm btn--accent" data-bs-dismiss="modal">
-            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Fertig
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- ═════════════ MUSIK-TRACK: AUDIO-EFFEKTE ═════════════
+       Bewusst KEIN eigener Dialog: „Bearbeiten“ in der Karte „Audio-Effekte“ (#btnOpenMusicTrackFxModal)
+       öffnet den vollständigen, geteilten #soundFxModal (fragments/modals/sound-fx.html) im
+       Musik-Kontext — dieselben Gruppen, Presets und Controls wie bei Sound/Ambient, ohne
+       zweite Kopie der ~230 Feld-IDs. Draft-Verhalten: s. openMusicFxEditor()/commitMusicFxDraft()
+       in js/dialogs/music-modal.js (Änderungen landen erst beim Speichern im Track). -->
 
   <!-- ═════════════════════════ WIEDERGABE-DIALOG (MUSIK) ════════════════════════
        Crossfade + Autoplay, analog zu #playbackSettingsModal (Sound).

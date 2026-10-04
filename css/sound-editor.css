@@ -65,3 +65,39 @@
 	border-color: var(--color-accent);
 	color: var(--color-accent);
 }
+
+/* ─── AUDIO-EFFEKT-PRESET ANWENDEN: Modus-Erklärung (Alle / Gleiche / Keine) ─────────────
+   Gerendert von _renderModeExplanation() (js/events/register-toolbar-events.js) — identisch in der
+   Sound-, Ambient- und Musik-Toolbar. Der aktive Modus ist NICHT nur farblich markiert: Haken +
+   Fettschrift in Legende und Button, dazu aria-pressed/aria-current. */
+.fx-mode-check { display: none; margin-left: var(--space-1); }
+.fx-mode-check .ui-icon { width: 1em; height: 1em; }
+.fx-mode-btn-group .btn.is-active .fx-mode-check,
+[data-mode].btn.is-active .fx-mode-check { display: inline-flex; }
+
+.fx-mode-legend {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+.fx-mode-legend__item {
+  display: grid;
+  grid-template-columns: 1.1em auto 1fr;
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+.fx-mode-legend__mark { visibility: hidden; display: inline-flex; align-self: center; }
+.fx-mode-legend__mark .ui-icon { width: 1em; height: 1em; }
+.fx-mode-legend__name { font-weight: 600; min-width: 4.5em; }
+.fx-mode-legend__item.is-active { color: var(--text-primary); }
+.fx-mode-legend__item.is-active .fx-mode-legend__mark { visibility: visible; color: var(--color-accent); }
+.fx-mode-legend__item.is-active .fx-mode-legend__name { font-weight: 700; }
+@media (max-width: 575px) {
+  .fx-mode-legend__item { grid-template-columns: 1.1em 1fr; }
+  .fx-mode-legend__text { grid-column: 2; }
+}

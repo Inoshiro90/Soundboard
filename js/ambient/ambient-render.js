@@ -78,6 +78,9 @@ function _rowTemplate(t) {
   const accentAttr = hasAccent ? ` style="--row-accent:${t.color};"` : '';
   return `
   <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}${hasAccent ? ' ambient-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
+    <span class="ambient-row__handle" draggable="true" title="Ziehen zum Neuanordnen" aria-label="${_esc(t.name)} neu anordnen">
+      ${iconSvg('grip-vertical')}
+    </span>
     <button class="ambient-row__play" data-act="play" ${loaded ? '' : 'disabled'}
       title="${playBtn.label}" aria-label="${playBtn.label}">
       ${iconSvg(playBtn.icon)}
@@ -87,6 +90,10 @@ function _rowTemplate(t) {
       aria-label="Name des Ambient-Sounds" placeholder="Ambient-Name">
     ${generatorBadge}
     <span class="ambient-row__state">${waiting ? 'wartet…' : (playing ? 'spielt…' : '')}</span>
+    <div class="ambient-row__reorder">
+      <button class="ambient-row__reorder-btn" data-act="up" title="Nach oben" aria-label="${_esc(t.name)} nach oben verschieben">${iconSvg('chevron-up')}</button>
+      <button class="ambient-row__reorder-btn" data-act="down" title="Nach unten" aria-label="${_esc(t.name)} nach unten verschieben">${iconSvg('chevron-down')}</button>
+    </div>
     <button class="ambient-row__opt" data-act="fx" title="Bearbeiten — Grundeinstellungen &amp; Audio-Effekte" aria-label="Ambient-Sound bearbeiten">
       ${iconSvg('pencil')}
     </button>

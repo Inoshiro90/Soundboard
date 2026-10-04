@@ -305,6 +305,9 @@ label.popover-check {
   white-space: nowrap;
 }
 
+/* „Wiedergabe & Verhalten" (#soundPlaybackModal): Controls stehen bereits innerhalb des
+   Sektions-Panels — der Einzug von .fx-controls (gedacht für Gruppen mit Kopfzeile)
+   entfällt dort. Bewusst auf diesen Dialog begrenzt, andere Effekt-Sektionen bleiben unverändert. */
 #soundPlaybackModal .disclosure-section__panel > .fx-controls {
   padding-left: 0;
 }

@@ -571,9 +571,10 @@ export function _readAmbientVolumeFromUI() {
  * Mark accordion section headers with 'has-active-setting' (central disclosure indicator) if they contain active effects.
  * Improves visual hierarchy: users can see at a glance which sections are active.
  */
-export function _markActiveAccordionSections(fx) {
-  if (!fx) return;
-  const sections = {
+/** Welche Effekt-Gruppen (Sektions-IDs des FX-Dialogs) in `fx` aktive Module enthalten. Einzige Quelle
+ *  für Sektions-Punkte, Sound-Karten-Überblick UND den Überblick der Musik-Karte. */
+function _activeEffectSections(fx) {
+  return {
     'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.notch?.enabled || fx.pan !== 0,
     'smFxEQ':       fx.eq?.enabled || fx.eq10?.enabled,
     'smFxDyn':      fx.compressor?.enabled || fx.limiter?.enabled,
@@ -584,6 +585,21 @@ export function _markActiveAccordionSections(fx) {
     'smFxSpatial':  fx.spatial?.enabled,
     'smFxAdvanced': fx.pitchShift?.enabled || fx.envelope?.enabled || fx.noiseGate?.enabled || fx.analyzer?.enabled,
   };
+}
+const _EFFECT_GROUP_LABELS = {
+  smFxFilters: 'Filter', smFxEQ: 'EQ', smFxDyn: 'Dynamik', smFxDist: 'Distortion', smFxMod: 'Modulation',
+  smFxReverb: 'Reverb', smFxDelay: 'Delay', smFxSpatial: 'Spatial', smFxAdvanced: 'Erweitert',
+};
+/** Namen der aktiven Effekt-Gruppen eines Effekt-Objekts (z. B. für die Musik-Karte). */
+export function getActiveEffectGroupLabels(fx) {
+  if (!fx) return [];
+  const sections = _activeEffectSections(fx);
+  return Object.entries(_EFFECT_GROUP_LABELS).filter(([id]) => sections[id]).map(([, label]) => label);
+}
+
+export function _markActiveAccordionSections(fx) {
+  if (!fx) return;
+  const sections = _activeEffectSections(fx);
   Object.entries(sections).forEach(([bodyId, isActive]) => {
     const body   = document.getElementById(bodyId);
     const toggle = body?.previousElementSibling;
@@ -595,17 +611,7 @@ export function _markActiveAccordionSections(fx) {
 
   // Kompakter Überblick in der "Audio-Effekte"-Sektion: Namen der aktiven
   // Effekt-Gruppen als Chips, statt jeden Abschnitt einzeln öffnen zu müssen.
-  const summaryLabels = {
-    smFxFilters:  'Filter',
-    smFxEQ:       'EQ',
-    smFxDyn:      'Dynamik',
-    smFxDist:     'Distortion',
-    smFxMod:      'Modulation',
-    smFxReverb:   'Reverb',
-    smFxDelay:    'Delay',
-    smFxSpatial:  'Spatial',
-    smFxAdvanced: 'Erweitert',
-  };
+  const summaryLabels = _EFFECT_GROUP_LABELS;
   const summaryEl = document.getElementById('smFxActiveSummary');
   if (summaryEl) {
     const active = Object.entries(summaryLabels).filter(([id]) => sections[id]).map(([, label]) => label);

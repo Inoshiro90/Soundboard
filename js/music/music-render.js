@@ -71,6 +71,7 @@ function _trackRowTemplate(t) {
     </div>
     <span class="music-row__duration">${t.duration ? fmtTime(t.duration) : '—:—'}</span>
     <div class="music-row__vol-group">
+      <span class="music-row__vol-icon" aria-hidden="true">${iconSvg('volume-2')}</span>
       <input type="range" class="slider music-row__vol" data-act="vol" min="0" max="1" step=".01" value="${t.vol}"
         aria-label="Lautstärke ${_esc(t.name)}">
       <input type="number" class="music-row__vol-num" data-act="volnum" min="0" max="100" step="1"

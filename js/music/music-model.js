@@ -11,7 +11,7 @@ import { _saveRaw } from '../storage/persistence.js';
 // Zirkulärer Import (music-playback.js importiert umgekehrt ensureMusicState/
 // _findTrack/_persist aus diesem Modul) — unkritisch, s. Kommentar in
 // music-playback.js.
-import { stopMusic, _revokeBlobUrl, _orderedTracks, _blobUrls, _resetShuffleOrder, _players, _crossfading } from './music-playback.js';
+import { stopMusic, _revokeBlobUrl, _orderedTracks, _blobUrls, _resetShuffleOrder, _players, _crossfading, applyMusicTrackEffectsLive } from './music-playback.js';
 import { renderMusicProfileTabs, renderMusicPanel, renderMusicPlayer } from './music-render.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -209,8 +209,11 @@ export function setMusicTrackIcon(trackId, icon) {
  */
 export function setMusicTrackEffects(trackId, effects) {
   const t = _findTrack(trackId); if (!t) return;
-  t.effects = effects || defaultEffects();
+  // Tiefe Kopie: der Editor-Draft (_musicEditEffects) darf nach dem Speichern kein gemeinsames
+  // Objekt mit dem Track bleiben.
+  t.effects = effects ? JSON.parse(JSON.stringify(effects)) : defaultEffects();
   _persist();
+  applyMusicTrackEffectsLive(trackId, t.effects);
 }
 
 export function setMusicTrackVolume(trackId, val) {

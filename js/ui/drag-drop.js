@@ -121,12 +121,12 @@ export function setTileEditMode(on) {
   if (!_tileEditMode) _endTouchDrag();
 }
 
-const LONG_PRESS_MS   = 450;
-const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+export const LONG_PRESS_MS   = 450;
+export const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
 let _lp = null; // { timer, wrap, moveHandler, upHandler }
 
-function _clearLongPress() {
+export function _clearLongPress() {
   if (!_lp) return;
   clearTimeout(_lp.timer);
   _lp.wrap.removeEventListener('pointermove',  _lp.moveHandler);
@@ -135,7 +135,7 @@ function _clearLongPress() {
   _lp = null;
 }
 
-function _armLongPress(e, wrap, onFire) {
+export function _armLongPress(e, wrap, onFire) {
   _clearLongPress();
   const startX = e.clientX, startY = e.clientY;
   const moveHandler = ev => {

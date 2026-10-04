@@ -4,9 +4,11 @@
 
 import { APP } from '../core/state.js';
 import { defaultEffects } from '../audio/effect-graph.js';
-import { renderPresetOptions } from '../ui/tabs.js';
 import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { getPresetById } from '../presets.js';
+import { stopEffectPreview } from '../audio/preview.js';
+import { writeEffectsToUI, readEffectsFromUI, _setFxEditContext, _fxEditContext, getActiveEffectGroupLabels } from './sound-modal.js';
+import { _setModalContext } from '../events/utils-modal.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import '../music/music-model.js';
 
@@ -27,6 +29,11 @@ export function _resetMusicEditId() { _musicEditId = null; _musicEditEffects = n
 // Neuzuweisen eines importierten `let`-Bindings).
 export function _setMusicEditEffects(fx) { _musicEditEffects = fx; }
 
+/** Tiefe Kopie eines Effekt-Objekts (reines JSON — so wird es auch persistiert). Der Draft darf nie
+ *  verschachtelte Objekte (lowpass, reverb, eq10.bands …) mit dem gespeicherten Track teilen, sonst
+ *  würde schon das Bearbeiten im Effekt-Dialog den echten Track verändern. */
+function _cloneEffects(fx) { return JSON.parse(JSON.stringify(fx)); }
+
 /**
  * Audio-Effekte-Karte des Track-Modals (gleiches Muster wie #fxEnabled/#smFxBadge/
  * #smFxActiveSummary im Sound-Editor): Ein/Aus-Schalter, Aktiv-Badge und Überblick
@@ -45,13 +52,63 @@ export function _syncMusicFxCard() {
   if (summary) {
     const name = fx.preset ? getPresetById(fx.preset)?.name : '';
     summary.innerHTML = '';
-    if (name) {
+    // Preset-Name + Namen der aktiven Effekt-Gruppen — derselbe Überblick wie in der Sound-Karte
+    // (getActiveEffectGroupLabels() ist dieselbe Quelle wie dort). textContent: Preset-Namen
+    // können benutzerdefiniert sein.
+    [name, ...getActiveEffectGroupLabels(fx)].filter(Boolean).forEach(label => {
       const chip = document.createElement('span');
       chip.className = 'sm-fx-summary__chip';
-      chip.textContent = name;           // textContent: Preset-Namen können benutzerdefiniert sein
+      chip.textContent = label;
       summary.appendChild(chip);
-    }
+    });
   }
+}
+
+// ─── AUDIO-EFFEKTE DES MUSIKSTÜCKS (geteilter Effekt-Dialog) ────────────────────
+// Der Musik-Editor besitzt KEINEN eigenen Effekt-Dialog: er nutzt kontextabhängig den
+// vollständigen #soundFxModal (alle Gruppen, Presets, eigene Presets, Reset — identische
+// Controls, identische read/writeEffectsToUI()-Logik wie Sound/Ambient). Der Dialog ist ein reiner
+// Editor für das gestagte Objekt `_musicEditEffects`:
+//   öffnen  → writeEffectsToUI(_musicEditEffects)   (DOM wird mit dem Draft befüllt)
+//   schließen (X/Fertig/Escape/Backdrop) → _musicEditEffects = readEffectsFromUI()  (nur Draft!)
+//   „Musikstück speichern" → setMusicTrackEffects(id, _musicEditEffects)  (erst hier persistiert)
+// Abbrechen/Schließen des Musik-Editors verwirft den Draft; der echte Track bleibt unberührt.
+
+/** Dialog-Rahmen für den Musik-Kontext: keine Vorschau/Export (gehören zur Sound-Pipeline), Hinweis-Text. */
+function _applyMusicFxModalChrome(on) {
+  const prev = document.getElementById('btnPreviewFx');
+  if (prev) prev.style.display = on ? 'none' : '';
+  const hint = document.getElementById('fxModalFooterHint');
+  if (hint) hint.textContent = on
+    ? 'Änderungen wirken erst nach dem Speichern des Musikstücks.'
+    : 'Änderungen wirken sofort auf die Vorschau.';
+  const note = document.getElementById('fxMusicNote');
+  if (note) note.hidden = !on;
+}
+
+/** Öffnet den Effekt-Dialog für den Draft des gerade bearbeiteten Musikstücks. */
+export function openMusicFxEditor() {
+  if (!_musicEditId || !_musicEditEffects) return;
+  stopEffectPreview();
+  _setFxEditContext({ kind: 'music', id: _musicEditId });
+  _setModalContext('music');            // blendet Sound-/Ambient-spezifische Bereiche (z. B. Export) aus
+  writeEffectsToUI(_musicEditEffects);  // DOM ← Draft (inkl. Preset-Auswahl und Master-Schalter)
+  _applyMusicFxModalChrome(true);
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('soundFxModal')).show();
+}
+
+/**
+ * Beim Schließen des Effekt-Dialogs (hide.bs.modal — deckt alle Schließwege ab) im Musik-Kontext:
+ * Formularstand → Draft, Karte aktualisieren, Dialog-Rahmen und Kontext zurücksetzen. Außerhalb des
+ * Musik-Kontexts ein No-op (Sound/Ambient verwalten ihren Draft weiterhin selbst über das DOM).
+ */
+export function commitMusicFxDraft() {
+  if (_fxEditContext.kind !== 'music') return;
+  if (_musicEditId && _musicEditEffects) _musicEditEffects = readEffectsFromUI();
+  _syncMusicFxCard();
+  _applyMusicFxModalChrome(false);
+  _setFxEditContext({ kind: 'sound', id: null });
+  _setModalContext('sound');
 }
 
 /** Schalter „Audio-Effekte ein/aus“ — ändert nur effects.enabled, Parameter/Preset bleiben erhalten. */
@@ -74,7 +131,8 @@ export function openMusicTrackModal(trackId) {
   if (!t) return;
   _musicEditId = trackId;
   document.getElementById('musicTrackModalTitle').textContent = 'MUSIKSTÜCK BEARBEITEN';
-  _musicEditEffects = t.effects ? { ...t.effects } : defaultEffects();
+  // Tiefe Kopie (vorher flach: `{ ...t.effects }` teilte alle verschachtelten Module mit dem echten Track).
+  _musicEditEffects = t.effects ? _cloneEffects(t.effects) : defaultEffects();
 
   document.getElementById('musicEditName').value   = t.name || '';
   document.getElementById('musicEditArtist').value = t.artist || '';
@@ -84,7 +142,6 @@ export function openMusicTrackModal(trackId) {
 
   buildIconGrid('musicIconGrid', t.icon || '🎵');
   buildColorOpts('musicClrOpts', t.color || 'none');
-  renderPresetOptions(document.getElementById('musicEditFxPreset'), _musicEditEffects.preset || '');
   _syncMusicFxCard();
   syncMusicAppearancePreview();
 

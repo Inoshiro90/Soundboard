@@ -7,10 +7,12 @@ import { toast } from '../notifications.js';
 import { exportAmbientProfile, exportAmbientTrack } from '../storage/import-export.js';
 import {
   ensureAmbientState, addAmbientFiles, removeAmbientTrack, renameAmbientTrack,
-  setAmbientTrackVolume, setAmbientMasterVolume, switchAmbientProfile
+  setAmbientTrackVolume, setAmbientMasterVolume, switchAmbientProfile,
+  reorderAmbientTrack, moveAmbientTrack
 } from './ambient-model.js';
 import { stopAllAmbient, toggleAmbientPlay } from './ambient-playback.js';
 import { renderAmbientProfileTabs, renderAmbientPanel, setViewMode } from './ambient-render.js';
+import { setupTouchRowReorder, isTouchReorderActive } from '../ui/row-reorder.js';
 
 // ─── UI: EVENTS ──────────────────────────────────────────────
 
@@ -82,6 +84,8 @@ export function registerAmbientEvents() {
 
       if      (act === 'play')   toggleAmbientPlay(id);
       else if (act === 'icon')   document.dispatchEvent(new CustomEvent('ambient:pickTrackIcon', { detail: { id } }));
+      else if (act === 'up')     moveAmbientTrack(id, -1);
+      else if (act === 'down')   moveAmbientTrack(id, +1);
       else if (act === 'fx')     document.dispatchEvent(new CustomEvent('ambient:editEffects', { detail: { id } }));
       else if (act === 'export') exportAmbientTrack(id);
       else if (act === 'remove') { if (confirm('Diesen Ambient-Sound entfernen?')) removeAmbientTrack(id); }
@@ -102,6 +106,50 @@ export function registerAmbientEvents() {
       const row = e.target.closest('.ambient-row'); if (!row) return;
       const id  = row.dataset.id;
       if (e.target.dataset.act === 'name') renameAmbientTrack(id, e.target.value);
+    });
+
+    // ── Drag&Drop-Umsortierung (Positionstausch) — gleiches Muster wie die Musikliste ──
+    // Nur der Griff (.ambient-row__handle) ist draggable: dragstart kann daher nie von Slider,
+    // Namensfeld oder Buttons ausgehen. Zustände (.is-dragging/.is-drag-over) werden bei dragend,
+    // drop UND beim Re-Render der Liste entfernt — es bleiben keine Klassen hängen.
+    const clearDragMarks = () => list.querySelectorAll('.ambient-row.is-dragging, .ambient-row.is-drag-over')
+      .forEach(x => x.classList.remove('is-dragging', 'is-drag-over'));
+    list.addEventListener('dragstart', e => {
+      const handle = e.target.closest?.('.ambient-row__handle'); if (!handle) return;
+      // Läuft gerade ein Touch-Drag (Long-Press), keine parallele native Operation zulassen.
+      if (isTouchReorderActive()) { e.preventDefault(); return; }
+      const row = handle.closest('.ambient-row'); if (!row) return;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.id);   // ohne setData liefern manche Browser kein drop
+      e.dataTransfer.setDragImage(row, 12, 12);
+      row.classList.add('is-dragging');
+    });
+    list.addEventListener('dragend', clearDragMarks);
+    list.addEventListener('dragover', e => {
+      const row = e.target.closest?.('.ambient-row'); if (!row) return;
+      // Nur Umsortier-Drags annehmen (keine fremden Datei-/Text-Drags auf die Zeilen).
+      if (!list.querySelector('.ambient-row.is-dragging')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (!row.classList.contains('is-dragging')) row.classList.add('is-drag-over');
+    });
+    list.addEventListener('dragleave', e => {
+      const row = e.target.closest?.('.ambient-row');
+      if (row && !row.contains(e.relatedTarget)) row.classList.remove('is-drag-over');
+    });
+    list.addEventListener('drop', e => {
+      const row = e.target.closest?.('.ambient-row'); if (!row) return;
+      e.preventDefault();
+      const srcId = e.dataTransfer.getData('text/plain');
+      clearDragMarks();
+      if (srcId && srcId !== row.dataset.id) reorderAmbientTrack(srcId, row.dataset.id);
+    });
+
+    // Touch: Long-Press am Griff startet das Ziehen (vorhandene Long-Press-Infrastruktur aus
+    // ui/drag-drop.js); Maus/Stift bleiben beim nativen Drag&Drop oben.
+    setupTouchRowReorder({
+      list, rowSelector: '.ambient-row', handleSelector: '.ambient-row__handle',
+      onSwap: reorderAmbientTrack
     });
   }
 

@@ -202,6 +202,16 @@
   gap: var(--space-1);
   flex-shrink: 0;
 }
+/* Lucide „volume-2" vor dem Regler (iconSvg('volume-2'), wie .ambient-row__vol in ambient.css).
+   Rein dekorativ: kein Pointer-Target, schrumpft nicht, verschiebt weder Slider noch Zahlenfeld. */
+.music-row__vol-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.music-row__vol-icon .ui-icon { width: 1.1em; height: 1.1em; }
 .music-row__vol {
   width: calc(var(--grid-row-h) * 2);
   max-width: 100%;

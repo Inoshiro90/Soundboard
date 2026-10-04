@@ -158,6 +158,20 @@ function _reconnectSlotFx(rec, effects) {
   rec.fxChain = chain;
 }
 
+/**
+ * Nach „Musikstück speichern": Effektkette eines GERADE geladenen Tracks (aktiver oder auslaufender Slot)
+ * sofort auf die gespeicherten Effekte umstellen, statt erst beim nächsten Laden. Berührt weder
+ * Gain-Automation noch Position/Pause-Zustand — nur die Verbindung Source → [Kette] → Gain wird neu
+ * aufgebaut (_reconnectSlotFx(), s.o.). Während eines Crossfades unverändert (keine Eingriffe in die Rampen).
+ */
+export function applyMusicTrackEffectsLive(trackId, effects) {
+  if (!_players || _crossfading) return;
+  ['A', 'B'].forEach(slot => {
+    const rec = _players[slot];
+    if (rec?.trackId === trackId && rec.source) _reconnectSlotFx(rec, effects);
+  });
+}
+
 async function _loadIntoSlot(slot, track) {
   const players = _ensurePlayers();
   const rec = players[slot];

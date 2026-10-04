@@ -30,6 +30,12 @@
             </svg></button>
         </div>
         <div class="modal-body sm-body">
+          <!-- Nur im Musik-Kontext sichtbar (openMusicFxEditor() in js/dialogs/music-modal.js): diese Module
+               stammen aus der Sound-Pipeline und greifen in der Musik-Wiedergabe (HTML-Audio-Kette) nicht. -->
+          <p class="u-text-muted u-text-badge u-mb-2" id="fxMusicNote" hidden>
+            Hinweis: Pitch-Shift, Hüllkurve und Spektrum-Analyzer werden gespeichert, wirken bei
+            Musikstücken aber derzeit nicht auf die Wiedergabe.
+          </p>
           <div class="fx-row">
             <label class="fx-label" for="fxPreset">Preset</label>
             <select class="form-select form-select-sm fx-preset-select" id="fxPreset">
@@ -764,7 +770,7 @@
           </div><!-- /fxDisclosureGroup -->
         </div>
         <div class="modal-footer u-flex-between">
-          <span class="u-text-muted u-text-badge">Änderungen wirken sofort auf die Vorschau.</span>
+          <span class="u-text-muted u-text-badge" id="fxModalFooterHint">Änderungen wirken sofort auf die Vorschau.</span>
           <div class="u-flex u-gap-2">
             <button type="button" class="btn btn--sm" id="btnPreviewFx" aria-label="Vorschau abspielen" title="Vorschau abspielen" aria-pressed="false">
               <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-play u-text-accent" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg><span class="btn__label">Vorschau</span>

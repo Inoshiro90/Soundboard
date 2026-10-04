@@ -37,7 +37,7 @@ import { openAmbientProfileModal } from '../dialogs/ambient-modal.js';
 import { openMacroModal } from '../dialogs/macro-modal.js';
 import { openSoundModal } from '../dialogs/sound-modal.js';
 import { _fxEditContext, _setAmbVariantMode, _syncPlaybackSettingsIndicator, _markActivePlaybackSummary, _backupAudioKeyOnce, _discardAudioRollback } from '../dialogs/sound-modal.js';
-import { _musicEditId, _musicEditEffects, _setMusicEditEffects, _editMusicProfileId, _syncMusicFxCard, setMusicEditFxEnabled, syncMusicAppearancePreview } from '../dialogs/music-modal.js';
+import { _musicEditId, _musicEditEffects, _setMusicEditEffects, _editMusicProfileId, _syncMusicFxCard, setMusicEditFxEnabled, syncMusicAppearancePreview, openMusicFxEditor, commitMusicFxDraft } from '../dialogs/music-modal.js';
 import { _editAmbientProfileId, _editAmbientTrackId } from '../dialogs/ambient-modal.js';
 import { switchProfile, openSoundFxToolbar, openAmbientFxToolbar, openMusicFxToolbar } from './register-toolbar-events.js';
 import { _setSoundDraftGuard, _soundDraftBaseline, _snapshotSoundDraft } from './utils-modal.js';
@@ -183,34 +183,18 @@ export function registerTileEvents() {
   document.getElementById('musicEditVol')?.addEventListener('input', function () {
     document.getElementById('musicEditVolLbl').textContent = Math.round(parseFloat(this.value) * 100) + '%';
   });
-  // Preset-Auswahl staged in _musicEditEffects — beim Anwenden eines Presets wird
-  // applyPresetEffects() genutzt (vollständige, normalisierte Effektkonfiguration statt
-  // Merge in ein bestehendes Objekt), analog zum #fxPreset-Handler des Sound-Editors.
-  document.getElementById('musicEditFxPreset')?.addEventListener('change', function() {
-    const val = this.value;
-    if (!val) {
-      // Parameter-Reset, Master-Schalter bleibt wie vom Nutzer gesetzt — gleiche
-      // Regel wie resetEffectParametersPreserveMasterEnabled() beim Sound-Editor.
-      const reset = defaultEffects();
-      reset.enabled = !!_musicEditEffects?.enabled;
-      _setMusicEditEffects(reset);
-      _syncMusicFxCard();
-      return;
-    }
-    const preset = getPresetById(val);
-    if (!preset) return;
-    const merged = applyPresetEffects(preset.effects);
-    merged.enabled = true;
-    merged.preset  = val;
-    _setMusicEditEffects(merged);
-    _syncMusicFxCard();
-  });
   // Audio-Effekte: Ein/Aus-Schalter + eigene Dialogbox (wie #fxEnabled/#btnOpenFxModal)
   document.getElementById('musicEditFxEnabled')?.addEventListener('change', function() {
     setMusicEditFxEnabled(this.checked);
   });
-  document.getElementById('btnOpenMusicTrackFxModal')?.addEventListener('click', () => {
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('musicTrackFxModal')).show();
+  // „Bearbeiten“ öffnet den vollständigen, geteilten #soundFxModal im Musik-Kontext
+  // (Preset-Auswahl, alle Effektgruppen, eigene Presets — dieselben Handler wie bei Sound/Ambient
+  // aus register-effects-events.js/register-preset-events.js). Der Formularstand wandert beim
+  // Schließen NUR in den Draft _musicEditEffects (commitMusicFxDraft); persistiert wird erst
+  // über #btnMusicEditSave.
+  document.getElementById('btnOpenMusicTrackFxModal')?.addEventListener('click', openMusicFxEditor);
+  document.getElementById('soundFxModal')?.addEventListener('hide.bs.modal', e => {
+    if (e.target === e.currentTarget) commitMusicFxDraft();
   });
   // Darstellung & Organisation: Einstiegskarte -> Dialogbox, Vorschau live nachziehen
   document.getElementById('btnOpenMusicAppearanceModal')?.addEventListener('click', () => {

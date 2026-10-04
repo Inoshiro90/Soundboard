@@ -578,3 +578,61 @@
 		gap: var(--space-2);
 	}
 }
+
+/* ─── UMSORTIEREN: Griff, ↑/↓, Drag-Feedback ──────────────────────────────────────────
+   Muster wie .music-row__handle / .music-row__reorder (css/music.css). Nur der Griff ist ziehbar;
+   Zeile, Slider und Buttons starten nie ein Drag. */
+.ambient-row__handle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	/* Touch-Zielgröße: mind. die Höhe der übrigen Zeilen-Buttons */
+	min-width: 24px;
+	min-height: var(--h-btn);
+	color: var(--text-muted);
+	cursor: grab;
+	border-radius: var(--radius-micro);
+	/* Long-Press + Ziehen am Griff darf nicht scrollen, markieren oder das Mobile-Kontextmenü öffnen */
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+}
+.ambient-row__handle:hover { color: var(--color-accent); }
+.ambient-row__handle:active { cursor: grabbing; }
+.ambient-row__handle .ui-icon { width: 1.1em; height: 1.1em; pointer-events: none; }
+
+.ambient-row__reorder {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+	height: var(--h-btn);
+	justify-content: center;
+}
+.ambient-row__reorder-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: none;
+	border: 0;
+	padding: 0 var(--space-1);
+	line-height: 1;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.ambient-row__reorder-btn:hover { color: var(--color-accent); }
+.ambient-row__reorder-btn .ui-icon { width: 1em; height: 1em; }
+@media (max-width: 767px) {
+	/* Touch: größere Treffer, ↑/↓ nebeneinander (wie .music-row__reorder) */
+	.ambient-row__handle { min-width: 32px; }
+	.ambient-row__reorder { flex-direction: row; height: auto; }
+	.ambient-row__reorder-btn { min-width: 32px; min-height: var(--h-btn); }
+}
+
+.ambient-row.is-dragging { opacity: 0.4; }
+.ambient-row.is-drag-over {
+	/* outline statt border/box-shadow: kollidiert nicht mit .is-playing/.is-waiting/--accent (wie .music-row) */
+	outline: 2px dashed var(--color-accent);
+	outline-offset: -2px;
+}
