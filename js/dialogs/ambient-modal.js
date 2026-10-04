@@ -16,7 +16,8 @@ import { _setModalContext, _armSoundDraftGuard } from '../events/utils-modal.js'
 // Weiche Kopplung an dialogs/sound-modal.js: der Effekt-Editor-Dialog wird
 // zwischen Sound-Kacheln und Ambient-Tracks geteilt (identisches FX-
 // Akkordeon), daher mehrere Importe von dort.
-import { writeEffectsToUI, writePlaybackToUI, _syncAmbientLoopIntervalExclusivity, _resetAudioRollback, _syncAppearancePreview, _preloadEditBuffers, _setFxEditContext, _ambVariantMode, _setAmbVariantMode } from '../dialogs/sound-modal.js';
+import { writeEffectsToUI, writePlaybackToUI, _syncAmbientLoopIntervalExclusivity, _resetAudioRollback, _syncAppearancePreview, _preloadEditBuffers, _setFxEditContext, _ambVariantMode, _setAmbVariantMode, _writeAmbientVolumeToUI } from '../dialogs/sound-modal.js';
+import { getAmbientVolumeConfig } from '../ambient/ambient-volume.js';
 
 export function openAmbientEffectsModal(trackId) {
   const t = findAmbientTrack(trackId);
@@ -57,6 +58,9 @@ export function openAmbientEffectsModal(trackId) {
   set('ambFadeInCurve',  t.fadeInCurve  || 'linear');
   set('ambFadeOutCurve', t.fadeOutCurve || 'linear');
   _syncAmbientLoopIntervalExclusivity();
+  // Lautstärkevarianz (Modus + Min/Max in %). getAmbientVolumeConfig() liefert auch für ältere/
+  // importierte Tracks ohne die Felder gültige Werte, ohne den Track zu verändern.
+  _writeAmbientVolumeToUI(getAmbientVolumeConfig(t));
 
   _setAmbVariantMode(t.variantMode === 'rotate' ? 'rotate' : 'random');
   document.getElementById('ambVariantRandom')?.classList.toggle('is-active', _ambVariantMode === 'random');

@@ -19,9 +19,11 @@ import { buildNoiseGenerator } from '../generators.js';
 // geschriebene Objekte sind (dasselbe Muster wie in audio/playback.js).
 import { _find } from './ambient-model.js';
 import { _updateRowPlayState } from './ambient-render.js';
+import { getAmbientVolumeConfig, pickRandomVolume, VOLUME_MODE_VARYING } from './ambient-volume.js';
 
 // Runtime-only playback state — never persisted.
-// trackId → { kind: 'loop' | 'interval', src, gain, timerId }
+// trackId → { kind: 'loop' | 'interval' | 'chain' | 'generator', src, gain, timerId, clipVol }
+// clipVol: Basis-Lautstärke des AKTUELLEN Clips bei Lautstärkevarianz (null/undefined bei 'constant').
 // For 'interval' tracks, src/gain are null while waiting between plays —
 // the track still counts as "playing" (scheduled) the whole time.
 // Exportiert: ambient-model.js liest/schreibt _active direkt für
@@ -34,9 +36,34 @@ export const _active = new Map();
 // persistiert — reiner Laufzeitzustand, analog zu _active.
 let _duckFactor = 1.0;
 
-/** Zentrale Ziel-Gain-Formel für einen Ambient-Track (Lautstärke × Master × Duck). */
-export function _ambientTargetGain(t) {
-  return (t.vol ?? 0.7) * (APP.ambient.masterVol ?? 1) * _duckFactor;
+/**
+ * Würfelt die Basis-Lautstärke für einen NEU startenden Clip: bei 'varying' ein Zufallswert
+ * in [volumeMin, volumeMax], sonst null. Wird genau einmal pro tatsächlichem Abspielen
+ * aufgerufen (Start, nächster Loop-Ketten-Clip, nächster Zeitversetzt-Durchlauf) und im
+ * Laufzeit-Record (rec.clipVol) abgelegt — nie pro Frame oder bei Live-Rampen.
+ */
+function _rollClipVolume(t) {
+  const c = getAmbientVolumeConfig(t);
+  return c.mode === VOLUME_MODE_VARYING ? pickRandomVolume(c.min, c.max) : null;
+}
+
+/**
+ * Zentrale Ziel-Gain-Formel für einen Ambient-Track: Basis-Lautstärke × Master × Duck.
+ * Basis = t.vol bei 'constant' (bisheriges Verhalten, unverändert) bzw. die für den
+ * aktuellen Clip gewürfelte Lautstärke (rec.clipVol) bei 'varying'. Fehlt sie noch (z. B.
+ * Moduswechsel während der Wiedergabe), wird sie einmalig gewürfelt und im Record gehalten,
+ * damit wiederholte Rampen (Duck/Master/Lautstärke) denselben Wert verwenden.
+ */
+export function _ambientTargetGain(t, rec) {
+  const c = getAmbientVolumeConfig(t);
+  let base;
+  if (c.mode === VOLUME_MODE_VARYING) {
+    if (rec && typeof rec.clipVol !== 'number') rec.clipVol = pickRandomVolume(c.min, c.max);
+    base = rec ? rec.clipVol : (c.min + c.max) / 2;
+  } else {
+    base = t.vol ?? 0.7;
+  }
+  return base * (APP.ambient.masterVol ?? 1) * _duckFactor;
 }
 
 /**
@@ -56,7 +83,7 @@ export function duckAmbient(factor, timeConstantSec) {
     if (!rec.gain) return; // interval/chain-Track gerade zwischen zwei Clips — nichts zu rampen
     const t = _find(id); if (!t) return;
     rec.gain.gain.cancelScheduledValues(ctx.currentTime);
-    rec.gain.gain.setTargetAtTime(_ambientTargetGain(t), ctx.currentTime, timeConstantSec);
+    rec.gain.gain.setTargetAtTime(_ambientTargetGain(t, rec), ctx.currentTime, timeConstantSec);
   });
 }
 
@@ -160,7 +187,9 @@ async function _playGeneratorTrack(trackId) {
   const t = _find(trackId); if (!t) { node.disconnect(); _active.delete(trackId); return; }
 
   const gainNode = ctx.createGain();
-  const target  = _ambientTargetGain(t);
+  // Generator kennen keine Clips — ein „Abspielen" = ein Start, dort wird einmal gewürfelt.
+  rec.clipVol   = _rollClipVolume(t);
+  const target  = _ambientTargetGain(t, rec);
   const fadeIn  = Math.max(0, t.fadeIn || 0);
   const now     = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
@@ -208,7 +237,11 @@ async function _startLoopPlayback(trackId) {
   if (_active.has(trackId)) return; // started elsewhere while decoding
 
   const gainNode = ctx.createGain();
-  const target   = _ambientTargetGain(t);
+  // Record vor der Gain-Berechnung anlegen, damit der gewürfelte Clip-Wert darin liegt;
+  // registriert (_active.set) wird er erst unten, unverändert nach dem Re-Check oben.
+  // Einzeldatei im Loop = ein einziger Clip → ein Zufallswert bis zum Stopp.
+  const rec = { kind: 'loop', src: null, gain: null, timerId: null, clipVol: _rollClipVolume(t) };
+  const target   = _ambientTargetGain(t, rec);
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
@@ -220,7 +253,8 @@ async function _startLoopPlayback(trackId) {
   src.loop   = !!t.loop;
   _connectWithFx(ctx, src, t.effects, gainNode);
 
-  const rec = { kind: 'loop', src, gain: gainNode, timerId: null };
+  rec.src  = src;
+  rec.gain = gainNode;
   _active.set(trackId, rec);
 
   src.onended = () => {
@@ -278,7 +312,12 @@ async function _playChainCycle(trackId) {
   const dur = te - ts;
 
   const gainNode = ctx.createGain();
-  const target    = _ambientTargetGain(t);
+  // Neuer Clip der Kette → neuer Zufallswert. Bewusst erst NACH dem asynchronen Decode und
+  // direkt vor dem Austausch von rec.gain: bis dahin gehört rec.clipVol noch zum laufenden
+  // Vorgänger-Clip (Duck-/Master-Rampen dürfen ihn nicht umspringen lassen). Beim Crossfade
+  // behält die auslaufende Gain-Node ihren eigenen Pegel (prevGain), nur die neue erhält den neuen Wert.
+  rec.clipVol     = _rollClipVolume(t);
+  const target    = _ambientTargetGain(t, rec);
   const now       = ctx.currentTime;
 
   // Die noch laufende VORHERIGE Variante (falls vorhanden) — vor dem
@@ -377,7 +416,9 @@ async function _playIntervalCycle(trackId) {
   if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); _active.delete(trackId); _updateRowPlayState(trackId, false); return; }
 
   const gainNode = ctx.createGain();
-  const target   = _ambientTargetGain(t);
+  // Jeder Zeitversetzt-Durchlauf ist ein neuer Clip → neuer Zufallswert.
+  rec.clipVol    = _rollClipVolume(t);
+  const target   = _ambientTargetGain(t, rec);
   const fadeIn   = Math.max(0, t.fadeIn || 0);
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);

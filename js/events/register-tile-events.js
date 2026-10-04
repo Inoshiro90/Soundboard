@@ -10,7 +10,7 @@ import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
 import { stopAll } from '../audio/playback.js';
-import { stopEffectPreview } from '../audio/preview.js';
+import { bindPreviewModalLifecycle } from '../audio/preview.js';
 import { defaultEffects } from '../audio/effect-graph.js';
 import { applyPresetEffects, getPresetById } from '../presets.js';
 import { audioBufferToWavBlob } from '../export.js';
@@ -66,7 +66,7 @@ export function registerTileEvents() {
   // verhindern — die Preview soll aber so oder so sofort stoppen, damit nie
   // Audio über eine ggf. blockierende Rückfrage hinweg weiterläuft. Einmalig
   // hier registriert (registerEvents() läuft nur einmal, s. main.js).
-  document.getElementById('soundModal')?.addEventListener('hide.bs.modal', () => stopEffectPreview());
+  bindPreviewModalLifecycle(document.getElementById('soundModal'));
 
   // Theme toggle
   document.getElementById('btnTheme')?.addEventListener('click', () => {

@@ -18,6 +18,7 @@ import { renderSlotList } from '../ui/slot-editor.js';
 import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import { setDisclosureActive } from '../ui/disclosure.js';
+import { normalizeVolumeRange, VOLUME_MODE_VARYING, VOLUME_MODE_CONSTANT } from '../ambient/ambient-volume.js';
 // Zirkulärer Import (utils-modal.js importiert umgekehrt readEffectsFromUI/
 // readPlaybackFromUI/_commitAudioRollback aus diesem Modul) — unkritisch,
 // s. Kommentar in utils-modal.js.
@@ -436,13 +437,27 @@ export function _markActivePlaybackSummary() {
     if (pb.crossfade.enabled)  chips.push('Crossfade');
     if (loopOn)                chips.push('Loop');
     if (intervalOn)            chips.push('Zeitversetzt');
+    const volVarying = document.getElementById('ambVolumeMode')?.value === VOLUME_MODE_VARYING;
+    if (volVarying)            chips.push('Lautstärke variiert');
     chips.push(_ambVariantMode === 'rotate' ? 'Rotierend' : 'Zufällig');
+
+    // Zusammenfassung auch bei zugeklappten Sektionen: gleicher Punkt-Indikator wie bei den
+    // Effekt-Sektionen (.has-active-setting, ui/disclosure.js) — spiegelt die Chips oben.
+    // Bei „Bei mehreren Dateien" ist immer genau eine Option aktiv, daher dort nur die
+    // abweichende (Rotierend).
+    setDisclosureActive('ambSecFadeInToggle',   fadeInOn);
+    setDisclosureActive('ambSecFadeOutToggle',  fadeOutOn);
+    setDisclosureActive('ambSecLoopToggle',     loopOn || intervalOn);
+    setDisclosureActive('ambSecVariantsToggle', _ambVariantMode === 'rotate');
+    setDisclosureActive('ambSecVolumeToggle',   volVarying);
+    setDisclosureActive('pbSecCrossfadeToggle', pb.crossfade.enabled);
   } else {
     const random = !!(document.getElementById('eRnd')?.checked);
     if (pb.fadeIn.enabled)    chips.push('Fade-In');
     if (pb.fadeOut.enabled)   chips.push('Fade-Out');
     if (pb.crossfade.enabled) chips.push('Crossfade');
     if (random)                chips.push('Zufall');
+    setDisclosureActive('pbSecCrossfadeToggle', pb.crossfade.enabled);
   }
 
   const summaryEl = document.getElementById('smPlaybackActiveSummary');
@@ -483,6 +498,73 @@ export function _syncAmbientLoopIntervalExclusivity() {
     mmRow.querySelectorAll('input').forEach(el => { el.disabled = !on; });
   }
   _markActivePlaybackSummary();
+}
+
+/**
+ * Ambient-Lautstärkevarianz: Konstant ⇄ Variierend — genau eine Option ist aktiv (wie
+ * Loop/Zeitversetzt: .is-active + aria-pressed). Zustand liegt im versteckten Feld
+ * #ambVolumeMode; Min/Max werden bei „Konstant" ausgegraut und deaktiviert. Reine
+ * Editor-Draft-Logik — gespeichert wird erst per „Speichern".
+ */
+export function _syncAmbientVolumeVariance() {
+  const varying = document.getElementById('ambVolumeMode')?.value === VOLUME_MODE_VARYING;
+  [['ambVolConstant', !varying], ['ambVolVarying', varying]].forEach(([id, on]) => {
+    const btn = document.getElementById(id);
+    btn?.classList.toggle('is-active', on);
+    btn?.setAttribute('aria-pressed', String(on));
+  });
+  const row = document.getElementById('ambVolumeMinMaxRow');
+  if (row) {
+    row.style.opacity = varying ? '1' : '0.45';
+    row.querySelectorAll('input').forEach(el => { el.disabled = !varying; });
+  }
+  _markActivePlaybackSummary();
+}
+
+/** Setzt den Modus (Konstant/Variierend) im Editor-Draft und aktualisiert die Darstellung. */
+export function _setAmbientVolumeMode(mode) {
+  const el = document.getElementById('ambVolumeMode');
+  if (el) el.value = mode === VOLUME_MODE_VARYING ? VOLUME_MODE_VARYING : VOLUME_MODE_CONSTANT;
+  _syncAmbientVolumeVariance();
+}
+
+/**
+ * Korrigiert die Min/Max-Eingaben (Prozent): auf 0–100 begrenzen, ungültige Eingaben
+ * (leer/NaN) auf den zuletzt gültigen Wert zurücksetzen, vertauschte Werte tauschen.
+ * Läuft bei `change` und vor dem Lesen/Speichern.
+ */
+export function _correctAmbientVolumeInputs() {
+  const minEl = document.getElementById('ambVolumeMin');
+  const maxEl = document.getElementById('ambVolumeMax');
+  if (!minEl || !maxEl) return;
+  const last = el => parseFloat(el.dataset.last) / 100;
+  const r = normalizeVolumeRange(
+    parseFloat(minEl.value) / 100, parseFloat(maxEl.value) / 100,
+    { min: last(minEl), max: last(maxEl) }
+  );
+  minEl.value = Math.round(r.min * 100);
+  maxEl.value = Math.round(r.max * 100);
+  minEl.dataset.last = minEl.value;
+  maxEl.dataset.last = maxEl.value;
+}
+
+/** Befüllt die Lautstärkevarianz-Felder aus einer normalisierten Konfiguration ({mode,min,max}, 0…1). */
+export function _writeAmbientVolumeToUI(cfg) {
+  const minEl = document.getElementById('ambVolumeMin');
+  const maxEl = document.getElementById('ambVolumeMax');
+  if (minEl) { minEl.value = Math.round(cfg.min * 100); minEl.dataset.last = minEl.value; }
+  if (maxEl) { maxEl.value = Math.round(cfg.max * 100); maxEl.dataset.last = maxEl.value; }
+  _setAmbientVolumeMode(cfg.mode);
+}
+
+/** Liest die (korrigierten) Lautstärkevarianz-Felder: {mode, min, max} im 0…1-Maßstab. */
+export function _readAmbientVolumeFromUI() {
+  _correctAmbientVolumeInputs();
+  return {
+    mode: document.getElementById('ambVolumeMode')?.value === VOLUME_MODE_VARYING ? VOLUME_MODE_VARYING : VOLUME_MODE_CONSTANT,
+    min:  parseFloat(document.getElementById('ambVolumeMin')?.value) / 100,
+    max:  parseFloat(document.getElementById('ambVolumeMax')?.value) / 100
+  };
 }
 
 /**

@@ -7,6 +7,7 @@
 import { uid }                     from '../utils.js';
 import { defaultEffects }          from '../audio/effect-graph.js';
 import { mkAmbientProfile, mkMusicProfile } from './factories.js';
+import { normalizeAmbientVolumeFields } from '../ambient/ambient-volume.js';
 
 // ─── AMBIENT NORMALISATION ────────────────────────────────────
 // Accepts either the current scene-profile shape ({ profiles:[{tracks}] })
@@ -37,6 +38,9 @@ function _normalizeAmbientTrack(t) {
   // erhalten automatisch 'none' (keine Akzentfarbe).
   if (!t.color) t.color = 'none';
   if (typeof t.vol !== 'number')  t.vol  = 0.7;
+  // Lautstärkevarianz: ältere Tracks ohne diese Felder bleiben 'constant' mit unverändertem `vol`;
+  // volumeMin/volumeMax werden daraus abgeleitet (s. ambient-volume.js).
+  normalizeAmbientVolumeFields(t);
   if (typeof t.loop !== 'boolean') t.loop = true;
   if (typeof t.fadeIn !== 'number')  t.fadeIn  = 2;
   if (typeof t.fadeOut !== 'number') t.fadeOut = 2;

@@ -74,6 +74,9 @@ export function _snapshotSoundDraft() {
       ambFadeOut:      val('ambFadeOut'),
       ambFadeInCurve:  val('ambFadeInCurve'),
       ambFadeOutCurve: val('ambFadeOutCurve'),
+      ambVolumeMode:   val('ambVolumeMode'),
+      ambVolumeMin:    val('ambVolumeMin'),
+      ambVolumeMax:    val('ambVolumeMax'),
       crossfade:       readPlaybackFromUI().crossfade,
       variantMode:     _ambVariantMode
     });

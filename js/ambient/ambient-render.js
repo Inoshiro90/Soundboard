@@ -8,6 +8,7 @@ import { iconHtmlOr, iconGlyph } from '../utils.js';
 import { PENCIL_ICON_SVG, _applyTabAccent } from '../ui/tabs.js';
 import { isAmbientPlaying, isAmbientWaiting, _active } from './ambient-playback.js';
 import { _persist, ensureAmbientState } from './ambient-model.js';
+import { getAmbientVolumeConfig, VOLUME_MODE_VARYING } from './ambient-volume.js';
 
 // ─── UI: SCENE TABS ──────────────────────────────────────────
 
@@ -41,9 +42,24 @@ export function renderAmbientProfileTabs() {
 
 // ─── UI: TRACK LIST RENDERING ────────────────────────────────
 
+/**
+ * Einzige Quelle für Beschriftung + Icon des Play-Buttons — wird sowohl vom initialen
+ * Rendern (_rowTemplate) als auch vom Laufzeit-Update (_updateRowPlayState) verwendet,
+ * damit beide Wege nicht auseinanderlaufen. „Spielend" und „wartet…" (Zeitversetzt)
+ * zählen beide als aktiv: Stop-Funktion, Square-Icon.
+ */
+function _playBtnState(active) {
+  return active ? { label: 'Stoppen', icon: 'square' } : { label: 'Abspielen', icon: 'play' };
+}
+
 function _rowTemplate(t) {
   const playing = isAmbientPlaying(t.id);
   const waiting = playing && isAmbientWaiting(t.id);
+  const playBtn = _playBtnState(playing);
+  // Lautstärkevarianz: Slider zeigt dann den Bereich statt eines Einzelwerts und ist inaktiv
+  // (der feste Wert `vol` wirkt in diesem Modus nicht).
+  const vc      = getAmbientVolumeConfig(t);
+  const varying = vc.mode === VOLUME_MODE_VARYING;
   const isGenerator = t.sourceType === 'generator';
   const files   = t.files || [];
   // Noise-Generator-Tracks haben keine Dateien — ohne diese Sonderbehandlung wäre
@@ -63,8 +79,8 @@ function _rowTemplate(t) {
   return `
   <div class="ambient-row${playing ? ' is-playing' : ''}${waiting ? ' is-waiting' : ''}${hasAccent ? ' ambient-row--accent' : ''}" data-id="${t.id}"${accentAttr}>
     <button class="ambient-row__play" data-act="play" ${loaded ? '' : 'disabled'}
-      title="${playing ? 'Stoppen' : 'Abspielen'}" aria-label="${playing ? 'Stoppen' : 'Abspielen'}">
-      ${iconSvg(playing ? 'square' : 'play')}
+      title="${playBtn.label}" aria-label="${playBtn.label}">
+      ${iconSvg(playBtn.icon)}
     </button>
     <button class="ambient-row__icon" data-act="icon" title="Icon auswählen" aria-label="Icon auswählen">${iconHtmlOr(t.icon, '🌫️', 'ambient-row__icon-img')}</button>
     <input type="text" class="ambient-row__name" data-act="name" value="${_esc(t.name)}" maxlength="30"
@@ -84,8 +100,8 @@ function _rowTemplate(t) {
         <div class="ambient-row__vol">
       ${iconSvg('volume-2')}
       <input type="range" class="slider ambient-row__vol-slider" data-act="vol" min="0" max="1" step=".01"
-        value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}">
-      <span class="ambient-row__vol-pct">${Math.round(t.vol * 100)}%</span>
+        value="${t.vol}" aria-label="Lautstärke ${_esc(t.name)}"${varying ? ' disabled title="Variierende Lautstärke — Bereich unter Bearbeiten → Wiedergabe &amp; Verhalten"' : ''}>
+      <span class="ambient-row__vol-pct${varying ? ' ambient-row__vol-pct--range' : ''}">${varying ? `${Math.round(vc.min * 100)}–${Math.round(vc.max * 100)}` : Math.round(t.vol * 100)}%</span>
     </div>
   </div>`;
 }
@@ -120,9 +136,11 @@ export function _updateRowPlayState(trackId, playing) {
     row.classList.toggle('is-waiting', waiting);
     const btn = row.querySelector('[data-act="play"]');
     if (btn) {
-      btn.title = playing ? 'Stoppen' : 'Abspielen';
-      btn.setAttribute('aria-label', btn.title);
-      setIcon(btn.querySelector('.ambient-row__opt'), playing ? 'square' : 'play');
+      const s = _playBtnState(playing);
+      btn.title = s.label;
+      btn.setAttribute('aria-label', s.label);
+      // Das Icon sitzt im Play-Button selbst (nicht in .ambient-row__opt, das sind die Geschwister-Buttons).
+      setIcon(btn.querySelector('svg'), s.icon);
     }
     const badge = row.querySelector('.ambient-row__state');
     if (badge) badge.textContent = waiting ? 'wartet…' : (playing ? 'spielt…' : '');

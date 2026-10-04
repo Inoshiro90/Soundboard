@@ -55,3 +55,13 @@
    .is-active-Regel in css/ambient.css). Keine eigene Optik nötig,
    daher hier absichtlich keine Ersatzregel. */
 
+/* ─── VORSCHAU-BUTTONS (#btnPreviewSound / #btnPreviewFx) ─────────────────
+   Aktiver Zustand (Vorschau lädt oder läuft) — gesetzt von _updatePreviewButton()
+   in js/audio/preview.js. Bewusst getönt statt gefüllt: das Icon trägt .u-text-accent
+   und bliebe auf einem Akzent-Hintergrund unsichtbar. */
+#btnPreviewSound.is-active,
+#btnPreviewFx.is-active {
+	background: var(--badge-bg);
+	border-color: var(--color-accent);
+	color: var(--color-accent);
+}

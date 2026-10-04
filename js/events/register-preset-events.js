@@ -50,8 +50,13 @@ export function _openFxPresetMetaModal(mode, prefill) {
   if (nameEl) nameEl.value = prefill?.name || '';
   if (catEl)  catEl.value  = prefill?.category && PRESET_CATEGORIES[prefill.category] ? prefill.category : 'supernatural';
   if (descEl) descEl.value = prefill?.description || '';
-  new bootstrap.Modal(document.getElementById('fxPresetMetaModal')).show();
-  setTimeout(() => nameEl?.focus(), 200);
+  const modalEl = document.getElementById('fxPresetMetaModal');
+  // Fokus erst NACH dem Einblenden setzen (shown.bs.modal): Bootstraps Fokusfalle fokussiert am Ende
+  // der Einblend-Animation das Modal selbst und überschriebe einen früheren (Timeout-)Fokus.
+  modalEl.addEventListener('shown.bs.modal', () => nameEl?.focus(), { once: true });
+  // Wiederverwendete Instanz statt `new Modal()` bei jedem Öffnen: sonst sammeln sich bei jedem
+  // Öffnen weitere Escape-/Backdrop-Listener am Modal an.
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
 }
 
 /** Liest die aktuell im Formular eingestellten Effektwerte als reines

@@ -61,7 +61,9 @@
 #ambVariantRandom.is-active,
 #ambVariantRotate.is-active,
 #ambLoopRow.is-active,
-#ambIntervalRow.is-active {
+#ambIntervalRow.is-active,
+#ambVolConstant.is-active,
+#ambVolVarying.is-active {
 	background: var(--color-accent);
 	color: #fff;
 	border-color: var(--color-accent);
@@ -309,6 +311,11 @@
 	text-align: right;
 	flex-shrink: 0;
 	color: var(--text-secondary);
+}
+/* Lautstärkevarianz: Bereich statt Einzelwert (z. B. „35–70%") — Breite folgt dem Text. */
+.ambient-row__vol-pct--range {
+	width: auto;
+	white-space: nowrap;
 }
 
 .ambient-row__opt {

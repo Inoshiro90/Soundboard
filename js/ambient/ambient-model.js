@@ -15,6 +15,7 @@ import { setNoiseGeneratorType } from '../generators.js';
 // diesem Modul) — unkritisch, s. Kommentar in ambient-playback.js.
 import { _active, _ambientTargetGain, isAmbientPlaying, playAmbientTrack, stopAllAmbient, stopAmbientTrack } from './ambient-playback.js';
 import { renderAmbientPanel, renderAmbientProfileTabs, setViewMode } from './ambient-render.js';
+import { getAmbientVolumeConfig } from './ambient-volume.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 
@@ -87,6 +88,9 @@ function _mkTrack(name) {
     // On each play/interval-firing, one is picked per variantMode.
     files: [], variantMode: 'random', // 'random' | 'rotate'
     vol: 0.7, loop: true, fadeIn: 2, fadeOut: 2,
+    // Lautstärkevarianz: 'constant' = feste Lautstärke `vol` (bisheriges Verhalten),
+    // 'varying' = pro abgespieltem Clip zufällig zwischen volumeMin und volumeMax (Maßstab wie `vol`).
+    volumeMode: 'constant', volumeMin: 0.35, volumeMax: 0.7,
     // Shape der Fade-In/Fade-Out-Rampe (analog zu s.playback.fadeIn/fadeOut.curve bei Sounds)
     // + Crossfade zwischen Datei-Varianten in der Loop-Kette (s. _playChainCycle()). Bewusst
     // eigenständiges Feld statt eines s.playback-Klons — Ambient-Tracks haben ihr eigenes
@@ -345,10 +349,44 @@ export function setAmbientTrackVolume(trackId, val) {
   t.vol = Math.max(0, Math.min(1, val));
   const rec = _active.get(trackId);
   if (rec?.gain && hasAudioContext()) {
-    const ctx    = actx();
-    const target = t.vol * (APP.ambient.masterVol ?? 1);
+    const ctx = actx();
+    // Zentrale Formel (Lautstärke × Master × Duck) — vorher fehlte hier der Duck-Faktor,
+    // eine Lautstärkeänderung während aktivem Ducking hob das Ducking kurzzeitig auf.
     rec.gain.gain.cancelScheduledValues(ctx.currentTime);
-    rec.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.03);
+    rec.gain.gain.setTargetAtTime(_ambientTargetGain(t, rec), ctx.currentTime, 0.03);
+  }
+}
+
+/**
+ * Setzt Lautstärkemodus und Min/Max eines Tracks (normalisiert: Bereich 0…1, min ≤ max,
+ * keine NaN/Infinity). Läuft der Track gerade und hat sich etwas geändert, wird der
+ * Clip-Lautstärkewert verworfen und neu bestimmt (varying) bzw. auf `vol` zurückgerampt
+ * (constant) — über dieselbe Gain-Node, ohne neue AudioNodes. Unveränderte Werte lösen
+ * bewusst keine Neuauswahl aus (sonst würde jedes Speichern im Editor die Lautstärke
+ * eines laufenden Tracks neu würfeln).
+ */
+export function setAmbientVolumeVariance(trackId, { mode, min, max } = {}) {
+  const t = _find(trackId); if (!t) return;
+  const prev = getAmbientVolumeConfig(t);
+  const next = getAmbientVolumeConfig({
+    ...t,
+    volumeMode: mode ?? prev.mode,
+    volumeMin:  Number.isFinite(min) ? min : prev.min,
+    volumeMax:  Number.isFinite(max) ? max : prev.max
+  });
+  t.volumeMode = next.mode;
+  t.volumeMin  = next.min;
+  t.volumeMax  = next.max;
+  _persist();
+
+  if (prev.mode === next.mode && prev.min === next.min && prev.max === next.max) return;
+  const rec = _active.get(trackId);
+  if (!rec) return;
+  rec.clipVol = null; // wird in _ambientTargetGain() bei Bedarf neu gewürfelt
+  if (rec.gain && hasAudioContext()) {
+    const ctx = actx();
+    rec.gain.gain.cancelScheduledValues(ctx.currentTime);
+    rec.gain.gain.setTargetAtTime(_ambientTargetGain(t, rec), ctx.currentTime, 0.03);
   }
 }
 
@@ -361,7 +399,7 @@ export function setAmbientMasterVolume(val) {
       if (!rec.gain) return; // interval track currently waiting — nothing to ramp
       const t = _find(id); if (!t) return;
       rec.gain.gain.cancelScheduledValues(ctx.currentTime);
-      rec.gain.gain.setTargetAtTime(_ambientTargetGain(t), ctx.currentTime, 0.03);
+      rec.gain.gain.setTargetAtTime(_ambientTargetGain(t, rec), ctx.currentTime, 0.03);
     });
   }
   _persist();

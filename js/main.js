@@ -17,6 +17,8 @@ import { APP }                         from './core/state.js';
 import { registerAmbientEvents }       from './ambient/ambient-events.js';
 import { registerMusicEvents }         from './music/music-events.js';
 import { initDisclosure }              from './ui/disclosure.js';
+import { hydrateIconSlots }            from './ui/icons.js';
+import { initModalStack }              from './ui/modal-stack.js';
 import { loadFragments }               from './fragmentLoader.js';
 import { toast }                       from './notifications.js';
 
@@ -53,6 +55,11 @@ async function init() {
   applyProfileSettings();
   renderGrid();
   syncThemeIcon();
+  // Icon-Platzhalter der HTML-Fragmente (data-icon-slot) durch das zentrale Icon-System ersetzen.
+  hydrateIconSlots();
+  // Mehrere gleichzeitig offene Modals (z. B. Audio-Effekte → Preset speichern): z-index, Backdrop,
+  // Fokus, Escape, Scroll-Lock — s. ui/modal-stack.js.
+  initModalStack();
   registerEvents();
   registerAmbientEvents();
   registerMusicEvents();

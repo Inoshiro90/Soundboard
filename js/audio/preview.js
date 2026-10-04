@@ -9,6 +9,8 @@ import { bk } from '../utils.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph } from '../renderPipeline.js';
 import { actx } from './context.js';
+import { buildEffectChain } from './effect-graph.js';
+import { buildNoiseGenerator } from '../generators.js';
 
 // ─── ANALYZER ────────────────────────────────────────────────
 
@@ -87,7 +89,13 @@ function _stopPreviewSourceOnly() {
   if (p.src) {
     // Mehrfaches/zu spätes .stop() (Quelle bereits von selbst
     // beendet) darf nie zu einem sichtbaren Fehler führen.
-    try { p.src.onended = null; p.src.stop(); } catch (e) { /* bereits beendet — ignorieren */ }
+    try { p.src.onended = null; } catch (e) { /* ignorieren */ }
+    // Rauschgenerator-Preview: AudioWorkletNode kennt kein .stop() — nur trennen.
+    // Ein unbedingtes stop() würfe hier und ließe den Node dauerhaft weiterlaufen.
+    try { if (p.kind === 'noise') p.src.disconnect(); else p.src.stop(); } catch (e) { /* bereits beendet — ignorieren */ }
+    // Zusätzlich die Gain-Kette trennen, damit nach dem Stopp garantiert nichts mehr
+    // hörbar am Ausgang hängt (z. B. Effekt-Nachhall-Reste) und der Graph freigegeben wird.
+    try { p.masterGain?.disconnect(); } catch (e) { /* ignorieren */ }
   }
 }
 
@@ -104,11 +112,34 @@ export function stopEffectPreview() {
   if (p.analyser) stopAnalyzer();
   p.playing = false; p.loading = false;
   p.src = null; p.masterGain = null; p.analyser = null;
-  p.soundId = null; p.slotIdx = null;
+  p.soundId = null; p.slotIdx = null; p.kind = null;
   _updatePreviewButton();
 }
 
-async function startEffectPreview(s, slotIdx) {
+/**
+ * Hängt die Preview-Bereinigung an den Lebenszyklus eines Editor-Modals (#soundModal — Sound- UND
+ * Ambient-Editor teilen es). Eine einzige, zentrale Stelle für ALLE Schließwege (X, Abbrechen,
+ * Escape, Backdrop, programmatisches hide() nach Speichern/Löschen):
+ *
+ *  - hide.bs.modal:   Das Schließen beginnt → sofort stoppen. Bewusst ein EIGENER Listener und nicht
+ *                     Teil des Draft-Guards (modalGuards.js): der Guard kann das Schließen per
+ *                     preventDefault() zunächst abbrechen und eine Rückfrage zeigen — die Vorschau
+ *                     soll aber so oder so enden, damit nie Audio über eine blockierende
+ *                     Rückfrage hinweg weiterläuft.
+ *  - hidden.bs.modal: Sicherheitsnetz. Während der Ausblend-Animation (~0,3 s) ist der Dialog noch
+ *                     klickbar; startet dort jemand noch eine Vorschau, wäre sie nach hide.bs.modal
+ *                     nicht mehr erfasst. Feuert nicht, wenn der Guard das Schließen abbricht.
+ *
+ * Idempotent pro Element.
+ */
+export function bindPreviewModalLifecycle(modalEl) {
+  if (!modalEl || modalEl._previewLifecycleBound) return;
+  modalEl._previewLifecycleBound = true;
+  modalEl.addEventListener('hide.bs.modal',   () => stopEffectPreview());
+  modalEl.addEventListener('hidden.bs.modal', () => stopEffectPreview());
+}
+
+async function startEffectPreview(s, slotIdx, opts = {}) {
   const p = APP.audioPreview;
   stopEffectPreview(); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden
   const myToken = p.token; // stopEffectPreview() hat token bereits erhöht — dieser Aufruf "besitzt" ihn jetzt
@@ -124,7 +155,12 @@ async function startEffectPreview(s, slotIdx) {
   let buf = APP.audioBuffers[bk(s.id, slotIdx)];
   if (!buf) {
     try {
-      buf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, ctx);
+      // opts.loadBuffer: Aufrufer-spezifischer Lader (Editor-Entwurf: Buffer unter `_ed_N`, Audio
+      // liegt nur als IDB-Verweis vor). Ohne ihn fände getOrDecodeBuffer() unter der Preview-ID
+      // keinen IDB-Eintrag. Läuft im selben Token-Schutz wie der reguläre Decode.
+      buf = opts.loadBuffer
+        ? await opts.loadBuffer(slotIdx)
+        : await getOrDecodeBuffer(s.id, slotIdx, slot.data, ctx);
     } catch (e) {
       console.error('[audio] Preview-Decode-Fehler:', e);
       buf = null;
@@ -164,7 +200,7 @@ async function startEffectPreview(s, slotIdx) {
   const { src, masterGain, analyser, dur } = graph;
   p.loading = false; p.playing = true;
   p.src = src; p.masterGain = masterGain; p.analyser = analyser;
-  p.soundId = s.id; p.slotIdx = slotIdx;
+  p.soundId = s.id; p.slotIdx = slotIdx; p.kind = 'buffer';
 
   src.onended = () => {
     // onended kann auch von einer bereits ERSETZTEN
@@ -173,7 +209,15 @@ async function startEffectPreview(s, slotIdx) {
     stopEffectPreview();
   };
 
-  graph.start(0);
+  try {
+    graph.start(0);
+  } catch (e) {
+    // start() darf nie einen „spielt"-Zustand ohne Ton zurücklassen.
+    console.error('[audio] Preview-Start-Fehler:', e);
+    stopEffectPreview();
+    toast('Vorschau-Fehler', 'err');
+    return;
+  }
   _updatePreviewButton();
 
   if (analyser) {
@@ -190,9 +234,59 @@ async function startEffectPreview(s, slotIdx) {
  * Sonst wird eine neue gestartet (ersetzt automatisch eine evtl. andere
  * laufende Preview).
  */
-export async function previewSound(s, slotIdx) {
+export async function previewSound(s, slotIdx, opts = {}) {
   if (APP.audioPreview.playing || APP.audioPreview.loading) { stopEffectPreview(); return; }
-  await startEffectPreview(s, slotIdx ?? 0);
+  await startEffectPreview(s, slotIdx ?? 0, opts);
+}
+
+/**
+ * Ambient-Rauschgenerator-Vorschau — gleicher Lifecycle wie die Datei-Preview (APP.audioPreview,
+ * Token, stopEffectPreview(), _updatePreviewButton()), nur mit einem Worklet-Node als Quelle statt
+ * eines AudioBufferSource. Läuft endlos bis zum Stopp (wie der Generator selbst), vollständig
+ * getrennt von der normalen Ambient-Wiedergabe (_active in ambient-playback.js).
+ * Toggle wie previewSound(): läuft/lädt bereits eine Preview, wird sie gestoppt.
+ *
+ * @param {{ generatorType: string, vol: number, effects: object }} g
+ */
+export async function previewNoiseGenerator(g) {
+  const p = APP.audioPreview;
+  if (p.playing || p.loading) { stopEffectPreview(); return; }
+
+  stopEffectPreview();            // defensiv, setzt auch den Token neu
+  const myToken = p.token;
+  p.loading = true; p.kind = 'noise'; _updatePreviewButton();
+  actx();
+  const ctx = actx();
+
+  let node = null;
+  try { node = await buildNoiseGenerator(ctx, g.generatorType || 'pink'); }
+  catch (e) { console.error('[audio] Rauschgenerator-Preview-Fehler:', e); node = null; }
+
+  if (myToken !== p.token) { try { node?.disconnect(); } catch (e) {} return; } // zwischenzeitlich gestoppt
+
+  if (!node) {
+    toast('Rauschgenerator konnte nicht geladen werden', 'err');
+    p.loading = false; p.kind = null; _updatePreviewButton();
+    return;
+  }
+
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = Number.isFinite(g.vol) ? g.vol : 0.7;
+  const analyser = g.effects?.analyzer?.enabled ? createAnalyzerSplit(ctx) : null;
+  const chain = g.effects?.enabled ? buildEffectChain(ctx, g.effects) : null;
+  if (chain) { node.connect(chain.input); chain.output.connect(masterGain); } else { node.connect(masterGain); }
+  if (analyser) masterGain.connect(analyser);
+  masterGain.connect(ctx.destination);
+
+  p.loading = false; p.playing = true; p.kind = 'noise';
+  p.src = node; p.masterGain = masterGain; p.analyser = analyser;
+  p.soundId = '_noisepreview'; p.slotIdx = 0;
+  _updatePreviewButton();
+
+  if (analyser) {
+    const cv = document.getElementById('analyzerCanvas');
+    if (cv) startAnalyzerLoop(analyser, cv, g.effects?.analyzer?.mode || 'bars');
+  }
 }
 
 /**
@@ -222,26 +316,38 @@ export function syncPreviewAnalyzer(enabled) {
   if (cv) startAnalyzerLoop(analyser, cv, mode);
 }
 
+/**
+ * Einzige Stelle, die die Vorschau-Buttons beschriftet. Zustand kommt ausschließlich aus
+ * APP.audioPreview (playing/loading) — jeder Pfad, der diese Flags ändert, ruft danach
+ * _updatePreviewButton() auf (Start, Laden, Fehler, Stopp, natürliches Ende, Modal-Schließen).
+ *
+ * Zustände (beide Buttons identisch):
+ *   Stopp    : Play-Icon,   Label „Vorschau abspielen", kein .is-active
+ *   Laden    : Spinner,     Label „Vorschau stoppen" (Klick bricht ab!), .is-active, aria-busy
+ *   Spielend : Square-Icon, Label „Vorschau stoppen", .is-active
+ * Der Button wird NIE deaktiviert — auch während des Ladens/Dekodierens muss ein zweiter Klick
+ * die Vorschau sofort stoppen können (stopEffectPreview() entwertet den laufenden Start per Token).
+ */
 function _updatePreviewButton() {
   const p = APP.audioPreview;
-  // Zwei Buttons steuern dieselbe Preview — #btnPreviewSound
-  // (Sticky-Bar des Sound-Editors) und #btnPreviewFx (Footer von
-  // "Audio-Effekte"). Beide müssen denselben Zustand zeigen.
+  const active = p.loading || p.playing;
+  const label  = active ? 'Vorschau stoppen' : 'Vorschau abspielen';
   ['btnPreviewSound', 'btnPreviewFx'].forEach(id => {
     const btn = document.getElementById(id);
     if (!btn) return;
     const icon = btn.querySelector('.ui-icon');
-    btn.disabled = p.loading;
-    if (p.loading) {
-      setIcon(icon, 'loader-circle', 'ui-icon--spin');
-      btn.setAttribute('aria-label', 'Vorschau wird geladen…');
-    } else if (p.playing) {
-      setIcon(icon, 'square', 'u-text-accent');
-      btn.setAttribute('aria-label', 'Vorschau stoppen');
-    } else {
-      setIcon(icon, 'play', 'u-text-accent');
-      btn.setAttribute('aria-label', 'Vorschau');
-    }
+    btn.disabled = false;
+    if (p.loading)      setIcon(icon, 'loader-circle', 'ui-icon--spin');
+    else if (p.playing) setIcon(icon, 'square', 'u-text-accent');
+    else                setIcon(icon, 'play', 'u-text-accent');
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', String(active));
+    btn.toggleAttribute('aria-busy', p.loading);
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    // Sichtbarer Text (nur #btnPreviewSound hat ein .btn__label)
+    const txt = btn.querySelector('.btn__label');
+    if (txt) txt.textContent = active ? 'Stoppen' : 'Vorschau';
   });
   updateAnalyzerIdleHint();
 }

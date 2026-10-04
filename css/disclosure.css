@@ -304,3 +304,7 @@ label.popover-check {
   color: var(--color-accent);
   white-space: nowrap;
 }
+
+#soundPlaybackModal .disclosure-section__panel > .fx-controls {
+  padding-left: 0;
+}

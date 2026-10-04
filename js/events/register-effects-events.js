@@ -8,7 +8,7 @@ import { APP, CItems } from '../core/state.js';
 import { uid, bk } from '../utils.js';
 import { toast } from '../notifications.js';
 import { stopItem } from '../audio/playback.js';
-import { previewSound, stopEffectPreview, syncPreviewAnalyzer, stopAnalyzer } from '../audio/preview.js';
+import { previewSound, previewNoiseGenerator, stopEffectPreview, syncPreviewAnalyzer, stopAnalyzer } from '../audio/preview.js';
 import { defaultEffects } from '../audio/effect-graph.js';
 import '../presets/effect-presets-data.js';
 import { getPresetById, applyPresetEffects } from '../presets.js';
@@ -20,10 +20,10 @@ import { exportSoundItem } from '../storage/import-export.js';
 import '../export.js';
 import '../audio/playback.js';
 import '../history.js';
-import { toggleAmbientPlay } from '../ambient/ambient-playback.js';
+import { pickRandomVolume, VOLUME_MODE_VARYING } from '../ambient/ambient-volume.js';
 import {
   findAmbientTrack, renameAmbientTrack, setAmbientTrackIcon, setAmbientTrackColor,
-  setAmbientTrackEffects, setAmbientTrackVolume, persistAmbientNow
+  setAmbientTrackEffects, setAmbientTrackVolume, setAmbientVolumeVariance, persistAmbientNow
 } from '../ambient/ambient-model.js';
 import { renderAmbientPanel } from '../ambient/ambient-render.js';
 import '../dialogs/ambient-modal.js';
@@ -31,7 +31,8 @@ import {
   readEffectsFromUI, writeEffectsToUI, resetEffectParametersPreserveMasterEnabled,
   readPlaybackFromUI, updatePlaybackSectionVisibility, _markActivePlaybackSummary,
   updateEffectSectionVisibility, _fxEditContext, _ambVariantMode,
-  _syncAmbientLoopIntervalExclusivity, _syncAppearancePreview
+  _syncAmbientLoopIntervalExclusivity, _syncAppearancePreview,
+  _setAmbientVolumeMode, _correctAmbientVolumeInputs, _readAmbientVolumeFromUI, _preloadEditBuffers
 } from '../dialogs/sound-modal.js';
 import { _releaseSoundDraftGuard } from './utils-modal.js';
 import { updateFxPresetActionButtons } from './register-preset-events.js';
@@ -132,6 +133,15 @@ export function registerEffectsEvents() {
     intEl.checked = !intEl.checked;
     if (intEl.checked && loopEl) loopEl.checked = false;
     _syncAmbientLoopIntervalExclusivity();
+  });
+
+  // Lautstärkevarianz: Konstant/Variierend sind radio-artige Buttons (genau eine Option aktiv,
+  // Klick auf die bereits aktive Option ändert nichts). Min/Max werden bei `change` korrigiert
+  // (Bereich 0–100, vertauschte Werte tauschen) — Speichern korrigiert nochmals vor dem Lesen.
+  document.getElementById('ambVolConstant')?.addEventListener('click', () => _setAmbientVolumeMode('constant'));
+  document.getElementById('ambVolVarying')?.addEventListener('click',  () => _setAmbientVolumeMode('varying'));
+  ['ambVolumeMin', 'ambVolumeMax'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => { _correctAmbientVolumeInputs(); _markActivePlaybackSummary(); });
   });
 
   // Preset dropdown
@@ -537,6 +547,9 @@ export function registerEffectsEvents() {
       // s. #soundPlaybackModal) — hier nach t.crossfade statt s.playback.crossfade.
       t.crossfade = readPlaybackFromUI().crossfade;
       t.variantMode = _ambVariantMode;
+      // Lautstärkevarianz über den Model-Setter: normalisiert (0…1, min ≤ max), speichert und
+      // passt einen gerade laufenden Track live an (ohne neue AudioNodes).
+      setAmbientVolumeVariance(_fxEditContext.id, _readAmbientVolumeFromUI());
 
       persistAmbientNow();
       renderAmbientPanel();
@@ -662,11 +675,13 @@ export function registerEffectsEvents() {
   // des Sound-Editors) und #btnPreviewFx (Footer von "Audio-Effekte") steuern beide
   // dieselbe, einzige Preview (previewSound()/APP.audioPreview).
   async function _handlePreviewClick() {
-    if (_fxEditContext.kind === 'ambient') { toggleAmbientPlay(_fxEditContext.id); return; }
+    // Ein Klick während einer laufenden ODER ladenden Preview stoppt sie — für Sound UND
+    // Ambient, unabhängig vom Dateityp (previewSound()/previewNoiseGenerator() togglen intern,
+    // audio/preview.js). Steht bewusst GANZ OBEN: der Stopp darf nie von Kontext, Slots oder
+    // Draft-Daten abhängen.
+    if (APP.audioPreview.playing || APP.audioPreview.loading) { stopEffectPreview(); return; }
 
-    // Ein Klick während einer laufenden ODER ladenden
-    // Preview stoppt sie — previewSound() togglet das intern (audio/preview.js).
-    if (APP.audioPreview.playing || APP.audioPreview.loading) { await previewSound(); return; }
+    if (_fxEditContext.kind === 'ambient') { await _startAmbientPreview(); return; }
 
     const slots = APP.editSlots;
     const hasData = slots.some(sl => sl && sl.data);
@@ -711,8 +726,84 @@ export function registerEffectsEvents() {
     });
 
     try {
-      await previewSound(tempSound, slotIdx);
+      await previewSound(tempSound, slotIdx, { loadBuffer: _loadEditBuffer });
     } catch(e) {
+      console.error('Preview error:', e);
+      toast('Vorschau-Fehler: ' + e.message, 'err');
+    }
+  }
+
+  /**
+   * Buffer des Editor-Entwurfs für Slot `i`: `_ed_N` wird beim Öffnen asynchron vorgeladen
+   * (_preloadEditBuffers, Audio liegt nur als IDB-Verweis vor). Ein schneller Klick könnte vor
+   * dem Abschluss kommen — dann hier nachladen (idempotent: bereits vorhandene Buffer werden
+   * übersprungen). Läuft innerhalb des Token-Schutzes von startEffectPreview().
+   */
+  async function _loadEditBuffer(i) {
+    if (!APP.audioBuffers[`_ed_${i}`]) await _preloadEditBuffers();
+    return APP.audioBuffers[`_ed_${i}`] || null;
+  }
+
+  /**
+   * AMBIENT-Vorschau — bewusst NICHT die normale Ambient-Wiedergabe (_active in
+   * ambient-playback.js). Sie läuft über den isolierten Preview-Lifecycle (APP.audioPreview), wie
+   * die Sound-Vorschau, und spielt den EDITOR-ENTWURF (nicht den gespeicherten Track): einen Clip
+   * der gerade gewählten Datei-Variante mit den aktuell eingestellten Effekten, Fades und der
+   * Entwurfs-Lautstärke. Dadurch
+   *   - stoppt der Vorschau-Button nie einen normal laufenden Ambient-Track,
+   *   - startet er keinen (kein Eintrag in _active, kein Zeilen-/Tab-Status, kein Auto-Duck),
+   *   - bleibt nach dem Schließen des Editors nichts übrig (hide.bs.modal → stopEffectPreview()).
+   * Master-Lautstärke und Auto-Duck gelten bewusst nicht (wie bei der Sound-Vorschau).
+   * Loop/Zeitversetzt/Crossfade sind Wiedergabe-Verhalten über mehrere Clips und werden in der
+   * Vorschau nicht abgebildet — sie spielt immer genau einen Clip. Bei „Variierend" wird je
+   * Vorschau-Start ein Zufallswert aus dem Entwurfs-Bereich gewürfelt.
+   */
+  async function _startAmbientPreview() {
+    const g   = id => document.getElementById(id);
+    const num = (id, fb) => { const v = parseFloat(g(id)?.value); return Number.isFinite(v) ? v : fb; };
+
+    const vc  = _readAmbientVolumeFromUI();
+    const vol = vc.mode === VOLUME_MODE_VARYING
+      ? pickRandomVolume(vc.min, vc.max)
+      : Math.max(0, Math.min(1, num('eVol', 0.7)));
+    const effects = readEffectsFromUI();
+
+    // Rauschgenerator-Tracks haben keine Dateien — eigener Quellpfad im selben Lifecycle.
+    const track = findAmbientTrack(_fxEditContext.id);
+    if (track?.sourceType === 'generator') {
+      try { await previewNoiseGenerator({ generatorType: track.generatorType || 'pink', vol, effects }); }
+      catch (e) { console.error('Preview error:', e); toast('Vorschau-Fehler: ' + e.message, 'err'); }
+      return;
+    }
+
+    const slots = APP.editSlots;
+    if (!slots.some(sl => sl && sl.data)) { toast('Keine Audio-Dateien geladen', 'err'); return; }
+    const editIdx = getSlotEditIndex();
+    let slotIdx = (editIdx !== null && slots[editIdx]?.data) ? editIdx : slots.findIndex(sl => sl && sl.data);
+    if (slotIdx < 0) slotIdx = 0;
+
+    const fadeIn  = Math.max(0, num('ambFadeIn', 0));
+    const fadeOut = Math.max(0, num('ambFadeOut', 0));
+    const tempSound = {
+      id:      '_ambpreview_' + _fxEditContext.id,
+      name:    g('eName')?.value || 'Preview',
+      slots, vol, pitch: 1, loop: false, fade: false, random: false, curSlot: 0, effects,
+      playback: {
+        fadeIn:    { enabled: fadeIn  > 0, duration: fadeIn,  curve: g('ambFadeInCurve')?.value  || 'linear' },
+        fadeOut:   { enabled: fadeOut > 0, duration: fadeOut, curve: g('ambFadeOutCurve')?.value || 'linear' },
+        crossfade: { enabled: false, duration: 1, curve: 'linear' }
+      }
+    };
+
+    // Buffer-Cache der Preview-ID mit dem Entwurfs-Buffer (`_ed_N`) vorwärmen, falls schon geladen.
+    slots.forEach((sl, i) => {
+      const edBuf = APP.audioBuffers[`_ed_${i}`];
+      if (edBuf) APP.audioBuffers[bk(tempSound.id, i)] = edBuf;
+    });
+
+    try {
+      await previewSound(tempSound, slotIdx, { loadBuffer: _loadEditBuffer });
+    } catch (e) {
       console.error('Preview error:', e);
       toast('Vorschau-Fehler: ' + e.message, 'err');
     }

@@ -19,6 +19,8 @@ const ICONS = {
   'chevron-up': '<path d="m18 15-6-6-6 6"/>',
   'copy': '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   'download': '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+  'equal': '<line x1="5" x2="19" y1="9" y2="9"/><line x1="5" x2="19" y1="15" y2="15"/>',
+  'equal-approximately': '<path d="M5 15a6.5 6.5 0 0 1 7 0 6.5 6.5 0 0 0 7 0"/><path d="M5 9a6.5 6.5 0 0 1 7 0 6.5 6.5 0 0 0 7 0"/>',
   'face-slightly-smiling': '<path d="M15 10V9"/><path d="M16.472 15a6 6 0 01-8.943 0"/><path d="M9 10V9"/><circle cx="12" cy="12" r="10"/>',
   'file-music': '<path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 20v-7l3 1.474"/><circle cx="6" cy="20" r="2"/>',
   'file-stack': '<path d="M11 21a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1"/><path d="M16 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1"/><path d="M21 6a2 2 0 0 0-.586-1.414l-2-2A2 2 0 0 0 17 2h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1z"/>',
@@ -91,4 +93,17 @@ export function setIcon(svgEl, name, extra = '') {
   if (body === undefined) { console.warn(`[icons] Unbekanntes Icon "${name}"`); return; }
   svgEl.setAttribute('class', _cls(name, extra));
   svgEl.innerHTML = body;
+}
+
+/**
+ * Ersetzt statische Platzhalter in den HTML-Fragmenten durch das zentrale Icon-Markup:
+ *   <span data-icon-slot="equal" data-icon-class="preview-icon"></span>
+ * Dadurch müssen neue Icons nicht erneut als Inline-SVG in die Fragmente kopiert werden.
+ * Idempotent — bereits ersetzte Platzhalter existieren nicht mehr.
+ */
+export function hydrateIconSlots(root = document) {
+  root.querySelectorAll('[data-icon-slot]').forEach(slot => {
+    const html = iconSvg(slot.getAttribute('data-icon-slot'), slot.getAttribute('data-icon-class') || '');
+    if (html) slot.outerHTML = html;
+  });
 }
