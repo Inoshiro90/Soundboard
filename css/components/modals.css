@@ -28,7 +28,13 @@
 	font-size: var(--text-nav);
 	font-weight: var(--fw-bold);
 	letter-spacing: -0.25px;
+	display: contents
 }
+
+.svg-modal-title{
+	margin-right: 0.5rem;
+}
+
 /* Bootstraps Default-Icon (SVG als background-image, dunkel/kaum
    sichtbar im Darkmode) wurde durch das Lucide "x"-Icon (inline SVG mit
    stroke="currentColor") ersetzt. Dadurch übernimmt es automatisch die
