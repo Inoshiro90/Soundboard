@@ -4,7 +4,8 @@
 
 import { APP }                             from '../core/state.js';
 import { uid }                             from '../utils.js';
-import { defaultEffects, defaultPlayback } from '../audio/effect-graph.js';
+import { defaultPlayback } from '../audio/effect-graph.js';
+import { defaultPipelineEffects } from '../audio/fx-pipeline.js';
 
 // ─── FACTORY ─────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ export function mkSound(d, order) {
     vol: 1, pitch: 1, loop: false, fade: false, random: false,
     hotkey: '', category: '', locked: false,
     slots: [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }],
-    curSlot: 0, effects: defaultEffects(), playback: defaultPlayback()
+    curSlot: 0, effects: defaultPipelineEffects(), playback: defaultPlayback()
   };
 }
 

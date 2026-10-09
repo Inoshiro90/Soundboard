@@ -26,6 +26,7 @@ import { toast }                       from './notifications.js';
 const FRAGMENT_URLS = [
   'fragments/modals/sound-core.html',
   'fragments/modals/sound-fx.html',
+  'fragments/modals/sound-fx-pipeline.html',
   'fragments/modals/slot-editing.html',
   'fragments/modals/ambient.html',
   'fragments/modals/music.html',

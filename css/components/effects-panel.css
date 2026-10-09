@@ -106,36 +106,11 @@
   margin: var(--space-2) 0;
 }
 
-/* Row for single-value controls (preset) */
-.fx-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-}
-
-.fx-label {
-  font-size: var(--text-badge);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  min-width: 52px;
-  margin: var(--space-2)
-}
-
 .fx-preset-select {
   flex: 1;
   font-size: var(--text-badge) !important;
   padding: 0 var(--space-2) !important;
   height: var(--h-btn) !important;
-}
-
-/* Preset-Dropdown im Audio-Effekte-Dialog: mehr Abstand — bewusst auf
-   dem Dropdown selbst (#fxPreset) statt auf dem umgebenden
-   .fx-row-Container gesetzt, damit Label und Reset-Button nicht
-   mitverschoben werden. */
-#fxPreset {
-  margin: var(--space-3);
 }
 
 /* Effect group */
@@ -343,7 +318,7 @@
 }
 
 /* ──────────────────────────────────────────────────────────
-   10-Band EQ / Envelope / Analyzer / IR-Reverb
+   10-Band EQ / IR-Reverb
    ────────────────────────────────────────────────────────── */
 
 /* ──────────────────────────────────────────────────────────
@@ -606,4 +581,119 @@
 }
 .fx-num-input {
 	max-width: 90px;
+}
+
+/* ═══ Pipeline-Editor (Quelle → Medium → Umgebung → Hörer) ═══════════════════════════════
+   Ebene 1: kompakte Übersicht (.fx-stage) · Ebene 2: Stufen-Modal (.fx-layers) und Preset-Picker (.fx-picker) ·
+   Ebene 3: Layer-Modal (.fx-layer-preset + Effektformular). Nutzt vorhandene Tokens/Muster (fx-toggle, btn, sm-fx-summary). */
+
+.fx-pipeline { padding: 0 var(--space-4) var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.fx-pipeline__seq {
+  min-height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;   /* eine Zeile, voller Text im title */
+}
+
+/* Ebene 1 — Stufen als aufeinanderfolgende Karten; ein dünner Verbinder zeigt die Verarbeitungsrichtung. */
+.fx-stages { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.fx-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: var(--border-whisper);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  padding: var(--space-2) var(--space-3);
+  transition: opacity var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.fx-stage + .fx-stage::before {          /* Verbinder zur vorherigen Stufe */
+  content: ''; position: absolute; left: calc(var(--space-3) + 0.75em); top: calc(-1 * var(--space-3)); height: var(--space-3);
+  border-left: 2px solid var(--border-color);
+}
+.fx-stage__icon { display: inline-flex; align-items: center; justify-content: center; font-size: 1.35rem; color: var(--color-accent); width: 1.5em; }
+.fx-stage__main { display: flex; flex-direction: column; min-width: 0; }
+.fx-stage__title { font-weight: 600; }
+.fx-stage__status {
+  font-size: var(--text-badge); color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fx-stage__switch { margin: 0; }
+.fx-stage__manage { white-space: nowrap; min-height: 2.25rem; }
+.fx-stage.is-off { border-style: dashed; background: transparent; }
+.fx-stage.is-off .fx-stage__icon,
+.fx-stage.is-off .fx-stage__title { opacity: 0.5; }
+.fx-stage.is-off .fx-stage__status { font-style: italic; }
+
+/* Modal-Köpfe/-Kontext (alle drei Ebenen) */
+.fx-modal-title { display: inline-flex; align-items: center; gap: var(--space-2); }
+.fx-modal-title__icon { display: inline-flex; font-size: 1.15em; color: var(--color-accent); }
+.fx-modal-context { margin: 0 0 var(--space-3); overflow-wrap: anywhere; }
+.fx-spacer { flex: 1 1 auto; }
+
+/* Ebene 2 — Stufe verwalten */
+.fx-stage-modal__state { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.fx-stage-modal__state-text { font-size: var(--text-badge); color: var(--text-secondary); }
+.fx-stage-modal__order { margin: 0 0 var(--space-2); }
+.fx-stage-modal__add { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+
+.fx-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.fx-layers__empty { padding: var(--space-3); text-align: center; border: 1px dashed var(--border-color); border-radius: var(--radius-sm, 6px); }
+.fx-layer {
+  display: flex; align-items: center; gap: var(--space-2);
+  border: var(--border-whisper); border-radius: var(--radius-sm, 6px);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.fx-layer.is-off .fx-layer__label { text-decoration: line-through; opacity: 0.6; }
+.fx-layer.is-drag-over { border-color: var(--color-accent); border-style: dashed; }
+.fx-layer.is-dragging { opacity: 0.35; }
+.fx-layer__handle { display: inline-flex; cursor: grab; color: var(--text-muted); touch-action: none; user-select: none; }
+.fx-layer__order {
+  min-width: 1.4em; text-align: center; font-variant-numeric: tabular-nums;
+  font-size: 0.75rem; color: var(--text-muted);
+}
+.fx-layer__name { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.fx-layer__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.fx-layer__tag {
+  font-size: 0.7rem; padding: 0 var(--space-1); border: var(--border-whisper); border-radius: 999px; color: var(--text-muted);
+}
+.fx-layer__tag--warn { border-color: var(--color-accent); color: var(--color-accent); }
+.fx-layer__actions { display: flex; gap: 2px; flex: 0 0 auto; }
+.fx-icon-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 2.25rem; min-height: 2.25rem; padding: 0; }
+.fx-icon-btn:disabled { opacity: 0.35; }
+
+/* Ebene 2b — Preset-Picker */
+.fx-picker { display: flex; flex-direction: column; gap: var(--space-3); }
+.fx-picker__group-head { margin: 0 0 var(--space-1); font-size: var(--text-badge); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.fx-picker__row { display: flex; align-items: stretch; gap: var(--space-1); margin-bottom: var(--space-1); }
+.fx-picker__item {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2);
+  text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--bg-surface); border: var(--border-whisper); border-radius: var(--radius-sm, 6px);
+  padding: var(--space-2) var(--space-3); min-height: 2.5rem;
+}
+.fx-picker__item:hover { border-color: var(--color-accent); }
+.fx-picker__item:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.fx-picker__name { font-weight: 500; }
+.fx-picker__desc { flex: 1 0 100%; font-size: var(--text-badge); }
+.fx-picker__tools { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.fx-picker__footer { flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* Ebene 3 — Layer bearbeiten */
+.fx-layer-preset { border: var(--border-whisper); border-radius: var(--radius-md, 8px); background: var(--bg-surface); padding: var(--space-3); margin-bottom: var(--space-3); }
+.fx-layer-preset__info { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.fx-layer-preset__head { font-size: var(--text-badge); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.fx-layer-preset__name { font-weight: 600; overflow-wrap: anywhere; }
+.fx-layer-preset__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.fx-layer-preset p { margin: var(--space-1) 0 0; }
+
+@media (max-width: 575px) {
+  .fx-stage { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: var(--space-2); }
+  .fx-stage__manage { grid-column: 1 / -1; width: 100%; }
+  .fx-layer { flex-wrap: wrap; }
+  .fx-layer__name { flex-basis: calc(100% - 6rem); }
+  .fx-layer__actions { margin-left: auto; flex-wrap: wrap; }
+  .fx-picker__row { flex-direction: column; }
+  .fx-picker__tools { justify-content: flex-end; }
 }

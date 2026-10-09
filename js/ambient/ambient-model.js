@@ -5,6 +5,7 @@
 
 import { APP, CAP, CATracks, findAmbientTrackAnyScene } from '../core/state.js';
 import { uid } from '../utils.js';
+import { ensureEffectsV2 } from '../fx-model.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from '../db.js';
@@ -67,7 +68,7 @@ export function findAmbientTrack(trackId) {
 /** Sets the real-time audio-effects chain (filter/EQ/dynamics/distortion/reverb/delay/3D/pitch) for a track. */
 export function setAmbientTrackEffects(trackId, effects) {
   const t = findAmbientTrack(trackId); if (!t) return;
-  t.effects = effects;
+  t.effects = effects ? ensureEffectsV2(effects) : effects;
   _persist();
 }
 

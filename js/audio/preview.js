@@ -1,5 +1,5 @@
 /**
- * audio/preview.js — Effekt-Editor-Vorschau + Analyzer
+ * audio/preview.js — Effekt-Editor-Vorschau
  */
 
 import { setIcon } from '../ui/icons.js';
@@ -9,67 +9,9 @@ import { bk } from '../utils.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph } from '../renderPipeline.js';
 import { actx } from './context.js';
-import { buildEffectChain } from './effect-graph.js';
+import { resolvePlan, connectPipeline, TARGET_CAPS } from './fx-pipeline.js';
+import { asPipelineEffects } from '../fx-model.js';
 import { buildNoiseGenerator } from '../generators.js';
-
-// ─── ANALYZER ────────────────────────────────────────────────
-
-export function createAnalyzerSplit(ctx) {
-  const a = ctx.createAnalyser(); a.fftSize = 2048; a.smoothingTimeConstant = 0.8; return a;
-}
-
-export function stopAnalyzer() {
-  if (APP.analyzer.rafId) { cancelAnimationFrame(APP.analyzer.rafId); APP.analyzer.rafId = null; }
-  APP.analyzer.active = false;
-  updateAnalyzerIdleHint();
-}
-
-export function startAnalyzerLoop(analyserNode, canvas, mode) {
-  stopAnalyzer(); APP.analyzer.node = analyserNode; APP.analyzer.canvas = canvas;
-  APP.analyzer.mode = mode || 'bars'; APP.analyzer.active = true;
-  updateAnalyzerIdleHint();
-  const bufLen = analyserNode.frequencyBinCount;
-  const dataF  = new Uint8Array(bufLen); const dataT = new Uint8Array(analyserNode.fftSize);
-  // Canvas-Backing-Store (cv.width/height) und die Theme-
-  // Farben nur bei tatsächlicher Änderung neu lesen/setzen, nicht bei
-  // jedem der ~60 Frames/Sekunde — cv.width/height-Zuweisung löscht und
-  // realloziert intern die gesamte Canvas-Bitmap, und getComputedStyle()
-  // erzwingt einen Style-Recalc; beides pro Frame ist unnötige Last,
-  // gerade auf Mobile.
-  let lastW = 0, lastH = 0, lastDpr = 0;
-  let accent = '#0075de', bg = '#1a1a1a';
-  function _refreshThemeColors() {
-    const cs = getComputedStyle(document.documentElement);
-    accent = cs.getPropertyValue('--color-accent').trim() || accent;
-    bg     = cs.getPropertyValue('--bg-warm').trim()     || bg;
-  }
-  _refreshThemeColors();
-  function draw() {
-    if (!APP.analyzer.active) return;
-    APP.analyzer.rafId = requestAnimationFrame(draw);
-    const cv = APP.analyzer.canvas; if (!cv || !cv.isConnected) return;
-    const dpr = window.devicePixelRatio || 1; const W = cv.offsetWidth; const H = cv.offsetHeight;
-    if (!W || !H) return;
-    if (W !== lastW || H !== lastH || dpr !== lastDpr) {
-      cv.width = W * dpr; cv.height = H * dpr;
-      lastW = W; lastH = H; lastDpr = dpr;
-    }
-    const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = bg; c.fillRect(0, 0, W, H);
-    if (APP.analyzer.mode === 'bars') {
-      analyserNode.getByteFrequencyData(dataF);
-      const barW = W / bufLen * 2.5;
-      for (let i = 0; i < bufLen; i++) { const v = dataF[i] / 255; c.fillStyle = `hsl(${200 + v * 60},80%,${40 + v * 30}%)`; c.fillRect(i * barW * 0.8, H - v * H, barW * 0.75, v * H); }
-    } else if (APP.analyzer.mode === 'line') {
-      analyserNode.getByteFrequencyData(dataF); c.beginPath(); c.strokeStyle = accent; c.lineWidth = 2;
-      for (let i = 0; i < bufLen; i++) { const x = (i / bufLen) * W; const y = H - (dataF[i] / 255) * H; if (i === 0) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
-    } else {
-      analyserNode.getByteTimeDomainData(dataT); c.beginPath(); c.strokeStyle = accent; c.lineWidth = 2;
-      for (let i = 0; i < dataT.length; i++) { const x = (i / dataT.length) * W; const y = ((dataT[i] / 128) - 1) * (H / 2) + H / 2; if (i === 0) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
-    }
-  }
-  draw();
-}
 
 /*
  * Effekt-Editor-Preview (isolierter Lifecycle)
@@ -78,7 +20,7 @@ export function startAnalyzerLoop(analyserNode, canvas, mode) {
  * Tile-Highlight, kein Auto-Duck, keine Rotation-/Fortschrittsanzeige,
  * kein stopAll()/stopItem() auf echte Sounds. Nutzt aber dieselbe
  * renderSoundGraph()-Pipeline wie Live-Playback/Export —
- * dieselben Effekte, derselbe Analyzer-Aufbau, keine zweite Engine.
+ * dieselben Effekte, keine zweite Engine.
  *
  * previewSound() ist der öffentliche Einstiegspunkt und togglet intern zwischen
  * startEffectPreview()/stopEffectPreview().
@@ -109,9 +51,9 @@ export function stopEffectPreview() {
   const p = APP.audioPreview;
   p.token++; // entwertet jede noch wartende startEffectPreview()-Anfrage (Decode/Graph-Aufbau)
   _stopPreviewSourceOnly();
-  if (p.analyser) stopAnalyzer();
   p.playing = false; p.loading = false;
-  p.src = null; p.masterGain = null; p.analyser = null;
+  if (p.dispose) { try { p.dispose(); } catch (e) {} p.dispose = null; }   // LFOs/Träger/Worklets der Effektkette freigeben
+  p.src = null; p.masterGain = null;
   p.soundId = null; p.slotIdx = null; p.kind = null;
   _updatePreviewButton();
 }
@@ -176,8 +118,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
 
   let graph;
   try {
-    // mode:'preview' — dieselbe Pipeline wie Live/Export; erzeugt auch hier einen Analyser,
-    // falls in den aktuellen Effekten aktiviert.
+    // mode:'preview' — dieselbe Pipeline wie Live/Export.
     graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: ctx.destination });
   } catch (e) {
     console.error('[audio] Preview-Graph-Fehler:', e);
@@ -187,7 +128,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
     // Zwischenzeitlich gestoppt/durch neue Preview ersetzt, während der
     // Graph aufgebaut wurde — src wurde noch nie gestartet, daher
     // disconnect() statt stop() (stop() vor start() wirft InvalidStateError).
-    try { graph?.src.disconnect(); } catch (e) {}
+    try { graph?.src.disconnect(); graph?.dispose(); } catch (e) {}
     return;
   }
 
@@ -197,9 +138,9 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
     return;
   }
 
-  const { src, masterGain, analyser, dur } = graph;
+  const { src, masterGain, dur } = graph;
   p.loading = false; p.playing = true;
-  p.src = src; p.masterGain = masterGain; p.analyser = analyser;
+  p.src = src; p.masterGain = masterGain; p.dispose = graph.dispose;
   p.soundId = s.id; p.slotIdx = slotIdx; p.kind = 'buffer';
 
   src.onended = () => {
@@ -220,10 +161,6 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
   }
   _updatePreviewButton();
 
-  if (analyser) {
-    const cv = document.getElementById('analyzerCanvas');
-    if (cv) startAnalyzerLoop(analyser, cv, s.effects?.analyzer?.mode || 'bars');
-  }
   void dur; // (aktuell ungenutzt — Preview braucht keine Fortschrittsanzeige)
 }
 
@@ -272,48 +209,18 @@ export async function previewNoiseGenerator(g) {
 
   const masterGain = ctx.createGain();
   masterGain.gain.value = Number.isFinite(g.vol) ? g.vol : 0.7;
-  const analyser = g.effects?.analyzer?.enabled ? createAnalyzerSplit(ctx) : null;
-  const chain = g.effects?.enabled ? buildEffectChain(ctx, g.effects) : null;
-  if (chain) { node.connect(chain.input); chain.output.connect(masterGain); } else { node.connect(masterGain); }
-  if (analyser) masterGain.connect(analyser);
+  // Gleiche Pipeline wie überall: Quelle → Medium → Umgebung → Hörer (Benutzerreihenfolge), dann masterGain.
+  let conn = null;
+  try { conn = await connectPipeline(ctx, node, resolvePlan(asPipelineEffects(g.effects)), masterGain, { caps: TARGET_CAPS.noise, numChannels: 2 }); }
+  catch (e) { console.error('[audio] Rauschgenerator-Pipeline-Fehler:', e); node.connect(masterGain); }
+  if (myToken !== p.token) { try { conn?.dispose(); node.disconnect(); } catch (e) {} return; }
   masterGain.connect(ctx.destination);
 
   p.loading = false; p.playing = true; p.kind = 'noise';
-  p.src = node; p.masterGain = masterGain; p.analyser = analyser;
+  p.src = node; p.masterGain = masterGain; p.dispose = conn ? conn.dispose : null;
   p.soundId = '_noisepreview'; p.slotIdx = 0;
   _updatePreviewButton();
 
-  if (analyser) {
-    const cv = document.getElementById('analyzerCanvas');
-    if (cv) startAnalyzerLoop(analyser, cv, g.effects?.analyzer?.mode || 'bars');
-  }
-}
-
-/**
- * "Analyzer AUS ≠ Preview AUS" — reagiert auf die
- * Spektrum-Analyzer-Checkbox im FX-Dialog, OHNE eine laufende Preview zu
- * beenden. Beim Deaktivieren wird nur die Visualisierungsschleife
- * gestoppt (stopAnalyzer()); beim Reaktivieren wird — sofern gerade eine
- * Preview läuft — ein neuer AnalyserNode LIVE in den bereits laufenden
- * Graph gespleißt (masterGain → Analyser → Destination), da der Graph
- * ohne Analyzer aufgebaut wurde, falls dieser bei Preview-Start
- * deaktiviert war. Ohne laufende Preview ist dies ein No-op — die
- * nächste Preview erzeugt den Analyser dann regulär über renderSoundGraph().
- */
-export function syncPreviewAnalyzer(enabled) {
-  const p = APP.audioPreview;
-  if (!p.playing || !p.masterGain) { updateAnalyzerIdleHint(); return; }
-  if (!enabled) { if (p.analyser) stopAnalyzer(); return; }
-
-  const ctx = actx();
-  try { p.masterGain.disconnect(); } catch (e) {}
-  const analyser = createAnalyzerSplit(ctx);
-  p.masterGain.connect(analyser);
-  analyser.connect(ctx.destination);
-  p.analyser = analyser;
-  const cv = document.getElementById('analyzerCanvas');
-  const mode = document.getElementById('fxAnalyzerMode')?.value || 'bars';
-  if (cv) startAnalyzerLoop(analyser, cv, mode);
 }
 
 /**
@@ -349,18 +256,5 @@ function _updatePreviewButton() {
     const txt = btn.querySelector('.btn__label');
     if (txt) txt.textContent = active ? 'Stoppen' : 'Vorschau';
   });
-  updateAnalyzerIdleHint();
 }
 
-/**
- * Dezenter Hinweis auf dem Analyzer-Canvas, solange der
- * Analyzer aktiviert, aber gerade nichts zu visualisieren ist (keine
- * laufende Preview) — sonst wirkt das Canvas nur leer/defekt. No-op außerhalb
- * des Audio-Effekt-Dialogs (Elemente existieren dann schlicht nicht im DOM).
- */
-export function updateAnalyzerIdleHint() {
-  const wrap = document.getElementById('analyzerCanvasWrap');
-  if (!wrap) return;
-  const enabled = !!document.getElementById('fxAnalyzerEnabled')?.checked;
-  wrap.classList.toggle('is-idle', enabled && !APP.analyzer.active);
-}

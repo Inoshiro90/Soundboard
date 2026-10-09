@@ -646,23 +646,33 @@
           <label class="form-label" for="fxPresetNameInput">Name</label>
           <input class="form-control" id="fxPresetNameInput" placeholder="z.B. Kristallhöhle" maxlength="60">
 
-          <label class="form-label u-mt-3" for="fxPresetCategoryInput">Kategorie</label>
+          <label class="form-label u-mt-3" for="fxPresetStageInput">Stufe (Rolle im Signalweg)</label>
+          <select class="form-select form-select-sm" id="fxPresetStageInput" aria-describedby="fxPresetStageHint">
+            <option value="source">Quelle — Klangcharakter der Schallquelle</option>
+            <option value="medium">Medium — Übertragungsweg</option>
+            <option value="environment">Umgebung — akustischer Raum</option>
+            <option value="listener">Hörer — Wahrnehmung beim Hörer</option>
+          </select>
+          <div class="u-text-muted u-text-badge" id="fxPresetStageHint" hidden>Die Stufe wurde automatisch vorgeschlagen — bitte prüfen.</div>
+
+          <label class="form-label u-mt-3" for="fxPresetCategoryInput">Anzeigegruppe</label>
           <select class="form-select form-select-sm" id="fxPresetCategoryInput">
-            <option value="room">🏛️ Akustische Räume &amp; Dimensionen</option>
-            <option value="barrier">🧱 Physische Abschirmung &amp; Dämpfung</option>
-            <option value="transmission">📡 Technische Signalübertragung &amp; Lo-Fi</option>
-            <option value="somatic">🫁 Somatische &amp; Psychologische Zustände</option>
-            <option value="supernatural">🔮 Übernatürliche &amp; Magische Phänomene</option>
-            <option value="creature">🐾 Kreaturen-Morphs</option>
+            <option value="room">Akustische Räume &amp; Dimensionen</option>
+            <option value="barrier">Physische Abschirmung &amp; Dämpfung</option>
+            <option value="transmission">Technische Signalübertragung &amp; Lo-Fi</option>
+            <option value="somatic">Somatische &amp; Psychologische Zustände</option>
+            <option value="supernatural">Übernatürliche &amp; Magische Phänomene</option>
+            <option value="creature">Kreaturen-Morphs</option>
           </select>
 
           <label class="form-label u-mt-3" for="fxPresetDescInput">Beschreibung (optional)</label>
           <textarea class="form-control" id="fxPresetDescInput" rows="2" maxlength="300"
             placeholder="Kurze Beschreibung des akustischen Effekts"></textarea>
+          <p class="u-text-muted u-text-badge u-mt-3" id="fxPresetMetaScope"></p>
         </div>
 
         <div class="modal-footer u-flex-between">
-          <span class="u-text-muted u-text-badge">Übernimmt die aktuell eingestellten Effektwerte.</span>
+          <span></span>
           <div class="u-flex u-gap-2">
             <button type="button" class="btn btn--sm" data-bs-dismiss="modal">Abbrechen</button>
             <button type="button" class="btn btn--sm btn--accent" id="btnFxPresetMetaSave">Speichern</button>

@@ -8,10 +8,8 @@ import { APP, CItems } from '../core/state.js';
 import { uid, bk } from '../utils.js';
 import { toast } from '../notifications.js';
 import { stopItem } from '../audio/playback.js';
-import { previewSound, previewNoiseGenerator, stopEffectPreview, syncPreviewAnalyzer, stopAnalyzer } from '../audio/preview.js';
-import { defaultEffects } from '../audio/effect-graph.js';
+import { previewSound, previewNoiseGenerator, stopEffectPreview } from '../audio/preview.js';
 import '../presets/effect-presets-data.js';
-import { getPresetById, applyPresetEffects } from '../presets.js';
 import { invalidateBuffer } from '../audioCache.js';
 import { renderGrid } from '../ui/grid.js';
 import { getSlotEditIndex } from '../ui/slot-editor.js';
@@ -28,19 +26,18 @@ import {
 import { renderAmbientPanel } from '../ambient/ambient-render.js';
 import '../dialogs/ambient-modal.js';
 import {
-  readEffectsFromUI, writeEffectsToUI, resetEffectParametersPreserveMasterEnabled,
+  readEffectsFromUI, writeEffectsToUI, 
   readPlaybackFromUI, updatePlaybackSectionVisibility, _markActivePlaybackSummary,
   updateEffectSectionVisibility, _fxEditContext, _ambVariantMode,
   _syncAmbientLoopIntervalExclusivity, _syncAppearancePreview,
   _setAmbientVolumeMode, _correctAmbientVolumeInputs, _readAmbientVolumeFromUI, _preloadEditBuffers
 } from '../dialogs/sound-modal.js';
 import { _releaseSoundDraftGuard } from './utils-modal.js';
-import { updateFxPresetActionButtons } from './register-preset-events.js';
-// Zirkulärer Import (index.js importiert umgekehrt registerEffectsEvents aus
-// diesem Modul) — unkritisch, s. bereits etabliertes Muster.
-import { _updateEnvelopeCurve } from './index.js';
+import { initFxPipelineModals } from '../dialogs/fx-pipeline-modals.js';
 
 export function registerEffectsEvents() {
+  initFxPipelineModals();   // Pipeline: Übersicht (Ebene 1) + Stufen-/Preset-/Layer-Modals (Ebene 2–3)
+
   // ── EFFECTS UI EVENTS ──────────────────────────────────────
 
   // Master enable toggle
@@ -144,28 +141,6 @@ export function registerEffectsEvents() {
     document.getElementById(id)?.addEventListener('change', () => { _correctAmbientVolumeInputs(); _markActivePlaybackSummary(); });
   });
 
-  // Preset dropdown
-  // applyPresetEffects() (presets.js) ist generisch über ALLE von der Engine
-  // unterstützten Effektmodule (inkl. pitchShift/irReverb/envelope/spatial/noiseGate
-  // sowie notch/wahwah/chorus/flanger/tremolo/ringmod) und einheitlich für Built-in-
-  // UND User-Presets nutzbar — keine Preset-spezifischen Sonderfälle nötig.
-  document.getElementById('fxPreset')?.addEventListener('change', function() {
-    const val = this.value;
-    if (!val) {
-      // "Kein Preset" gewählt — Effekte auf Standardwerte zurücksetzen
-      writeEffectsToUI(defaultEffects());
-      updateFxPresetActionButtons();
-      return;
-    }
-    const preset = getPresetById(val);
-    if (!preset) { updateFxPresetActionButtons(); return; }
-    const merged = applyPresetEffects(preset.effects);
-    merged.enabled = true;
-    merged.preset  = val;
-    writeEffectsToUI(merged);
-    updateFxPresetActionButtons();
-  });
-
   // Lowpass slider
   document.getElementById('fxLpFreq')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxLpFreqLbl');
@@ -176,13 +151,6 @@ export function registerEffectsEvents() {
   document.getElementById('fxHpFreq')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxHpFreqLbl');
     if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
-
-  // Pan slider
-  document.getElementById('fxPan')?.addEventListener('input', function() {
-    const v = parseFloat(this.value);
-    const lbl = document.getElementById('fxPanLbl');
-    if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
   });
 
   // Notch
@@ -241,12 +209,6 @@ export function registerEffectsEvents() {
   document.getElementById('fxDelWet')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxDelWetLbl');
     if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-
-  // Reset effects button
-  document.getElementById('btnFxReset')?.addEventListener('click', () => {
-    resetEffectParametersPreserveMasterEnabled();
-    toast('Effekte zurückgesetzt');
   });
 
   // EQ
@@ -412,45 +374,11 @@ export function registerEffectsEvents() {
     }
   });
 
-  // ADSR Envelope
-  document.getElementById('fxEnvEnabled')?.addEventListener('change', () => {
-    updateEffectSectionVisibility();
-    _updateEnvelopeCurve();
-  });
-  [['fxEnvAttack','fxEnvAttackLbl','ms'], ['fxEnvDecay','fxEnvDecayLbl','ms'],
-   ['fxEnvSustain','fxEnvSustainLbl','%'], ['fxEnvRelease','fxEnvReleaseLbl','ms']].forEach(([sid, lid, unit]) => {
-    document.getElementById(sid)?.addEventListener('input', function() {
-      const v = parseFloat(this.value);
-      const lbl = document.getElementById(lid);
-      if (lbl) {
-        if (unit === 'ms') lbl.textContent = (v * 1000).toFixed(0) + ' ms';
-        else lbl.textContent = Math.round(v * 100) + '%';
-      }
-      _updateEnvelopeCurve();
-    });
-  });
-
   // IR Reverb
   document.getElementById('fxIrEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
   document.getElementById('fxIrWet')?.addEventListener('input', function() {
     const lbl = document.getElementById('fxIrWetLbl');
     if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-
-  // Analyzer
-  document.getElementById('fxAnalyzerEnabled')?.addEventListener('change', function() {
-    updateEffectSectionVisibility();
-    // "Analyzer AUS ≠ Preview AUS" — betrifft nur die
-    // Visualisierung, eine laufende Preview spielt unverändert weiter.
-    if (!this.checked) stopAnalyzer();
-    else syncPreviewAnalyzer(true);
-  });
-  document.getElementById('fxAnalyzerMode')?.addEventListener('change', function() {
-    // Ein laufender Analyzer (Live ODER Preview) wechselt
-    // sofort den Darstellungsmodus, ohne den Audio-Graph neu aufzubauen —
-    // die Zeichenschleife liest APP.analyzer.mode bei jedem Frame neu.
-    // Bestehende Modusvariable wiederverwendet, keine zweite eingeführt.
-    if (APP.analyzer.active) APP.analyzer.mode = this.value;
   });
 
   // Full export (with audio)

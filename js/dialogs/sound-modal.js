@@ -9,10 +9,12 @@
 import { APP, CItems } from '../core/state.js';
 import { uid, isCustomIcon } from '../utils.js';
 import { actx } from '../audio/context.js';
-import { stopEffectPreview, updateAnalyzerIdleHint } from '../audio/preview.js';
+import { stopEffectPreview } from '../audio/preview.js';
 import { defaultEffects, defaultPlayback, EQ10_FREQS } from '../audio/effect-graph.js';
 import '../storage/persistence.js';
-import '../storage/persistence.js';
+import { STAGE_ORDER, PIPELINE_STAGES, defaultPipelineEffects, fillLayerParams, sparsifyParams } from '../audio/fx-pipeline.js';
+import { ensureEffectsV2 } from '../fx-model.js';
+import { getDraft, setDraft, render as renderPipelineEditor } from '../ui/fx-pipeline-editor.js';
 import { idbGet, idbSet, idbDelete, isIdbRef, audioKey } from '../db.js';
 import { renderSlotList } from '../ui/slot-editor.js';
 import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
@@ -30,7 +32,7 @@ import { _setModalContext, _armSoundDraftGuard } from '../events/utils-modal.js'
  * Reads all current effect control values from the DOM and returns an
  * effects object ready to be stored on s.effects.
  */
-export function readEffectsFromUI() {
+function _readFlatFromUI() {
   const g    = id => document.getElementById(id);
   const num  = (id, fallback) => { const v = parseFloat(g(id)?.value); return isNaN(v) ? fallback : v; };
   const chk  = id => !!(g(id)?.checked);
@@ -38,7 +40,6 @@ export function readEffectsFromUI() {
 
   return {
     enabled:  chk('fxEnabled'),
-    preset:   g('fxPreset')?.value || null,
     lowpass: {
       enabled:   chk('fxLpEnabled'),
       frequency: num('fxLpFreq', 20000),
@@ -49,7 +50,6 @@ export function readEffectsFromUI() {
       frequency: num('fxHpFreq', 20),
       Q:         0.7
     },
-    pan:  num('fxPan', 0),
     notch: {
       enabled:   chk('fxNotchEnabled'),
       frequency: num('fxNotchFreq', 50),
@@ -143,21 +143,10 @@ export function readEffectsFromUI() {
         Q:    num('fxEq10Q_' + i, 1.4)
       }))
     },
-    envelope: {
-      enabled: chk('fxEnvEnabled'),
-      attack:  num('fxEnvAttack',  0.01),
-      decay:   num('fxEnvDecay',   0.15),
-      sustain: num('fxEnvSustain', 0.8),
-      release: num('fxEnvRelease', 0.25)
-    },
     irReverb: {
       enabled: chk('fxIrEnabled'),
       impulse: g('fxIrImpulse')?.value || null,
       wet:     num('fxIrWet', 0.35)
-    },
-    analyzer: {
-      enabled: chk('fxAnalyzerEnabled'),
-      mode: g('fxAnalyzerMode')?.value || 'bars'
     },
     spatial: {
       enabled:        chk('fxSpatialEnabled'),
@@ -181,14 +170,13 @@ export function readEffectsFromUI() {
 /**
  * Writes an effects object into all effect DOM controls.
  */
-export function writeEffectsToUI(fx) {
+function _writeFlatToUI(fx) {
   if (!fx) fx = defaultEffects();
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
   const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
   const lbl = (id, val, unit) => { const el = document.getElementById(id); if (el) el.textContent = val + (unit || ''); };
 
   chk('fxEnabled', fx.enabled);
-  set('fxPreset',  fx.preset || '');
 
   chk('fxLpEnabled', fx.lowpass?.enabled);
   set('fxLpFreq',    fx.lowpass?.frequency ?? 20000);
@@ -197,9 +185,6 @@ export function writeEffectsToUI(fx) {
   chk('fxHpEnabled', fx.highpass?.enabled);
   set('fxHpFreq',    fx.highpass?.frequency ?? 20);
   lbl('fxHpFreqLbl', Math.round(fx.highpass?.frequency ?? 20), ' Hz');
-
-  set('fxPan', fx.pan ?? 0);
-  lbl('fxPanLbl', ((fx.pan ?? 0) >= 0 ? '+' : '') + (fx.pan ?? 0).toFixed(2));
 
   chk('fxNotchEnabled', fx.notch?.enabled);
   set('fxNotchFreq',    fx.notch?.frequency ?? 50); lbl('fxNotchFreqLbl', Math.round(fx.notch?.frequency ?? 50), ' Hz');
@@ -290,21 +275,9 @@ export function writeEffectsToUI(fx) {
     document.getElementById('fxEq10Q_' + i)?.setAttribute('aria-valuetext', 'Q ' + q.toFixed(1));
   });
 
-  chk('fxEnvEnabled',  fx.envelope?.enabled);
-  set('fxEnvAttack',  fx.envelope?.attack   ?? 0.01);  lbl('fxEnvAttackLbl',  ((fx.envelope?.attack  ?? 0.01)  * 1000).toFixed(0), ' ms');
-  set('fxEnvDecay',   fx.envelope?.decay    ?? 0.15);  lbl('fxEnvDecayLbl',   ((fx.envelope?.decay   ?? 0.15)  * 1000).toFixed(0), ' ms');
-  set('fxEnvSustain', fx.envelope?.sustain  ?? 0.8);   lbl('fxEnvSustainLbl', Math.round((fx.envelope?.sustain ?? 0.8) * 100),  '%');
-  set('fxEnvRelease', fx.envelope?.release  ?? 0.25);  lbl('fxEnvReleaseLbl', ((fx.envelope?.release ?? 0.25)  * 1000).toFixed(0), ' ms');
-
   chk('fxIrEnabled',  fx.irReverb?.enabled);
   set('fxIrImpulse',  fx.irReverb?.impulse || '');
   set('fxIrWet',      fx.irReverb?.wet      ?? 0.35);  lbl('fxIrWetLbl', Math.round((fx.irReverb?.wet ?? 0.35) * 100), '%');
-
-  chk('fxAnalyzerEnabled', fx.analyzer?.enabled);
-  set('fxAnalyzerMode', fx.analyzer?.mode || 'bars');
-  // Idle-Hinweis direkt beim Öffnen korrekt setzen, falls der
-  // Analyzer für diesen Sound bereits aktiviert ist.
-  updateAnalyzerIdleHint();
 
   chk('fxSpatialEnabled', fx.spatial?.enabled);
   set('fxSpatialX', fx.spatial?.x ?? 0); lbl('fxSpatialXLbl', (fx.spatial?.x ?? 0).toFixed(1));
@@ -322,29 +295,60 @@ export function writeEffectsToUI(fx) {
   updateEffectSectionVisibility();
 }
 
-/**
- * "Alle Effekte zurücksetzen" (#btnFxReset) darf NUR die einzelnen Effektmodule auf ihre
- * Standardwerte zurücksetzen — der unabhängige Master-Schalter "Effekte ein/aus"
- * (#fxEnabled) ist bewusst KEIN Effektparameter, sondern steuert nur, ob die Effektkette
- * überhaupt angewendet wird, und darf durch einen Parameter-Reset nicht verändert werden.
- *
- * defaultEffects() liefert `enabled: false` (das ist der korrekte Default für einen NEUEN
- * Sound bzw. ein vollständig geladenes Preset/Soundobjekt, siehe writeEffectsToUI() bei
- * openSoundModal()/Preset-Apply) — für den gezielten Parameter-Reset hier wird dieses eine
- * Feld daher bewusst nicht aus defaultEffects() übernommen, sondern der Zustand von VOR dem
- * Reset wiederhergestellt. Nutzt ausschließlich readEffectsFromUI()/writeEffectsToUI() als
- * einzige Quelle/Senke der Formularwerte.
- */
-export function resetEffectParametersPreserveMasterEnabled() {
-  const wasEnabled = !!(document.getElementById('fxEnabled')?.checked);
-  writeEffectsToUI(defaultEffects());
-  const el = document.getElementById('fxEnabled');
-  if (el) el.checked = wasEnabled;
-  // writeEffectsToUI() hat updateEffectSectionVisibility() bereits mit dem
-  // (kurzzeitig falschen) enabled:false aufgerufen — nach dem Wiederherstellen
-  // von #fxEnabled muss Panel-Opazität/Badge/Summary erneut mit dem
-  // korrekten Zustand aktualisiert werden.
+
+// ─── EFFEKT-DRAFT (ganzes Objekt) UND LAYER-FORMULAR (ein Layer) ─────────────
+// Zwei getrennte Dinge:
+//   • Der DRAFT (v2-Effektobjekt eines Sounds/Ambient-Tracks/Musikstücks) liegt in ui/fx-pipeline-editor.js.
+//     readEffectsFromUI()/writeEffectsToUI() sind weiterhin die einzige Schnittstelle der Speicherwege dorthin.
+//   • Das Formular (alle fx*-Regler, genau einmal im DOM, im Layer-Modal) bearbeitet IMMER genau einen Layer.
+//     Es wird nur über loadLayerParamsToForm()/readLayerParamsFromForm() befüllt/gelesen (dialogs/fx-pipeline-modals.js);
+//     kein Formularstand fließt je implizit in den Draft.
+
+let _layerFormDirty = false;
+
+/** True, wenn der Benutzer seit dem letzten Laden des Layer-Formulars einen Regler bedient hat. */
+export function isLayerFormDirty() { return _layerFormDirty; }
+
+/** Aktuelles Gesamtobjekt (v2): Kopie des Drafts + Master-Schalter. */
+export function readEffectsFromUI() {
+  const draft = getDraft();
+  if (!draft) return defaultPipelineEffects();
+  const out = JSON.parse(JSON.stringify(draft));
+  out.enabled = !!document.getElementById('fxEnabled')?.checked;
+  return out;
+}
+
+/** Befüllt den Draft aus einem Effekt-Objekt (v2 oder — wird migriert — Alt-Format), Master-Schalter und Übersicht. */
+export function writeEffectsToUI(fx) {
+  setDraft(JSON.parse(JSON.stringify(ensureEffectsV2(fx ?? defaultPipelineEffects()))));
+  const master = document.getElementById('fxEnabled');
+  if (master) master.checked = !!getDraft().enabled;
+  renderPipelineEditor();
   updateEffectSectionVisibility();
+}
+
+/** Layer-Formular ← Layer-Parameter (sparse oder vollständig). Der Master-Schalter bleibt unverändert. */
+export function loadLayerParamsToForm(params) {
+  const master = !!document.getElementById('fxEnabled')?.checked;
+  _writeFlatToUI({ ...fillLayerParams(params), enabled: master });
+  _layerFormDirty = false;
+}
+
+/** Layer-Formular → sparse Layer-Parameter. Nur aufrufen, wenn isLayerFormDirty() (das Formular ist verlustbehaftet). */
+export function readLayerParamsFromForm() { return sparsifyParams(_readFlatFromUI()); }
+
+/** Setzt das Layer-Formular auf Standardwerte (alle Module aus). Gilt als Änderung. */
+export function resetLayerForm() {
+  loadLayerParamsToForm(fillLayerParams({}));
+  _layerFormDirty = true;
+}
+
+/** Einmalig: Eingaben im Layer-Formular markieren den Layer als geändert. Liefert die Dirty-Quelle für den Guard. */
+export function wireLayerForm(onDirty) {
+  const form = document.getElementById('fxLayerForm');
+  const mark = () => { _layerFormDirty = true; onDirty?.(); };
+  form?.addEventListener('input', mark);
+  form?.addEventListener('change', mark);
 }
 
 // ─── "WIEDERGABE & VERHALTEN" UI HELPERS ─────────────────────
@@ -574,8 +578,9 @@ export function _readAmbientVolumeFromUI() {
 /** Welche Effekt-Gruppen (Sektions-IDs des FX-Dialogs) in `fx` aktive Module enthalten. Einzige Quelle
  *  für Sektions-Punkte, Sound-Karten-Überblick UND den Überblick der Musik-Karte. */
 function _activeEffectSections(fx) {
+  // `fx` = Formularstand des GEWÄHLTEN Layers (flach). 
   return {
-    'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.notch?.enabled || fx.pan !== 0,
+    'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.notch?.enabled,
     'smFxEQ':       fx.eq?.enabled || fx.eq10?.enabled,
     'smFxDyn':      fx.compressor?.enabled || fx.limiter?.enabled,
     'smFxDist':     fx.distortion?.enabled || fx.ringmod?.enabled,
@@ -583,18 +588,20 @@ function _activeEffectSections(fx) {
     'smFxReverb':   fx.reverb?.enabled || fx.irReverb?.enabled,
     'smFxDelay':    fx.delay?.enabled,
     'smFxSpatial':  fx.spatial?.enabled,
-    'smFxAdvanced': fx.pitchShift?.enabled || fx.envelope?.enabled || fx.noiseGate?.enabled || fx.analyzer?.enabled,
+    'smFxAdvanced': fx.pitchShift?.enabled || fx.noiseGate?.enabled,
   };
 }
 const _EFFECT_GROUP_LABELS = {
   smFxFilters: 'Filter', smFxEQ: 'EQ', smFxDyn: 'Dynamik', smFxDist: 'Distortion', smFxMod: 'Modulation',
   smFxReverb: 'Reverb', smFxDelay: 'Delay', smFxSpatial: 'Spatial', smFxAdvanced: 'Erweitert',
 };
-/** Namen der aktiven Effekt-Gruppen eines Effekt-Objekts (z. B. für die Musik-Karte). */
+/** Überblick einer Pipeline für Karten/Chips: aktive Stufen mit Layer-Anzahl in Verarbeitungsreihenfolge. */
 export function getActiveEffectGroupLabels(fx) {
-  if (!fx) return [];
-  const sections = _activeEffectSections(fx);
-  return Object.entries(_EFFECT_GROUP_LABELS).filter(([id]) => sections[id]).map(([, label]) => label);
+  if (!fx || fx.v !== 2) return [];
+  const out = STAGE_ORDER
+    .filter(st => fx.stages[st].enabled && fx.stages[st].layers.some(l => l.enabled))
+    .map(st => `${PIPELINE_STAGES[st].label} ${fx.stages[st].layers.filter(l => l.enabled).length}`);
+  return out;
 }
 
 export function _markActiveAccordionSections(fx) {
@@ -611,11 +618,11 @@ export function _markActiveAccordionSections(fx) {
 
   // Kompakter Überblick in der "Audio-Effekte"-Sektion: Namen der aktiven
   // Effekt-Gruppen als Chips, statt jeden Abschnitt einzeln öffnen zu müssen.
-  const summaryLabels = _EFFECT_GROUP_LABELS;
   const summaryEl = document.getElementById('smFxActiveSummary');
   if (summaryEl) {
-    const active = Object.entries(summaryLabels).filter(([id]) => sections[id]).map(([, label]) => label);
-    summaryEl.innerHTML = active.map(label => `<span class="sm-fx-summary__chip">${label}</span>`).join('');
+    summaryEl.replaceChildren(...getActiveEffectGroupLabels(readEffectsFromUI()).map(label => {
+      const chip = document.createElement('span'); chip.className = 'sm-fx-summary__chip'; chip.textContent = label; return chip;
+    }));
   }
 }
 
@@ -655,9 +662,7 @@ export function updateEffectSectionVisibility() {
     ['fxFlangerEnabled', 'fxFlangerControls'],
     ['fxPitchEnabled',    'fxPitchControls'],
     ['fxEq10Enabled',     'fxEq10Controls'],
-    ['fxEnvEnabled',      'fxEnvControls'],
     ['fxIrEnabled',       'fxIrControls'],
-    ['fxAnalyzerEnabled', 'fxAnalyzerControls'],
     ['fxSpatialEnabled',   'fxSpatialControls'],
     ['fxNoiseGateEnabled', 'fxNoiseGateControls'],
   ];
@@ -669,7 +674,7 @@ export function updateEffectSectionVisibility() {
 
   // Aktive-Effekte-Badges/-Übersicht live nachziehen (nicht erst beim
   // nächsten Öffnen des Modals) — siehe _markActiveAccordionSections().
-  _markActiveAccordionSections(readEffectsFromUI());
+  _markActiveAccordionSections(_readFlatFromUI());
 }
 
 
@@ -863,7 +868,7 @@ export function openSoundModal(id, placeholderId = null) {
   buildColorOpts('eTileClrOpts', s && s.tileColor ? s.tileColor : 'none');
 
   // ── Effects UI ────────────────────────────────────────────
-  writeEffectsToUI(s?.effects || defaultEffects());
+  writeEffectsToUI(s?.effects);
   // ─────────────────────────────────────────────────────────
   // ── "Wiedergabe & Verhalten" UI ─────────────────────────────
   writePlaybackToUI(s?.playback || defaultPlayback());

@@ -81,7 +81,7 @@ export function openAmbientEffectsModal(trackId) {
   renderSlotList();
   _preloadEditBuffers();
 
-  writeEffectsToUI(t.effects || defaultEffects());
+  writeEffectsToUI(t.effects);
   // "Wiedergabe & Verhalten": Fade-In/Fade-Out-UI ist kontextabhängig
   // (SOUND- vs. AMBIENT-Variante, s. index.html), nur Crossfade
   // (pbCrossfade*) ist ein GEMEINSAMES Feld — hier mit t.crossfade befüllen.

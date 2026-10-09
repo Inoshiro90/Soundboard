@@ -1,54 +1,67 @@
 /**
  * events/register-preset-events.js — Eigene Audio-Effekt-Presets:
- * Auswahl/Speichern/Duplizieren/Löschen, Preset-Meta-Modal
+ * Speichern/Bearbeiten/Duplizieren/Löschen/Export/Import, Preset-Meta-Modal
+ *
+ * Die Verwaltung ist in den kontextuellen Ablauf des Pipeline-Editors eingebettet (kein globaler „Layer-Preset“-Bereich):
+ *   • Layer-Modal (#fxLayerModal): „Als eigenes Preset speichern“, Preset-Details, Duplizieren, Löschen, Export
+ *     — jeweils für das Preset des gerade bearbeiteten Layers.
+ *   • Preset-Picker (#fxPresetPickerModal): dieselben Aktionen je Preset-Zeile sowie Import und „Alle exportieren“.
+ *   • #fxPresetMetaModal: Name/Stufe/Gruppe/Beschreibung (Titel nennt die Aufgabe).
  */
 
 import { toast } from '../notifications.js';
 import {
   getPresetById, createUserPreset, updateUserPreset, deleteUserPreset,
-  duplicatePreset, isUserPreset, PRESET_CATEGORIES
+  duplicatePreset, isUserPreset, PRESET_GROUPS
 } from '../presets.js';
+import { STAGE_ORDER } from '../audio/fx-pipeline.js';
 import { exportPreset, exportUserPresets, importData } from '../storage/import-export.js';
 import { _saveRaw } from '../storage/persistence.js';
-import { renderPresetDropdown } from '../ui/tabs.js';
-import { readEffectsFromUI } from '../dialogs/sound-modal.js';
-
-// ─── EIGENE AUDIO-EFFEKT-PRESETS ─────────────────────────
-// UI-Logik für Preset-Verwaltung im Audio-Effekte-Dialog. Nutzt bewusst
-// dieselben Formularsteuerelemente (readEffectsFromUI/writeEffectsToUI),
-// dieselben Toasts (toast()) und dasselbe Import/Export-Muster
-// (importData()/kind-Feld) wie der Rest der Anwendung — keine parallele
-// Infrastruktur.
+import {
+  currentLayerEffects, currentLayerStage, currentLayerPresetId, isLayerModalOpen,
+  adoptPresetInLayerModal, refreshPresetViews
+} from '../dialogs/fx-pipeline-modals.js';
 
 export let _fxPresetMetaMode   = 'create'; // 'create' | 'edit'
 export let _fxPresetMetaEditId = null;
+let _metaIncludeLayerValues = false;       // speichert das Meta-Modal zusätzlich die Werte des Layers im Layer-Modal?
 
-/** Blendet Bearbeiten/Duplizieren/Löschen/Export je nach aktueller
- *  Preset-Auswahl im Dropdown ein/aus (Built-ins dürfen nicht
- *  bearbeitet/gelöscht werden, aber dupliziert/exportiert). */
-export function updateFxPresetActionButtons() {
-  const val = document.getElementById('fxPreset')?.value || '';
-  const editBtn = document.getElementById('btnFxPresetEdit');
-  const dupBtn  = document.getElementById('btnFxPresetDuplicate');
-  const delBtn  = document.getElementById('btnFxPresetDelete');
-  const expBtn  = document.getElementById('btnFxPresetExport');
-  const isUser  = !!val && isUserPreset(val);
-  if (editBtn) editBtn.style.display = isUser ? '' : 'none';
-  if (delBtn)  delBtn.style.display  = isUser ? '' : 'none';
-  if (dupBtn)  dupBtn.style.display  = val ? '' : 'none';
-  if (expBtn)  expBtn.style.display  = val ? '' : 'none';
+/**
+ * Blendet Bearbeiten/Duplizieren/Löschen/Export im Layer-Modal je nach Preset des bearbeiteten Layers ein/aus
+ * (Built-ins dürfen nicht bearbeitet/gelöscht werden, aber dupliziert/exportiert). Ohne Argument: Preset des Layers.
+ */
+export function updateFxPresetActionButtons(presetId) {
+  const val = presetId === undefined ? currentLayerPresetId() : (presetId || '');
+  const known = !!val && !!getPresetById(val);
+  const isUser = known && isUserPreset(val);
+  const set = (id, show) => { const b = document.getElementById(id); if (b) b.hidden = !show; };
+  set('btnFxPresetEdit', isUser);
+  set('btnFxPresetDelete', isUser);
+  set('btnFxPresetDuplicate', known);
+  set('btnFxPresetExport', known);
 }
 
-export function _openFxPresetMetaModal(mode, prefill) {
+export function _openFxPresetMetaModal(mode, prefill, { includeLayerValues = false } = {}) {
   _fxPresetMetaMode   = mode;
   _fxPresetMetaEditId = mode === 'edit' ? prefill.id : null;
+  _metaIncludeLayerValues = includeLayerValues;
   const titleEl = document.getElementById('fxPresetMetaModalTitle');
-  if (titleEl) titleEl.textContent = mode === 'edit' ? 'Preset bearbeiten' : 'Preset speichern';
+  if (titleEl) titleEl.textContent = mode === 'edit' ? 'Preset-Details bearbeiten' : 'Als eigenes Preset speichern';
+  const scope = document.getElementById('fxPresetMetaScope');
+  if (scope) scope.textContent = includeLayerValues
+    ? 'Gespeichert werden diese Angaben und die aktuellen Einstellungen des Layers.'
+    : 'Gespeichert werden nur diese Angaben; die Effektwerte des Presets bleiben unverändert.';
   const nameEl = document.getElementById('fxPresetNameInput');
   const catEl  = document.getElementById('fxPresetCategoryInput');
+  const stageEl = document.getElementById('fxPresetStageInput');
+  const stageHint = document.getElementById('fxPresetStageHint');
   const descEl = document.getElementById('fxPresetDescInput');
   if (nameEl) nameEl.value = prefill?.name || '';
-  if (catEl)  catEl.value  = prefill?.category && PRESET_CATEGORIES[prefill.category] ? prefill.category : 'supernatural';
+  const grp = prefill?.group || prefill?.category;
+  if (catEl)  catEl.value  = grp && PRESET_GROUPS[grp] ? grp : 'supernatural';
+  // Stufe: aus dem Preset, sonst aus der Stufe des bearbeiteten Layers; Pflichtmetadatum jedes Presets.
+  if (stageEl) stageEl.value = STAGE_ORDER.includes(prefill?.stage) ? prefill.stage : (currentLayerStage() || 'medium');
+  if (stageHint) stageHint.hidden = !prefill?.stageAuto;
   if (descEl) descEl.value = prefill?.description || '';
   const modalEl = document.getElementById('fxPresetMetaModal');
   // Fokus erst NACH dem Einblenden setzen (shown.bs.modal): Bootstraps Fokusfalle fokussiert am Ende
@@ -59,124 +72,88 @@ export function _openFxPresetMetaModal(mode, prefill) {
   bootstrap.Modal.getOrCreateInstance(modalEl).show();
 }
 
-/** Liest die aktuell im Formular eingestellten Effektwerte als reines
- *  Preset-Effekte-Objekt (ohne die Sound-Laufzeitfelder enabled/preset). */
-export function _currentEffectsForPreset() {
-  const fx = readEffectsFromUI();
-  const { enabled, preset, ...effects } = fx;
-  return effects;
-}
+/** Einstellungen des im Layer-Modal bearbeiteten Layers (alle Layer-Module) als Preset-Effekte-Objekt. */
+export function _currentEffectsForPreset() { return currentLayerEffects(); }
+
+/** Aktionen auf einem Preset (Layer-Modal UND Preset-Picker nutzen dieselben Funktionen). */
+export const presetActions = {
+  /** Metadaten eigener Presets bearbeiten (optional mit den Werten des gerade bearbeiteten Layers). */
+  edit(id, { includeLayerValues = false } = {}) {
+    if (!id || !isUserPreset(id)) return;
+    const p = getPresetById(id); if (!p) return;
+    _openFxPresetMetaModal('edit', p, { includeLayerValues });
+  },
+  /** Duplizieren: Original (auch ein Built-in) bleibt unverändert; Ergebnis ist immer ein neues User-Preset. */
+  duplicate(id) {
+    if (!id) return null;
+    const dup = duplicatePreset(id);
+    if (!dup) { toast('Preset konnte nicht dupliziert werden', 'err'); return null; }
+    _saveRaw(); refreshPresetViews();
+    toast('Preset dupliziert ✓', 'ok');
+    return dup;
+  },
+  remove(id) {
+    if (!id || !isUserPreset(id)) return false;
+    const p = getPresetById(id);
+    if (!confirm(`Eigenes Preset "${p?.name || id}" wirklich löschen? Layer, die es verwenden, behalten ihre Einstellungen.`)) return false;
+    deleteUserPreset(id); _saveRaw(); refreshPresetViews();
+    toast('Preset gelöscht', 'ok');
+    return true;
+  },
+  exportOne(id) { if (id) exportPreset(id); }
+};
 
 /**
- * Registriert alle Event-Handler rund um eigene Presets. Wird von
- * registerEvents() aufgerufen.
+ * Registriert alle Event-Handler rund um eigene Presets. Wird von registerEvents() aufgerufen.
  */
 export function registerPresetEvents() {
-  renderPresetDropdown();
-  updateFxPresetActionButtons();
+  updateFxPresetActionButtons('');
 
-  document.getElementById('fxPreset')?.addEventListener('change', updateFxPresetActionButtons);
-  document.getElementById('btnOpenFxModal')?.addEventListener('click', updateFxPresetActionButtons);
-
-  // "Als eigenes Preset speichern" — übernimmt die aktuell im Formular
-  // eingestellten Effektwerte (ein vorhandenes Preset auswählen → verändern → als
-  // eigenes Preset speichern funktioniert dadurch von selbst, ohne eigene Zwischenschritte).
+  // Layer-Modal: „Als eigenes Preset speichern“ — übernimmt die aktuellen Einstellungen des Layers (auch eines
+  // Built-in-Preset-Layers oder eines manuellen Layers). Das Original-Preset wird nie verändert.
   document.getElementById('btnFxPresetSaveAs')?.addEventListener('click', () => {
-    const curVal = document.getElementById('fxPreset')?.value;
-    const cur    = curVal ? getPresetById(curVal) : null;
-    _openFxPresetMetaModal('create', cur ? { name: cur.name + ' (Kopie)', category: cur.category, description: cur.description } : null);
+    const cur = currentLayerPresetId() ? getPresetById(currentLayerPresetId()) : null;
+    _openFxPresetMetaModal('create',
+      cur ? { name: cur.name + ' (Kopie)', group: cur.group, stage: cur.stage, description: cur.description } : null,
+      { includeLayerValues: true });
   });
-
-  // Bearbeiten: nur für eigene Presets sichtbar (siehe updateFxPresetActionButtons).
-  // Übernimmt beim Speichern sowohl die Metadaten als auch die aktuell im
-  // Formular stehenden Effektwerte unter derselben ID (der volle Preset-Zustand wird
-  // beim Öffnen bereits über das Dropdown/writeEffectsToUI vollständig wiederhergestellt,
-  // siehe fxPreset change-Handler oben).
-  document.getElementById('btnFxPresetEdit')?.addEventListener('click', () => {
-    const val = document.getElementById('fxPreset')?.value;
-    if (!val || !isUserPreset(val)) return;
-    const p = getPresetById(val);
-    _openFxPresetMetaModal('edit', p);
-  });
+  document.getElementById('btnFxPresetEdit')?.addEventListener('click', () => presetActions.edit(currentLayerPresetId(), { includeLayerValues: true }));
+  document.getElementById('btnFxPresetDuplicate')?.addEventListener('click', () => presetActions.duplicate(currentLayerPresetId()));
+  document.getElementById('btnFxPresetDelete')?.addEventListener('click', () => presetActions.remove(currentLayerPresetId()));
+  document.getElementById('btnFxPresetExport')?.addEventListener('click', () => presetActions.exportOne(currentLayerPresetId()));
 
   document.getElementById('btnFxPresetMetaSave')?.addEventListener('click', () => {
     const name        = document.getElementById('fxPresetNameInput')?.value || '';
-    const category     = document.getElementById('fxPresetCategoryInput')?.value || 'supernatural';
-    const description   = document.getElementById('fxPresetDescInput')?.value || '';
-    const effects        = _currentEffectsForPreset();
+    const group       = document.getElementById('fxPresetCategoryInput')?.value || 'supernatural';
+    const stage       = document.getElementById('fxPresetStageInput')?.value || currentLayerStage() || 'medium';
+    const description = document.getElementById('fxPresetDescInput')?.value || '';
+    const withValues  = _metaIncludeLayerValues && isLayerModalOpen();
+    const effects     = withValues ? _currentEffectsForPreset() : undefined;
     let result;
     if (_fxPresetMetaMode === 'edit' && _fxPresetMetaEditId) {
-      result = updateUserPreset(_fxPresetMetaEditId, { name, category, description, effects });
+      result = updateUserPreset(_fxPresetMetaEditId, { name, group, stage, description, effects });
     } else {
-      result = createUserPreset({ name, category, description, effects });
+      result = createUserPreset({ name, group, stage, description, effects: effects || {} });
     }
     if (!result) { toast('Preset konnte nicht gespeichert werden', 'err'); return; }
     _saveRaw();
-    renderPresetDropdown();
-    const sel = document.getElementById('fxPreset');
-    if (sel) sel.value = result.id;
-    updateFxPresetActionButtons();
+    // Der bearbeitete Layer verweist ab jetzt auf das gespeicherte Preset (nur, wenn es zu seiner Stufe gehört).
+    if (withValues) adoptPresetInLayerModal(result.id);
+    refreshPresetViews();
     bootstrap.Modal.getInstance(document.getElementById('fxPresetMetaModal'))?.hide();
     toast(_fxPresetMetaMode === 'edit' ? 'Preset geändert ✓' : 'Preset gespeichert ✓', 'ok');
   });
 
-  // Duplizieren: sofort, ohne Zwischendialog — funktioniert
-  // sowohl für Built-ins als auch für eigene Presets; das Original bleibt
-  // in jedem Fall unverändert (duplicatePreset() erzeugt immer ein neues
-  // User-Preset).
-  document.getElementById('btnFxPresetDuplicate')?.addEventListener('click', () => {
-    const val = document.getElementById('fxPreset')?.value;
-    if (!val) return;
-    const dup = duplicatePreset(val);
-    if (!dup) { toast('Preset konnte nicht dupliziert werden', 'err'); return; }
-    _saveRaw();
-    renderPresetDropdown();
-    const sel = document.getElementById('fxPreset');
-    if (sel) sel.value = dup.id;
-    sel?.dispatchEvent(new Event('change'));
-    toast('Preset dupliziert ✓', 'ok');
-  });
-
-  document.getElementById('btnFxPresetDelete')?.addEventListener('click', () => {
-    const val = document.getElementById('fxPreset')?.value;
-    if (!val || !isUserPreset(val)) return;
-    const p = getPresetById(val);
-    if (!confirm(`Eigenes Preset "${p?.name || val}" wirklich löschen?`)) return;
-    deleteUserPreset(val);
-    _saveRaw();
-    renderPresetDropdown();
-    const sel = document.getElementById('fxPreset');
-    if (sel) { sel.value = ''; sel.dispatchEvent(new Event('change')); }
-    toast('Preset gelöscht', 'ok');
-  });
-
-  document.getElementById('btnFxPresetExport')?.addEventListener('click', () => {
-    const val = document.getElementById('fxPreset')?.value;
-    if (!val) return;
-    exportPreset(val);
-  });
-
-  document.getElementById('btnFxPresetExportAll')?.addEventListener('click', () => {
-    exportUserPresets();
-  });
-
+  // Preset-Picker: Sammel-Export und Import
+  document.getElementById('btnFxPresetExportAll')?.addEventListener('click', () => { exportUserPresets(); });
   document.getElementById('btnFxPresetImportTrigger')?.addEventListener('click', () => {
     document.getElementById('fxPresetImportInput')?.click();
   });
   document.getElementById('fxPresetImportInput')?.addEventListener('change', function() {
     const f = this.files[0]; if (!f) return;
     importData(f, {
-      onSuccess: () => {
-        renderPresetDropdown();
-        updateFxPresetActionButtons();
-        toast('Preset(s) importiert ✓', 'ok');
-      }
+      onSuccess: () => { refreshPresetViews(); toast('Preset(s) importiert ✓', 'ok'); }
     });
     this.value = '';
   });
 }
-
-/**
- * Greys out sub-sections when their enable-checkbox is off.
- * Also disables the whole panel when master toggle is off.
- */

@@ -1,5 +1,5 @@
 /**
- * ui/meters.js — Peak/RMS-Pegelmesser (Analyzer-Overlay)
+ * ui/meters.js — Peak/RMS-Pegelmesser (Overlay)
  */
 
 import { getPeak, getRms } from '../analysis.js';
@@ -7,9 +7,7 @@ import { getPeak, getRms } from '../analysis.js';
 // ─── PEAK/RMS-METER ─────────────────────────────────────────
 // Läuft ausschließlich während einer aktiven Vorschau-Wiedergabe (siehe
 // events/register-slot-events.js #btnTrimPreview), gespeist von einem in den Preview-Signalpfad
-// eingeschleiften AnalyserNode. Eigenständige rAF-Schleife, unabhängig vom
-// bestehenden APP.analyzer-Singleton (der ist für den FX-Spektrum-Effekt
-// während LIVE-Playback reserviert, s. startAnalyzerLoop()).
+// eingeschleiften AnalyserNode. Eigenständige rAF-Schleife.
 
 let _meterRaf = null;
 let _meterPeakHoldDb = -Infinity;

@@ -23,7 +23,6 @@ export const APP = {
   trim: { slotIdx: null, buf: null, previewSrc: null, dragging: null,
            zoom: 1, scrollOffset: 0, playheadPos: null, _playRaf: null,
            clippingRegions: [] },
-  analyzer:     { node: null, canvas: null, rafId: null, mode: 'bars', active: false },
   // Effekt-Editor-Preview (Audio-Effekt-Dialog): eigener, von der normalen
   // Soundboard-Wiedergabe (activeAudio/_setPlaying/Ducking/Rotation)
   // vollständig isolierter Lifecycle-State. `token` schützt gegen Race
@@ -32,7 +31,7 @@ export const APP = {
   audioPreview: {
     playing: false, loading: false,
     soundId: null, slotIdx: null,
-    src: null, masterGain: null, analyser: null,
+    src: null, masterGain: null,
     kind: null,          // 'buffer' | 'noise' | null — bestimmt, wie die Quelle beendet wird
     token: 0
   },

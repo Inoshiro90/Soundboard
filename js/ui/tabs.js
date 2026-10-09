@@ -4,8 +4,8 @@
 
 import { APP, CItems } from '../core/state.js';
 import { iconHtmlOr } from '../utils.js';
-import { getAllPresets, PRESET_CATEGORIES } from '../presets.js';
-// Zirkulärer Import (grid.js importiert umgekehrt renderPresetDropdown/
+import { getAllPresets, PRESET_GROUPS } from '../presets.js';
+// Zirkulärer Import (grid.js importiert umgekehrt
 // updateCategories aus diesem Modul) — unkritisch, s. Kommentar in grid.js.
 import { renderGrid } from './grid.js';
 
@@ -59,7 +59,7 @@ export function renderProfileTabs() {
 }
 
 
-export function renderPresetOptions(sel, currentId) {
+export function renderPresetOptions(sel, currentId, { stage } = {}) {
   if (!sel) return;
   const prevValue = currentId !== undefined ? currentId : sel.value;
 
@@ -75,19 +75,21 @@ export function renderPresetOptions(sel, currentId) {
     sel.removeChild(sel.lastElementChild);
   }
 
-  const all = getAllPresets();
+  // `stage` (optional): nur Presets dieser Stufe (optional einschränkbar).
+  const all = getAllPresets().filter(p => !stage || p.stage === stage);
   const builtins = all.filter(p => p.builtin);
   const users    = all.filter(p => !p.builtin);
 
-  const categoryOrder = Object.keys(PRESET_CATEGORIES).sort(
-    (a, b) => (PRESET_CATEGORIES[a].order || 0) - (PRESET_CATEGORIES[b].order || 0)
+  // Gruppen sind reine Anzeige-Gruppierung; die Rolle im Signalweg ist die Stufe (p.stage).
+  const categoryOrder = Object.keys(PRESET_GROUPS).sort(
+    (a, b) => (PRESET_GROUPS[a].order || 0) - (PRESET_GROUPS[b].order || 0)
   );
 
   categoryOrder.forEach(catKey => {
-    const inCat = builtins.filter(p => p.category === catKey);
+    const inCat = builtins.filter(p => p.group === catKey);
     if (!inCat.length) return;
     const group = document.createElement('optgroup');
-    group.label = `${PRESET_CATEGORIES[catKey].icon} ${PRESET_CATEGORIES[catKey].label}`;
+    group.label = PRESET_GROUPS[catKey].label;
     inCat.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id; opt.textContent = p.name;
@@ -112,16 +114,6 @@ export function renderPresetOptions(sel, currentId) {
   // Auswahl beibehalten, falls das Preset noch existiert (z.B. nach dem
   // Bearbeiten eines eigenen Presets); sonst zurück auf "Kein Preset".
   sel.value = [...sel.options].some(o => o.value === prevValue) ? prevValue : '';
-}
-
-// ─── AUDIO-EFFEKT-PRESET-DROPDOWN (Sound-Editor) ──────────────
-// Baut die Optionsliste dynamisch nach akustischer Kategorie auf und hängt
-// eine eigene Gruppe für benutzerdefinierte Presets an — dadurch erscheinen
-// neu erstellte/importierte User-Presets sofort im Dropdown, ohne dass HTML
-// angefasst werden muss (generisch, keine Sonderfälle je Preset-ID). Dünner
-// Wrapper um renderPresetOptions() für die einzige feste Aufrufstelle #fxPreset.
-export function renderPresetDropdown() {
-  renderPresetOptions(document.getElementById('fxPreset'));
 }
 
 // ─── CATEGORIES ───────────────────────────────────────────────

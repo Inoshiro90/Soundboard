@@ -378,11 +378,9 @@ export function initTileAddChoice() {
 }
 
 /**
- * Generische Variante von renderPresetDropdown() — baut die Preset-Optionsliste
- * (Kategorien + eigene Presets) in ein beliebiges <select>-Element statt fest in
- * #fxPreset. Es darf nur EINE Quelle für die Preset-Liste geben: sowohl
- * Sound-Effekte (#fxPreset) als auch der Musik-Track-Dialog und die Profil-Presets
- * rufen diese Funktion auf.
+ * Generische Preset-Optionsliste — baut die Preset-Optionsliste
+ * (Kategorien + eigene Presets) in ein beliebiges <select>-Element. Es darf nur EINE Quelle für die
+ * Preset-Liste geben (die Profil-Presets rufen diese Funktion auf).
  * @param {HTMLSelectElement} sel - Ziel-<select>, dessen erstes <option>
  *   ("— Kein Preset —"/"Kein Preset") im Markup bereits vorhanden sein muss.
  * @param {string} [currentId] - zu erhaltender Wert; Standard: sel.value.

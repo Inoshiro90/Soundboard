@@ -11,6 +11,8 @@ import { toast } from './notifications.js';
 import { bk }   from './utils.js';
 import './audio/context.js';
 import { renderSoundGraph } from './renderPipeline.js';
+import { resolvePlan, exportTailSeconds } from './audio/fx-pipeline.js';
+import { asPipelineEffects } from './fx-model.js';
 import { idbGet, audioKey, isIdbRef } from './db.js';
 import { decodeAudio } from './audio/playback.js';
 import { timelineMixdown } from './timeline.js';
@@ -94,7 +96,7 @@ export function audioBufferToMp3Blob(buffer, kbps = 128) {
 
 // ─── RENDER SOUND WITH EFFECTS ────────────────────────────────
 
-async function renderSoundOffline(s, slotIdx) {
+export async function renderSoundOffline(s, slotIdx) {
   slotIdx = slotIdx ?? (s.curSlot || 0) % Math.max(1, (s.slots || []).length);
   const slot = (s.slots || [])[slotIdx];
   if (!slot || !slot.data) return null;
@@ -113,15 +115,14 @@ async function renderSoundOffline(s, slotIdx) {
   const dur = te - ts;
   if (dur <= 0) return null;
 
-  const hasFx  = s.effects?.enabled;
-  const tail   = hasFx ? 3.5 : 0;
+  const tail   = exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)));
   const numCh  = liveBuf.numberOfChannels;
   const sr     = liveBuf.sampleRate;
   const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + tail) * sr), sr);
 
   // renderSoundOffline() ist der tatsächlich von exportSoundWav()/exportSoundMp3()
   // genutzte Render-Pfad — derselbe Baustein wie überall sonst (renderPipeline.js),
-  // inkl. Fades/Envelope. Trim geschieht per start(when, offset, duration) direkt
+  // inkl. Fades. Trim geschieht per start(when, offset, duration) direkt
   // auf dem ungetrimmten liveBuf (funktioniert für OfflineAudioContext identisch
   // wie live), eine manuelle Trim-Buffer-Kopie ist dadurch nicht nötig.
   const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
@@ -129,7 +130,7 @@ async function renderSoundOffline(s, slotIdx) {
     destination: offCtx.destination
   });
   graph.start(0);
-  return offCtx.startRendering();
+  try { return await offCtx.startRendering(); } finally { graph.dispose(); }
 }
 
 // ─── PUBLIC EXPORT FUNCTIONS ──────────────────────────────────

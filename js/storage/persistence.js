@@ -92,7 +92,7 @@ export async function load() {
       if (!APP.activeProfileId || !APP.profiles.find(p => p.id === APP.activeProfileId)) {
         APP.activeProfileId = APP.profiles[0].id;
       }
-      migrateEffects();
+      if (migrateEffects() > 0) _saveRaw();   // Alt-Effekte → Pipeline v2 (Backup: <key>:pre-pipeline)
       migratePlaybackSettings();
       migrateProfileColors();
       await runIdbMigrationIfNeeded();

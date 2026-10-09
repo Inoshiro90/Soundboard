@@ -9,7 +9,7 @@ import { hotkeyStr } from '../utils.js';
 import { toast } from '../notifications.js';
 import { iconSvg } from '../ui/icons.js';
 import { stopAll } from '../audio/playback.js';
-import { applyPresetToCollection } from '../presets.js';
+import { applyPipelineToCollection } from '../fx-model.js';
 import { _saveRaw } from '../storage/persistence.js';
 import { renderGrid } from '../ui/grid.js';
 import { renderProfileTabs, applyProfileSettings, renderPresetOptions } from '../ui/tabs.js';
@@ -50,19 +50,19 @@ export function handleHotkeyRecord(e) {
 // #profModal/#ambProfModal/#musicProfileModal (Preset-Dropdown +
 // Alle/Gleiche/Keine-Modusauswahl + "Anwenden"-Button), statt die Logik dreimal zu
 // duplizieren. Die eigentliche Anwendungslogik steckt zentral in
-// applyPresetToCollection() (presets.js); diese Funktion kümmert sich nur um die
+// applyPipelineToCollection() (fx-model.js); diese Funktion kümmert sich nur um die
 // DOM-Verdrahtung.
 // ─── MODUS-ERKLÄRUNG (Alle / Gleiche / Keine) ──────────────────
 // Einzige Quelle für Beschriftung und Erklärung der drei Modi — Sound-, Ambient- und Musik-Toolbar
 // rendern sie über _wireAudioEffectPresetSection() aus DIESER Tabelle (nur das Nomen unterscheidet
-// sich). Die Semantik selbst liegt unverändert in applyPresetToCollection() (presets.js).
+// sich). Die Semantik selbst liegt unverändert in applyPipelineToCollection() (fx-model.js).
 export const FX_APPLY_MODES = [
   { mode: 'all',  label: 'Alle',
-    text: n => `Preset auf alle ${n} anwenden – bereits vorhandene Presets werden überschrieben.` },
+    text: n => `Preset auf alle ${n} anwenden – die Layer in der Stufe des Presets werden durch das Preset ersetzt (andere Stufen bleiben).` },
   { mode: 'same', label: 'Gleiche',
-    text: n => `${n} ohne Preset erhalten es; ${n} mit genau diesem Preset werden neu abgeglichen. Andere Presets bleiben unverändert.` },
+    text: n => `${n} ohne Preset in dieser Stufe erhalten es; ${n} mit genau diesem Preset werden neu abgeglichen. Andere Presets bleiben unverändert.` },
   { mode: 'none', label: 'Keine',
-    text: n => `Nur ${n} ändern, die noch kein Preset haben. Vorhandene Presets bleiben unverändert.` }
+    text: n => `Nur ${n} ändern, die in der Stufe des Presets noch kein Preset haben. Vorhandene Presets bleiben unverändert.` }
 ];
 export const FX_APPLY_MODES_GROUP_LABEL = 'Umgang mit bereits vorhandenen Presets';
 
@@ -141,7 +141,7 @@ export function _wireAudioEffectPresetSection({ selectId, groupId, applyBtnId, g
     const presetId = sel?.value || null;
     if (!presetId) { toast('Bitte zuerst ein Preset auswählen', 'err'); return; }
     const items = getItems();
-    const { changed, total } = applyPresetToCollection({ items, presetId, overwriteMode: mode });
+    const { changed, total } = applyPipelineToCollection({ items, presetId, overwriteMode: mode });
     persist();
     const modeLbl = FX_APPLY_MODES.find(x => x.mode === mode)?.label || 'Keine';
     toast(`Preset auf ${changed} von ${total} ${itemLabel} angewendet (Modus „${modeLbl}“)`, 'ok');

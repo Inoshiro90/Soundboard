@@ -7,7 +7,8 @@ import { APP, CMP, CMTracks } from '../core/state.js';
 import { fmtTime } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
-import { buildEffectChain } from '../audio/effect-graph.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { asPipelineEffects } from '../fx-model.js';
 import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // Zirkulärer Import (music-model.js importiert umgekehrt stopMusic/
 // _revokeBlobUrl/_orderedTracks/_blobUrls/_resetShuffleOrder aus diesem
@@ -147,15 +148,14 @@ function _ensurePlayers() {
  */
 function _reconnectSlotFx(rec, effects) {
   try { rec.source.disconnect(); } catch (e) {}
+  if (rec.fxChain) { try { rec.fxChain.dispose(); } catch (e) {} rec.fxChain = null; }   // alte LFOs/Träger/Worklets freigeben
   const ctx = actx();
-  const chain = effects?.enabled ? buildEffectChain(ctx, effects) : null;
-  if (chain) {
-    rec.source.connect(chain.input);
-    chain.output.connect(rec.gain);
-  } else {
-    rec.source.connect(rec.gain);
-  }
-  rec.fxChain = chain;
+  // Gleiche Pipeline wie überall (Reihenfolge = Benutzerreihenfolge). Das Pitch-Worklet muss vorher geladen sein
+  // (_loadIntoSlot()/applyMusicTrackEffectsLive() erledigen das); fehlt es, greift der dokumentierte Notbehelf.
+  const graph = buildPipelineGraph(ctx, resolvePlan(asPipelineEffects(effects)), { numChannels: 2, caps: TARGET_CAPS.music });
+  if (graph.input) { rec.source.connect(graph.input); graph.output.connect(rec.gain); }
+  else rec.source.connect(rec.gain);
+  rec.fxChain = graph;
 }
 
 /**
@@ -168,7 +168,11 @@ export function applyMusicTrackEffectsLive(trackId, effects) {
   if (!_players || _crossfading) return;
   ['A', 'B'].forEach(slot => {
     const rec = _players[slot];
-    if (rec?.trackId === trackId && rec.source) _reconnectSlotFx(rec, effects);
+    if (rec?.trackId === trackId && rec.source) {
+      preparePipelineContext(actx(), resolvePlan(asPipelineEffects(effects)), TARGET_CAPS.music)
+        .catch(() => {})
+        .then(() => { if (rec.trackId === trackId && rec.source) _reconnectSlotFx(rec, effects); });
+    }
   });
 }
 
@@ -194,6 +198,8 @@ async function _loadIntoSlot(slot, track) {
   rec.trackId     = track.id;
   // Effektkette für DIESEN Track aufbauen — jeder
   // Track kann ein anderes Preset haben, daher pro Ladevorgang neu.
+  try { await preparePipelineContext(actx(), resolvePlan(asPipelineEffects(track.effects)), TARGET_CAPS.music); } catch (e) {}
+  if (myToken !== _loadToken) return null;
   _reconnectSlotFx(rec, track.effects);
   return rec;
 }

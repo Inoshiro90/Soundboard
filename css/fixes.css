@@ -143,9 +143,7 @@
 
 /* Trim-Modal: Canvas nicht über Container-Breite */
 #trimCanvas,
-#labWaveform,
-#analyzerCanvas,
-#envCanvas {
+#labWaveform {
 	max-width: 100%;
 	display: block;
 }

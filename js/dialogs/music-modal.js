@@ -3,7 +3,8 @@
  */
 
 import { APP } from '../core/state.js';
-import { defaultEffects } from '../audio/effect-graph.js';
+import { defaultPipelineEffects } from '../audio/fx-pipeline.js';
+import { ensureEffectsV2 } from '../fx-model.js';
 import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { getPresetById } from '../presets.js';
 import { stopEffectPreview } from '../audio/preview.js';
@@ -50,7 +51,7 @@ export function _syncMusicFxCard() {
   if (badge) badge.style.display = on ? '' : 'none';
   const summary = document.getElementById('musicEditFxSummary');
   if (summary) {
-    const name = fx.preset ? getPresetById(fx.preset)?.name : '';
+    const name = '';   // Preset-Namen stehen im Effekt-Dialog je Layer; die Karte zeigt die aktiven Stufen
     summary.innerHTML = '';
     // Preset-Name + Namen der aktiven Effekt-Gruppen — derselbe Überblick wie in der Sound-Karte
     // (getActiveEffectGroupLabels() ist dieselbe Quelle wie dort). textContent: Preset-Namen
@@ -74,7 +75,7 @@ export function _syncMusicFxCard() {
 //   „Musikstück speichern" → setMusicTrackEffects(id, _musicEditEffects)  (erst hier persistiert)
 // Abbrechen/Schließen des Musik-Editors verwirft den Draft; der echte Track bleibt unberührt.
 
-/** Dialog-Rahmen für den Musik-Kontext: keine Vorschau/Export (gehören zur Sound-Pipeline), Hinweis-Text. */
+/** Dialog-Rahmen für den Musik-Kontext: keine Vorschau/Export (gehören zur Sound-Pipeline), Hinweis im Footer. */
 function _applyMusicFxModalChrome(on) {
   const prev = document.getElementById('btnPreviewFx');
   if (prev) prev.style.display = on ? 'none' : '';
@@ -82,8 +83,6 @@ function _applyMusicFxModalChrome(on) {
   if (hint) hint.textContent = on
     ? 'Änderungen wirken erst nach dem Speichern des Musikstücks.'
     : 'Änderungen wirken sofort auf die Vorschau.';
-  const note = document.getElementById('fxMusicNote');
-  if (note) note.hidden = !on;
 }
 
 /** Öffnet den Effekt-Dialog für den Draft des gerade bearbeiteten Musikstücks. */
@@ -132,7 +131,7 @@ export function openMusicTrackModal(trackId) {
   _musicEditId = trackId;
   document.getElementById('musicTrackModalTitle').textContent = 'MUSIKSTÜCK BEARBEITEN';
   // Tiefe Kopie (vorher flach: `{ ...t.effects }` teilte alle verschachtelten Module mit dem echten Track).
-  _musicEditEffects = t.effects ? _cloneEffects(t.effects) : defaultEffects();
+  _musicEditEffects = t.effects ? ensureEffectsV2(_cloneEffects(t.effects)) : defaultPipelineEffects();
 
   document.getElementById('musicEditName').value   = t.name || '';
   document.getElementById('musicEditArtist').value = t.artist || '';

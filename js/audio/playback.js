@@ -10,16 +10,14 @@ import { toast }       from '../notifications.js';
 import '../db.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
+import { resolvePlan, exportTailSeconds } from './fx-pipeline.js';
+import { asPipelineEffects } from '../fx-model.js';
 // Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
 // hasAudioContext aus audio/context.js und buildEffectChain aus
 // audio/effect-graph.js) — funktioniert für reine Funktionsreferenzen, die
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
 import { duckAmbient } from '../ambient/ambient-playback.js';
 import { actx, hasAudioContext } from './context.js';
-// Analyzer-Steuerung lebt in audio/preview.js (Effekt-Vorschau + Analyzer);
-// playSelectedSlot() startet/stoppt den Analyzer aber auch bei normaler
-// Live-Wiedergabe (nicht nur bei der Effekt-Vorschau), daher hier importiert.
-import { startAnalyzerLoop, stopAnalyzer } from './preview.js';
 
 // ─── DECODE ───────────────────────────────────────────────
 
@@ -143,14 +141,14 @@ export async function playSelectedSlot(s, idx, opts = {}) {
   }
 
   // Identischer Graph-Aufbau wie beim Export (renderPipeline.js): Live-Wiedergabe, Preview und
-  // Export teilen sich dieselbe Pipeline (Pitch, Noise-Gate, Fades/Envelope).
+  // Export teilen sich dieselbe Pipeline (Pitch, Noise-Gate, Fades).
   const graph = await renderSoundGraph(ctx, buf, slot, s, {
     mode: opts.isPreview ? 'preview' : 'live',
     destination: ctx.destination,
     masterVol: gs.masterVol ?? 1,
     crossfadeIn: doCrossfade ? { duration: cf.duration, curve: cf.curve || 'linear' } : null
   });
-  const { src, masterGain, analyser, dur } = graph;
+  const { src, masterGain, dur } = graph;
 
   if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
   APP.activeAudio[s.id].push({ src, gain: masterGain, dur });
@@ -158,22 +156,18 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 
   graph.start(0);
   src.onended = () => {
+    // Effekt-Knoten (LFOs/Träger/Pitch-Worklets) nach dem Ausklang freigeben — Nachklang (Hall/Delay) läuft weiter.
+    setTimeout(() => graph.dispose(), Math.ceil(graph.tailSeconds * 1000) + 500);
     if (APP.activeAudio[s.id]) {
       APP.activeAudio[s.id] = APP.activeAudio[s.id].filter(x => x.src !== src);
       if (!APP.activeAudio[s.id].length) { delete APP.activeAudio[s.id]; _setPlaying(s.id, false); }
     }
     _updateSoundLiveIndicator(); refreshRotBadge(s.id);
-    if (analyser && !APP.activeAudio[s.id]?.length) stopAnalyzer();
     notifyDuckRelease(); // Auto Duck — no-op, falls noch andere Sounds aktiv sind
   };
 
   _setPlaying(s.id, true); _updateSoundLiveIndicator();
   animProg(s.id, dur); refreshRotBadge(s.id);
-
-  if (analyser) {
-    const cv = document.getElementById('analyzerCanvas');
-    if (cv) startAnalyzerLoop(analyser, cv, s.effects?.analyzer?.mode || 'bars');
-  }
 }
 
 export function playSoundAndWait(s) {
@@ -210,6 +204,7 @@ export function playSoundAndWait(s) {
     notifyDuckTrigger(); // Auto Duck
     graph.start(0);
     src.onended = () => {
+      setTimeout(() => graph.dispose(), Math.ceil(graph.tailSeconds * 1000) + 500);
       if (APP.activeAudio[s.id]) {
         APP.activeAudio[s.id] = APP.activeAudio[s.id].filter(x => x.src !== src);
         if (!APP.activeAudio[s.id].length) { delete APP.activeAudio[s.id]; _setPlaying(s.id, false); }
@@ -382,21 +377,21 @@ export async function exportSoundToWav(s) {
   const dur = te - ts; if (dur <= 0) { toast('Ungültige Trim-Punkte', 'err'); return; }
   toast('Exportiere WAV…');
   try {
-    const hasFx = s.effects?.enabled;
     const numCh = liveBuf.numberOfChannels; const sr = liveBuf.sampleRate;
-    // Tail-Puffer für Reverb/Delay-Ausklang.
-    const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + (hasFx ? 3.5 : 0)) * sr), sr);
+    // Tail-Puffer für Reverb/Delay-Ausklang — aus der Pipeline abgeleitet (mind. 3,5 s bei aktiven Effekten).
+    const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)))) * sr), sr);
 
     // Derselbe Graph-Aufbau wie Live-Playback/Preview (renderPipeline.js). Trim geschieht per
     // start(when, offset, duration) direkt auf dem UNGETRIMMTEN liveBuf — AudioBufferSourceNode.start()
-    // mit offset/duration funktioniert für OfflineAudioContext identisch wie live. Fades/Envelope
+    // mit offset/duration funktioniert für OfflineAudioContext identisch wie live. Fades
     // werden dabei korrekt mitgerendert.
     const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
       mode: 'export',
       destination: offCtx.destination
     });
     graph.start(0);
-    const rendered = await offCtx.startRendering();
+    let rendered;
+    try { rendered = await offCtx.startRendering(); } finally { graph.dispose(); }
 
     const blob = new Blob([_bufToWav(rendered)], { type: 'audio/wav' });
     const url  = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url;

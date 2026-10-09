@@ -8,7 +8,7 @@
  * zusammensetzt, statt dass `playSound()`, `exportSoundToWav()` und
  * `renderSoundOffline()` (export.js) unabhängig voneinander denselben
  * Signalpfad nachbauen — das würde sonst zu Divergenzen führen (z.B. Pitch bei
- * Export oder Fades/Envelope beim Export vergessen).
+ * Export oder Fades beim Export vergessen).
  *
  * Bewusst NICHT einbezogen: timeline.js (Mixdown) und
  * ambient/ambient-playback.js nutzen weiterhin ihre eigene, bestehende
@@ -16,31 +16,8 @@
  * Dauerschleifen-Layer).
  */
 
-import { buildPitchNode, buildEffectChain } from './audio/effect-graph.js';
-import { ensurePitchWorkletFor } from './audio/context.js';
-import { createAnalyzerSplit } from './audio/preview.js';
-
-/**
- * ADSR-Hüllkurve auf einen Gain-Node anwenden. Kurvenamplitude ist IMMER
- * 0..1 (nicht baseGain-skaliert) — die eigentliche Lautstärke lebt in einem
- * separaten, nachgeschalteten Master-Gain-Node (siehe renderSoundGraph()).
- * Envelope und (Legacy-)Fades bekommen dadurch getrennte, in Serie geschaltete
- * Gain-Nodes, statt konkurrierend auf demselben AudioParam zu automatisieren.
- */
-function _applyEnvelopeCurve(ctx, gainNode, env, dur) {
-  const t0  = ctx.currentTime;
-  const att = Math.max(0.001, env.attack  ?? 0.01);
-  const dec = Math.max(0.001, env.decay   ?? 0.15);
-  const sus = Math.max(0, Math.min(1, env.sustain ?? 0.8));
-  const rel = Math.max(0.001, env.release ?? 0.25);
-  gainNode.gain.cancelScheduledValues(t0);
-  gainNode.gain.setValueAtTime(0, t0);
-  gainNode.gain.linearRampToValueAtTime(1, t0 + att);
-  gainNode.gain.linearRampToValueAtTime(sus, t0 + att + dec);
-  const relStart = Math.max(t0 + att + dec, t0 + dur - rel);
-  gainNode.gain.setValueAtTime(sus, relStart);
-  gainNode.gain.linearRampToValueAtTime(0, relStart + rel);
-}
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from './audio/fx-pipeline.js';
+import { asPipelineEffects } from './fx-model.js';
 
 /**
  * Plant eine einzelne Fade-Rampe mit wählbarer Kurvenform auf einem Gain-Node.
@@ -106,10 +83,9 @@ export function clampFadeDurations(fadeIn, fadeOut, dur) {
 
 /**
  * Legacy-Fades (Sound-weites `s.fade`, Slot-`fadeIn`/`fadeOut`) auf einen
- * Gain-Node anwenden. Kurvenamplitude 0..1 (s. _applyEnvelopeCurve-Doku).
- * Mutual-Exclusivity-Regel: eine aktive Envelope ersetzt die Legacy-Fades
- * vollständig; `s.fade` (fixe 0.8s-Ausblendung am Ende) bleibt exklusiv ggü.
- * slot.fadeOut, slot.fadeIn kann mit beidem koexistieren.
+ * Gain-Node anwenden. Kurvenamplitude 0..1.
+ * `s.fade` (fixe 0.8s-Ausblendung am Ende) bleibt exklusiv ggü. slot.fadeOut,
+ * slot.fadeIn kann mit beidem koexistieren.
  */
 function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
   const t0 = ctx.currentTime;
@@ -132,11 +108,11 @@ function _applyFadeCurve(ctx, gainNode, slot, s, dur) {
 
 /**
  * Nicht-destruktive Fade-In/Fade-Out-Rampen auf einem EIGENEN, separaten
- * Gain-Node (getrennt von envelopeGain/fadeGain, s. Kommentar an
- * _applyFadeCurve() zur Mutual-Exclusivity-Regel der LEGACY-Fades) — dadurch
- * koexistieren die playback.fadeIn/fadeOut konfliktfrei sowohl mit der
- * Envelope als auch mit den Legacy-Fades (s.fade/slot.fadeIn/slot.fadeOut),
- * ohne konkurrierende Automation auf demselben AudioParam.
+ * Gain-Node (getrennt von fadeGain, s. Kommentar an _applyFadeCurve()
+ * zur Mutual-Exclusivity-Regel der LEGACY-Fades) — dadurch koexistieren die
+ * playback.fadeIn/fadeOut konfliktfrei mit den Legacy-Fades
+ * (s.fade/slot.fadeIn/slot.fadeOut), ohne konkurrierende Automation auf
+ * demselben AudioParam.
  *
  * `crossfadeIn` (optional) wird von playSelectedSlot() (audio/playback.js)
  * gesetzt, wenn diese Wiedergabe technisch ein Crossfade-Übergang zwischen
@@ -174,37 +150,29 @@ function _applyPlaybackFades(ctx, gainNode, playback, dur, s, crossfadeIn) {
  * wiedergibt oder `ctx.startRendering()` aufruft.
  *
  * Pipeline-Reihenfolge:
- *   Source(Trim via start-Offset) → Pitch → Realtime-Effekte (inkl. Noise
- *   Gate/Panner) → Envelope-Gain → Fade-Gain → Playback-Fade-Gain
- *   ("Wiedergabe & Verhalten" Fade-In/Fade-Out/Crossfade) → Master-Gain →
- *   [Analyser] → Destination.
+ *   Source(Trim via start-Offset) → Pipeline (Quelle → Medium → Umgebung → Hörer, inkl. Pitch je Layer)
+ *   → Fade-Gain → Playback-Fade-Gain ("Wiedergabe & Verhalten" Fade-In/Fade-Out/Crossfade)
+ *   → Master-Gain → Destination.
  *
  * @param {BaseAudioContext} ctx
  * @param {AudioBuffer} buffer      - bereits destruktiv bearbeiteter Quell-Buffer
  * @param {object} slot             - { trimStart, trimEnd, fadeIn, fadeOut }
  * @param {object} s                - Sound-Settings: { vol, pitch, loop, fade, effects }
  * @param {object} opts
- * @param {'live'|'preview'|'export'} opts.mode - steuert Loop-Verhalten UND
- *   ob ein AnalyserNode erzeugt wird (live/preview ja, export nein).
+ * @param {'live'|'preview'|'export'} opts.mode - steuert das Loop-Verhalten.
  * @param {AudioNode} opts.destination
  * @param {number} [opts.masterVol=1] - globale Lautstärke (nur 'live' relevant)
  * @param {boolean} [opts.allowLoop=true] - false erzwingt Einmal-Wiedergabe selbst
  *   bei s.loop (z.B. sequenzielle Makro-Wiedergabe)
  * @param {{duration:number, curve:string}} [opts.crossfadeIn] - s. _applyPlaybackFades()
  * @returns {Promise<{
- *   src: AudioBufferSourceNode, masterGain: GainNode, analyser: AnalyserNode|null,
+ *   src: AudioBufferSourceNode, masterGain: GainNode,
  *   dur: number, ts: number, start: (when?: number) => void
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null } = opts;
   const isLive    = mode === 'live';
-  // Analyzer war bisher an isLive geknüpft — dadurch blieb er bei
-  // mode==='preview' immer leer, obwohl die Preview denselben Graph durchläuft.
-  // Live UND Preview dürfen ihn erzeugen (sofern in den Effekten aktiviert);
-  // Export bleibt bewusst ausgeschlossen (dort gibt es kein Canvas/keine
-  // Live-Visualisierung, nur unnötiger Overhead).
-  const isPreview = mode === 'preview';
 
   const ts = slot.trimStart || 0;
   let   te = slot.trimEnd ?? buffer.duration;
@@ -220,59 +188,42 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // `onended` nie feuern und die await-Kette der Makro-Sequenz hinge fest.
   src.loop = isLive && allowLoop && !!s.loop;
 
-  // Pitch-Worklet: Context-spezifisch sicherstellen (gilt gleicher-
-  // maßen für Live- UND Offline-Context).
-  let pitchNode = null;
-  if (s.effects?.pitchShift?.enabled && (s.effects.pitchShift.semitones ?? 0) !== 0) {
-    await ensurePitchWorkletFor(ctx);
-    pitchNode = buildPitchNode(ctx, s.effects.pitchShift, buffer.numberOfChannels);
-    if (!pitchNode) src.detune.value = (s.effects.pitchShift.semitones ?? 0) * 100;
-  }
+  // Pipeline: EIN Plan (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → EINE serielle
+  // Knotenkette. Live, Preview und Export laufen durch dieselbe Funktion; es gibt keine Optimierung, die Layer
+  // zusammenfasst oder umordnet (auch kein Pitch-Coalescing). Der Pitch-Worklet wird je Layer-Instanz gebaut.
+  const plan = resolvePlan(asPipelineEffects(s.effects));
+  await preparePipelineContext(ctx, plan, TARGET_CAPS.sound);
+  const graph = buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound });
+  if (graph.detuneSemitones) src.detune.value = graph.detuneSemitones * 100;
 
-  const chain = buildEffectChain(ctx, s.effects);
-
-  // Envelope/Fades: getrennte, in Serie geschaltete Gain-Nodes (Plan 1.5) —
-  // vermeidet konkurrierende Automation auf demselben AudioParam. Beide
-  // Nodes tragen nur die FORM der Hüllkurve (0..1); die eigentliche
+  // Legacy-Fades (s.fade / slot.fadeIn / slot.fadeOut): eigener Gain-Node mit Form 0..1; die eigentliche
   // Lautstärke sitzt separat im masterGain.
-  const envelopeGain = ctx.createGain(); envelopeGain.gain.value = 1;
-  const fadeGain      = ctx.createGain(); fadeGain.gain.value      = 1;
-  if (s.effects?.envelope?.enabled) {
-    _applyEnvelopeCurve(ctx, envelopeGain, s.effects.envelope, dur);
-  } else {
-    _applyFadeCurve(ctx, fadeGain, slot, s, dur);
-  }
+  const fadeGain = ctx.createGain(); fadeGain.gain.value = 1;
+  _applyFadeCurve(ctx, fadeGain, slot, s, dur);
 
-  // "Wiedergabe & Verhalten": eigener, dritter Gain-Node — bewusst getrennt
-  // von envelopeGain/fadeGain (s. _applyPlaybackFades()-Doku), damit die
-  // neuen, nicht-destruktiven Fade-In/Fade-Out/Crossfade-Einstellungen
-  // unabhängig von Envelope UND Legacy-Fades funktionieren.
+  // "Wiedergabe & Verhalten": eigener Gain-Node — bewusst getrennt von fadeGain (s. _applyPlaybackFades()-Doku),
+  // damit die nicht-destruktiven Fade-In/Fade-Out/Crossfade-Einstellungen unabhängig von den Legacy-Fades funktionieren.
   const playbackFadeGain = ctx.createGain(); playbackFadeGain.gain.value = 1;
   _applyPlaybackFades(ctx, playbackFadeGain, s.playback, dur, s, crossfadeIn);
 
   // Master-Gain: NUR die statische Lautstärke (s.vol * masterVol bei Live;
-  // Preview/Export spielen bei vollem s.vol ohne globalen Master-Regler,
-  // identisch zum bisherigen Verhalten). Bleibt bewusst UNBERÜHRT von
-  // Envelope/Fade-Automation, damit z.B. ein Makro-Fadeout (der live auf
-  // diesen Node zugreift) nicht mit einer laufenden Envelope kollidiert.
+  // Preview/Export spielen bei vollem s.vol ohne globalen Master-Regler).
+  // Bleibt bewusst UNBERÜHRT von der Fade-Automation, damit z.B. ein Makro-Fadeout (der live auf
+  // diesen Node zugreift) nicht mit einer laufenden Rampe kollidiert.
   const baseGain = (s.vol ?? 1) * (isLive ? masterVol : 1);
   const masterGain = ctx.createGain(); masterGain.gain.value = baseGain;
 
-  let analyser = null;
-  if ((isLive || isPreview) && s.effects?.analyzer?.enabled) analyser = createAnalyzerSplit(ctx);
-
   let node = src;
-  if (pitchNode) { node.connect(pitchNode.input); node = pitchNode.output; }
-  if (chain)     { node.connect(chain.input);     node = chain.output; }
-  node.connect(envelopeGain);
-  envelopeGain.connect(fadeGain);
+  if (graph.input) { node.connect(graph.input); node = graph.output; }
+  node.connect(fadeGain);
   fadeGain.connect(playbackFadeGain);
   playbackFadeGain.connect(masterGain);
-  if (analyser) masterGain.connect(analyser);
   masterGain.connect(destination);
 
   return {
-    src, masterGain, analyser, dur, ts,
+    src, masterGain, dur, ts,
+    /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
+    plan, tailSeconds: estimateTail(plan), dispose: graph.dispose,
     /** Startet die Quelle. `when` ist eine ctx-relative Zeit (Default: sofort). */
     start(when = 0) {
       src.start(when, ts, src.loop ? undefined : dur);

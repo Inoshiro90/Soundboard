@@ -6,7 +6,10 @@
  */
 
 import { APP }                              from '../core/state.js';
-import { defaultEffects, defaultPlayback }  from '../audio/effect-graph.js';
+import { defaultPlayback }                from '../audio/effect-graph.js';
+import { STORAGE_KEY }                   from '../core/constants.js';
+import { PIPELINE_VERSION, defaultPipelineEffects } from '../audio/fx-pipeline.js';
+import { ensureEffectsV2 }               from '../fx-model.js';
 import { toast }                            from '../notifications.js';
 import { idbSet, migrateAudioToIdb, audioKey, IDB_SENTINEL, isBase64Data } from '../db.js';
 // Zirkulärer Import (persistence.js importiert umgekehrt migrateEffects/
@@ -18,38 +21,57 @@ import { _saveRaw }                         from './persistence.js';
 
 // ─── EFFECTS MIGRATION ───────────────────────────────────────
 
-export function migrateEffects() {
-  const def   = defaultEffects();
-  const clone = x => JSON.parse(JSON.stringify(x));
+/** Alle Objekte mit einem `effects`-Feld: Sounds, Ambient-Tracks, Musik-Tracks. */
+export function forEachEffectHolder(cb) {
+  APP.profiles.forEach(prof => (prof.items || []).filter(x => x.type === 'sound').forEach(cb));
+  (APP.ambient?.profiles || []).forEach(ap => (ap.tracks || []).forEach(cb));
+  (APP.music?.profiles   || []).forEach(mp => (mp.tracks || []).forEach(cb));
+}
 
-  APP.profiles.forEach(prof => {
-    (prof.items || []).filter(x => x.type === 'sound').forEach(s => {
-      if (!s.effects || typeof s.effects !== 'object') {
-        s.effects = clone(def); return;
+const PRE_PIPELINE_BACKUP = STORAGE_KEY + ':pre-pipeline';
+
+/** Alte Schlüssel, die das Pipeline-Modell nicht mehr kennt (Hüllkurve, Ausgang/Pan, Analyzer). */
+const REMOVED_FX_KEYS = ['envelope', 'output', 'analyzer'];
+
+/** True für v1-Objekte und für v2-Objekte, die noch entfernte Schlüssel tragen (→ Backup + Bereinigung). */
+function _needsPipelineMigration(fx) {
+  if (!fx || fx.v !== PIPELINE_VERSION) return true;
+  return REMOVED_FX_KEYS.some(k => k in fx);
+}
+
+/**
+ * Überführt ALLE Effekt-Objekte in das Pipeline-Modell (v2). Idempotent: v2-Objekte werden nur normalisiert.
+ * Sicherheitsnetz: vor der ersten Migration wird der gespeicherte Rohzustand einmalig unter
+ * `<STORAGE_KEY>:pre-pipeline` gesichert; scheitert die Migration eines einzelnen Elements, bekommt es eine leere
+ * Pipeline und das Original unter `effects.legacyV1` (nichts geht verloren, nichts wird still falsch einsortiert).
+ * Entfernte Schlüssel (envelope/output/analyzer) werden dabei verworfen; die Migration ist wiederholbar.
+ * @returns {number} Anzahl migrierter (v1 oder bereinigter v2-)Objekte
+ */
+export function migrateEffects() {
+  let needsBackup = false;
+  forEachEffectHolder(h => { if (_needsPipelineMigration(h.effects)) needsBackup = true; });
+  if (needsBackup) {
+    try {
+      if (!localStorage.getItem(PRE_PIPELINE_BACKUP)) {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) localStorage.setItem(PRE_PIPELINE_BACKUP, raw);
       }
-      const fx = s.effects;
-      if (!fx.lowpass)  fx.lowpass  = clone(def.lowpass);
-      if (!fx.highpass) fx.highpass = clone(def.highpass);
-      if (!fx.reverb)   fx.reverb   = clone(def.reverb);
-      if (!fx.delay)    fx.delay    = clone(def.delay);
-      if (fx.pan     == null) fx.pan     = 0;
-      if (fx.enabled == null) fx.enabled = false;
-      if (fx.preset  == null) fx.preset  = null;
-      if (!fx.eq)         fx.eq         = clone(def.eq);
-      if (!fx.compressor) fx.compressor = clone(def.compressor);
-      if (!fx.limiter)    fx.limiter    = clone(def.limiter);
-      if (!fx.distortion) fx.distortion = clone(def.distortion);
-      if (!fx.pitchShift) fx.pitchShift = clone(def.pitchShift);
-      if (!fx.irReverb)   fx.irReverb   = clone(def.irReverb);
-      if (!fx.envelope)   fx.envelope   = clone(def.envelope);
-      if (!fx.analyzer)   fx.analyzer   = clone(def.analyzer);
-      if (!fx.eq10)       fx.eq10       = clone(def.eq10);
-      if (!Array.isArray(fx.eq10.bands)) fx.eq10.bands = [0,0,0,0,0,0,0,0,0,0];
-      while (fx.eq10.bands.length < 10)  fx.eq10.bands.push(0);
-      if (!fx.spatial)   fx.spatial   = clone(def.spatial);
-      if (!fx.noiseGate) fx.noiseGate = clone(def.noiseGate);
-    });
+    } catch (e) { console.warn('[storage] Pipeline-Backup nicht möglich:', e); }
+  }
+  let migrated = 0;
+  forEachEffectHolder(h => {
+    const wasCurrent = !_needsPipelineMigration(h.effects);
+    try {
+      h.effects = ensureEffectsV2(h.effects);
+    } catch (e) {
+      console.error('[storage] Effekt-Migration fehlgeschlagen für', h.id, e);
+      const orig = h.effects;
+      h.effects = defaultPipelineEffects();
+      h.effects.legacyV1 = JSON.parse(JSON.stringify(orig ?? null));
+    }
+    if (!wasCurrent) migrated++;
   });
+  return migrated;
 }
 
 // ─── "WIEDERGABE & VERHALTEN"-MIGRATION ───────────────────────

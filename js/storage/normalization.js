@@ -5,7 +5,7 @@
  */
 
 import { uid }                     from '../utils.js';
-import { defaultEffects }          from '../audio/effect-graph.js';
+import { defaultPipelineEffects }  from '../audio/fx-pipeline.js';
 import { mkAmbientProfile, mkMusicProfile } from './factories.js';
 import { normalizeAmbientVolumeFields } from '../ambient/ambient-volume.js';
 
@@ -118,7 +118,7 @@ function _normalizeMusicTrack(t) {
   // Effekt-Objekt bekommen es rückwärtskompatibel ergänzt (dieselbe
   // defaultEffects()-Fabrik wie Sound/Ambient — kein eigenes Modell,
   // keine destruktive Migration bereits vorhandener Effekte).
-  if (!t.effects || typeof t.effects !== 'object') t.effects = defaultEffects();
+  if (!t.effects || typeof t.effects !== 'object') t.effects = defaultPipelineEffects();
   return t;
 }
 

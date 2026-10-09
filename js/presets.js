@@ -18,15 +18,26 @@ import { defaultEffects } from './audio/effect-graph.js';
 import { IR_IMPULSE_NAMES } from './audio/ir-data.js';
 import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import { uid } from './utils.js';
+import { STAGE_ORDER, PIPELINE_STAGES, isStageKey, sparsifyParams, suggestStageForParams } from './audio/fx-pipeline.js';
 
-// ─── KATEGORIEN ───────────────────────────────────────────────
+// ─── PIPELINE-STUFEN vs. ANZEIGE-GRUPPEN ──────────────────────
+// ZWEI GETRENNTE ACHSEN — nicht verwechseln:
+//   stage  (source | medium | environment | listener) = ROLLE IM SIGNALWEG der Pipeline (audio/fx-pipeline.js).
+//                                                       Sie bestimmt, wo ein Preset eingesetzt wird.
+//   group  (room, barrier, …)                          = reine ANZEIGE-Gruppierung (Optgroups im Dropdown),
+//                                                       die frühere „Kategorie“. Hat keinen Einfluss auf die Verarbeitung.
+// Die Stufe beschreibt die künstlerische/akustische Wirkung des GESAMTEN Presets, nicht seine einzelnen Module.
+export const PRESET_STAGES = PIPELINE_STAGES;
+export { STAGE_ORDER };
+
+// ─── ANZEIGE-GRUPPEN (frühere „Kategorien“) ────────────────────
 // Fachlich an der Art der akustischen Transformation orientiert,
 // nicht an Entwicklungsphasen oder Fantasy-Settings. Erweitert auf 6
 // Kategorien (vom Nutzer vorgegebenes Schema): reine Raumakustik wird von
 // physischer Abschirmung (Barriere zwischen Quelle und Hörer) getrennt,
 // und Effekte, die den Zustand des HÖRERS selbst betreffen (Somatik/
 // Psyche), von externen technischen/übernatürlichen Übertragungswegen.
-export const PRESET_CATEGORIES = {
+export const PRESET_GROUPS = {
   room:         { label: 'Akustische Räume & Dimensionen',      icon: '🏛️', order: 1 },
   barrier:      { label: 'Physische Abschirmung & Dämpfung',    icon: '🧱', order: 2 },
   transmission: { label: 'Technische Signalübertragung & Lo-Fi', icon: '📡', order: 3 },
@@ -34,7 +45,10 @@ export const PRESET_CATEGORIES = {
   supernatural: { label: 'Übernatürliche & Magische Phänomene',  icon: '🔮', order: 5 },
   creature:     { label: 'Kreaturen-Morphs',                     icon: '🐾', order: 6 }
 };
-const DEFAULT_CATEGORY = 'supernatural';
+const DEFAULT_GROUP = 'supernatural';
+/** Rückwärtskompatibler Alias (frühere Bezeichnung) — neue Aufrufer nutzen PRESET_GROUPS. */
+export const PRESET_CATEGORIES = PRESET_GROUPS;
+const DEFAULT_CATEGORY = DEFAULT_GROUP;
 
 // ─── BUILT-IN PRESET METADATEN ────────────────────────────────
 // Nur Anzeige-/Dokumentationsdaten. Die eigentlichen Effektparameter
@@ -43,64 +57,62 @@ const DEFAULT_CATEGORY = 'supernatural';
 
 export const BUILTIN_PRESET_META = {
   // ── Akustische Räume & Dimensionen ──────────────────────────
-  cave:            { name: '🏔️ Höhle',              category: 'room', description: 'Große, hallende Steinhöhle mit tiefen Reflexionen und leichtem Echo.' },
-  tunnel:          { name: '🚇 Tunnel',              category: 'room', description: 'Langgezogener, röhrenförmiger Nachhall mit Flatterecho wie in einem Tunnel.' },
-  bathroom:        { name: '🚿 Badezimmer',          category: 'room', description: 'Kurzer, harter Nachhall an gefliesten Wänden — kleiner, stark reflektierender Raum.' },
-  metal_room:      { name: '🔩 Metallraum',          category: 'room', description: 'Scharfe, metallische Reflexionen in einem Raum mit harten Metallflächen.' },
-  dark_cave:       { name: '🕳️ Dunkle Höhle',        category: 'room', description: 'Sehr langer, dichter Nachhall einer riesigen, bedrohlichen Höhle mit kurzem Flatterecho.' },
-  huge_hall:       { name: '🏛️ Riesiger Saal',       category: 'room', description: 'Weitläufiger, langer Nachhall wie in einer Kathedrale oder einem riesigen Saal.' },
-  tight_room:      { name: '📦 Kleiner Raum',        category: 'room', description: 'Sehr kurzer, enger Nachhall wie in einem kleinen, gedämpften Raum.' },
-  cathedral_sanctum: { name: '⛪ Monumentaler Sakralraum', category: 'room', description: 'Extrem langer, sehr heller Nachhall (Convolver + synthetisches Reverb kombiniert) eines riesigen Sakralbaus — länger und dichter als der Riesige Saal.' },
-  narrow_vent:     { name: '🚰 Enger Schacht / Blechrohr', category: 'room', description: 'Extrem schmalbandige Resonanz (Hoch-/Tiefpass eng gestapelt) mit metallischem Flackern (Flanger) für Lüftungsschächte oder Rohrsysteme.' },
-  endless_abyss:   { name: '🌌 Unendlicher Abgrund',  category: 'room', description: 'Der längste, dichteste Nachhall der Bibliothek kombiniert mit weit auseinanderliegenden, lange nachklingenden Echos — für einen Sturz ohne erkennbaren Boden.' },
+  cave:            { name: '🏔️ Höhle',              stage: 'environment', group: 'room', description: 'Große, hallende Steinhöhle mit tiefen Reflexionen und leichtem Echo.' },
+  tunnel:          { name: '🚇 Tunnel',              stage: 'environment', group: 'room', description: 'Langgezogener, röhrenförmiger Nachhall mit Flatterecho wie in einem Tunnel.' },
+  bathroom:        { name: '🚿 Badezimmer',          stage: 'environment', group: 'room', description: 'Kurzer, harter Nachhall an gefliesten Wänden — kleiner, stark reflektierender Raum.' },
+  metal_room:      { name: '🔩 Metallraum',          stage: 'environment', group: 'room', description: 'Scharfe, metallische Reflexionen in einem Raum mit harten Metallflächen.' },
+  dark_cave:       { name: '🕳️ Dunkle Höhle',        stage: 'environment', group: 'room', description: 'Sehr langer, dichter Nachhall einer riesigen, bedrohlichen Höhle mit kurzem Flatterecho.' },
+  huge_hall:       { name: '🏛️ Riesiger Saal',       stage: 'environment', group: 'room', description: 'Weitläufiger, langer Nachhall wie in einer Kathedrale oder einem riesigen Saal.' },
+  tight_room:      { name: '📦 Kleiner Raum',        stage: 'environment', group: 'room', description: 'Sehr kurzer, enger Nachhall wie in einem kleinen, gedämpften Raum.' },
+  cathedral_sanctum: { name: '⛪ Monumentaler Sakralraum', stage: 'environment', group: 'room', description: 'Extrem langer, sehr heller Nachhall (Convolver + synthetisches Reverb kombiniert) eines riesigen Sakralbaus — länger und dichter als der Riesige Saal.' },
+  narrow_vent:     { name: '🚰 Enger Schacht / Blechrohr', stage: 'medium', group: 'room', description: 'Extrem schmalbandige Resonanz (Hoch-/Tiefpass eng gestapelt) mit metallischem Flackern (Flanger) für Lüftungsschächte oder Rohrsysteme.' },
+  endless_abyss:   { name: '🌌 Unendlicher Abgrund',  stage: 'environment', group: 'room', description: 'Der längste, dichteste Nachhall der Bibliothek kombiniert mit weit auseinanderliegenden, lange nachklingenden Echos — für einen Sturz ohne erkennbaren Boden.' },
   // ── Physische Abschirmung & Dämpfung ────────────────────────
-  behind_wall:     { name: '🧱 Hinter Wand',         category: 'barrier', description: 'Gedämpfter Klang, als würde man ihn durch eine Wand oder geschlossene Tür hören.' },
-  distant:         { name: '🌫️ Aus der Ferne',       category: 'barrier', description: 'Gedämpfte Höhen und reduzierte Präsenz durch Distanz — für weit entfernt gehörte Geräusche im Freien.' },
-  heavy_barricade: { name: '🛡️ Dicke Panzertür',      category: 'barrier', description: 'Sehr aggressive Tiefpassfilterung ohne jeden Raumhall plus leichte Sättigung an den Bass-Transienten — für massive, schallisolierte Barrieren.' },
-  dense_canopy:    { name: '🌳 Dichter Nebel / Absorption', category: 'barrier', description: 'Extrem trockene, stark bedämpfte Übertragung mit kompakter Kompression — für dichten Nebel, Blätterdach oder starke Luftabsorption.' },
-  distant_horizon: { name: '🌄 Akustische Ferne',    category: 'barrier', description: 'Distanzsimulation über ein rückkehrendes Echo statt Raumhall — für Geräusche, die von einem fernen Horizont zurückgeworfen werden.' },
+  behind_wall:     { name: '🧱 Hinter Wand',         stage: 'medium', group: 'barrier', description: 'Gedämpfter Klang, als würde man ihn durch eine Wand oder geschlossene Tür hören.' },
+  distant:         { name: '🌫️ Aus der Ferne',       stage: 'medium', group: 'barrier', description: 'Gedämpfte Höhen und reduzierte Präsenz durch Distanz — für weit entfernt gehörte Geräusche im Freien.' },
+  heavy_barricade: { name: '🛡️ Dicke Panzertür',      stage: 'medium', group: 'barrier', description: 'Sehr aggressive Tiefpassfilterung ohne jeden Raumhall plus leichte Sättigung an den Bass-Transienten — für massive, schallisolierte Barrieren.' },
+  dense_canopy:    { name: '🌳 Dichter Nebel / Absorption', stage: 'medium', group: 'barrier', description: 'Extrem trockene, stark bedämpfte Übertragung mit kompakter Kompression — für dichten Nebel, Blätterdach oder starke Luftabsorption.' },
+  distant_horizon: { name: '🌄 Akustische Ferne',    stage: 'environment', group: 'barrier', description: 'Distanzsimulation über ein rückkehrendes Echo statt Raumhall — für Geräusche, die von einem fernen Horizont zurückgeworfen werden.' },
   // ── Technische Signalübertragung & Lo-Fi ────────────────────
-  phone:           { name: '📞 Telefon',             category: 'transmission', description: 'Stark bandbegrenzter, leicht verzerrter Klang wie aus einem Telefonhörer.' },
-  radio:           { name: '📻 Radio',               category: 'transmission', description: 'Komprimierter, verzerrter Klang mit schmalem Frequenzband wie aus einem Radioempfänger.' },
-  megaphone:       { name: '📣 Megafon',             category: 'transmission', description: 'Extrem bandbegrenzter, stark komprimierter und verzerrter Klang wie aus einem Megafon.' },
-  broken_speaker:  { name: '💥 Kaputte Box',         category: 'transmission', description: 'Stark übersteuerter, krächzender Klang wie aus einem defekten Lautsprecher.' },
-  vintage_tape:    { name: '📼 Vintage Tape',        category: 'transmission', description: 'Warmer, leicht flatternder Klang mit Bandsättigung wie von einem alten Tonbandgerät.' },
-  lofi:            { name: '🎞️ Lo-Fi',              category: 'transmission', description: 'Warmer, gedämpfter Klang mit leichter Sättigung wie von einer alten Aufnahme.' },
-  signal_dropout:  { name: '📡 Signalabriss',        category: 'transmission', description: 'Pulsierend aussetzendes, verrauschtes Funksignal — für gestörte Übertragung oder abreißenden Kontakt.' },
-  intercom_bunker: { name: '🚨 Bunker-Gegensprechanlage', category: 'transmission', description: 'Bandbegrenzte, hart übersteuerte Stimme mit kurzem, metallischem Slapback-Echo — für Gegensprechanlagen in engen Betonräumen.' },
-  surveillance_bug:{ name: '🕷️ Abhörwanze',          category: 'transmission', description: 'Extrem dünnes, resonant überbetontes Hochpasssignal mit starkem Limiting — für winzige, minderwertige Abhörmikrofone.' },
-  phonograph_horn: { name: '🎺 Grammophon / Antiker Trichter', category: 'transmission', description: 'Sehr schmales, mittenbetontes Frequenzband mit Bitcrush-Verzerrung und langsamem Gleichlauf-Wackeln (Tremolo) — der typische Trichter-Grammophon-Klang.' },
+  phone:           { name: '📞 Telefon',             stage: 'medium', group: 'transmission', description: 'Stark bandbegrenzter, leicht verzerrter Klang wie aus einem Telefonhörer.' },
+  radio:           { name: '📻 Radio',               stage: 'medium', group: 'transmission', description: 'Komprimierter, verzerrter Klang mit schmalem Frequenzband wie aus einem Radioempfänger.' },
+  megaphone:       { name: '📣 Megafon',             stage: 'medium', group: 'transmission', description: 'Extrem bandbegrenzter, stark komprimierter und verzerrter Klang wie aus einem Megafon.' },
+  broken_speaker:  { name: '💥 Kaputte Box',         stage: 'medium', group: 'transmission', description: 'Stark übersteuerter, krächzender Klang wie aus einem defekten Lautsprecher.' },
+  vintage_tape:    { name: '📼 Vintage Tape',        stage: 'medium', group: 'transmission', description: 'Warmer, leicht flatternder Klang mit Bandsättigung wie von einem alten Tonbandgerät.' },
+  lofi:            { name: '🎞️ Lo-Fi',              stage: 'medium', group: 'transmission', description: 'Warmer, gedämpfter Klang mit leichter Sättigung wie von einer alten Aufnahme.' },
+  signal_dropout:  { name: '📡 Signalabriss',        stage: 'medium', group: 'transmission', description: 'Pulsierend aussetzendes, verrauschtes Funksignal — für gestörte Übertragung oder abreißenden Kontakt.' },
+  intercom_bunker: { name: '🚨 Bunker-Gegensprechanlage', stage: 'medium', group: 'transmission', description: 'Bandbegrenzte, hart übersteuerte Stimme mit kurzem, metallischem Slapback-Echo — für Gegensprechanlagen in engen Betonräumen.' },
+  surveillance_bug:{ name: '🕷️ Abhörwanze',          stage: 'medium', group: 'transmission', description: 'Extrem dünnes, resonant überbetontes Hochpasssignal mit starkem Limiting — für winzige, minderwertige Abhörmikrofone.' },
+  phonograph_horn: { name: '🎺 Grammophon / Antiker Trichter', stage: 'medium', group: 'transmission', description: 'Sehr schmales, mittenbetontes Frequenzband mit Bitcrush-Verzerrung und langsamem Gleichlauf-Wackeln (Tremolo) — der typische Trichter-Grammophon-Klang.' },
   // ── Somatische & Psychologische Zustände ────────────────────
-  underwater:      { name: '🌊 Unterwasser',         category: 'somatic', description: 'Dumpfer, stark tiefpassgefilterter Klang wie unter Wasser gehört (Zustand der eigenen Ohren, nicht der Schallquelle).' },
-  dying_breath:    { name: '🕯️ Letzter Atemzug',     category: 'somatic', description: 'Sanft einschwingende Hüllkurve mit abgesenkter Tonhöhe und langem Hall-Ausklang — für Zeitlupen-/Sterbemomente.' },
-  ear_ringing:     { name: '🔔 Tinnitus / Schockzustand', category: 'somatic', description: 'Fast vollständige Taubheit für die Außenwelt (starker Tiefpass) plus ein leises, hochfrequentes Ring-Artefakt als Tinnitus-Ton.' },
-  drunk_dizzy:     { name: '🥴 Benommenheit / Schwindel', category: 'somatic', description: 'Sehr langsame, wabernde Filterschwingung (Wah als Phaser-Ersatz) mit warmem Hall — für Trunkenheit oder Schwindel.' },
-  asphyxiation:    { name: '👨\u200d🚀 Atemnot / Unter Visier', category: 'somatic', description: 'Näselnde Mittenanhebung und sehr kurzer, enger Kapselhall — für das Sprechen durch Helm, Atemmaske oder Visier.' },
+  underwater:      { name: '🌊 Unterwasser',         stage: 'medium', group: 'somatic', description: 'Dumpfer, stark tiefpassgefilterter Klang wie unter Wasser gehört (Zustand der eigenen Ohren, nicht der Schallquelle).' },
+  dying_breath:    { name: '🕯️ Letzter Atemzug',     stage: 'source', group: 'somatic', description: 'Sanft abgesenkte Tonhöhe und langem Hall-Ausklang — für Zeitlupen-/Sterbemomente.' },
+  ear_ringing:     { name: '🔔 Tinnitus / Schockzustand', stage: 'listener', group: 'somatic', description: 'Fast vollständige Taubheit für die Außenwelt (starker Tiefpass) plus ein leises, hochfrequentes Ring-Artefakt als Tinnitus-Ton.' },
+  drunk_dizzy:     { name: '🥴 Benommenheit / Schwindel', stage: 'listener', group: 'somatic', description: 'Sehr langsame, wabernde Filterschwingung (Wah als Phaser-Ersatz) mit warmem Hall — für Trunkenheit oder Schwindel.' },
+  asphyxiation:    { name: '👨\u200d🚀 Atemnot / Unter Visier', stage: 'medium', group: 'somatic', description: 'Näselnde Mittenanhebung und sehr kurzer, enger Kapselhall — für das Sprechen durch Helm, Atemmaske oder Visier.' },
   // ── Übernatürliche & Magische Phänomene ─────────────────────
-  dreamy_echo:     { name: '✨ Traumhaftes Echo',     category: 'supernatural', description: 'Weiches, langes Echo mit warmem Hall für traumhafte oder surreale Momente.' },
-  possessed:       { name: '👁️ Besessen',            category: 'supernatural', description: 'Metallische Ringmodulation mit hohler Formant-Aussparung und abgesenkter Stimme — für besessene/dämonisch überlagerte Stimmen.' },
-  portal_warp:     { name: '🌀 Portal / Dimensionsriss', category: 'supernatural', description: 'Schwingender, schneller Wah- und Flanger-Sweep für das Öffnen eines Portals oder eine Teleportation.' },
-  phantom_choir:   { name: '👻 Geisterstimme',       category: 'supernatural', description: 'Mehrstimmig verdoppelte, hallende Chorus-Stimme für Geister oder ätherische Erscheinungen.' },
-  mind_control:    { name: '🧠 Telepathie / Im Kopf', category: 'supernatural', description: 'Absolut trockene, extrem nahe und komprimierte Stimme mit breiter Chorus-Verdopplung anstelle von Raumhall — als würde sie direkt im Kopf erklingen.' },
-  shadow_realm:    { name: '🌑 Schattenwelt / Astral', category: 'supernatural', description: 'Gedämpfte, dunkle Klangfarbe mit langem, modulierten Hall und leicht abgesenkter Tonhöhe — für die Astralebene oder eine Schattenwelt.' },
-  fairy_pixie:     { name: '🧚 Magische Kreatur / Kobold', category: 'supernatural', description: 'Hell angehobene Höhen mit kurzem, glitzerndem Hall und stark erhöhter Tonhöhe — für kleine, magische Wesen.' },
+  dreamy_echo:     { name: '✨ Traumhaftes Echo',     stage: 'environment', group: 'supernatural', description: 'Weiches, langes Echo mit warmem Hall für traumhafte oder surreale Momente.' },
+  possessed:       { name: '👁️ Besessen',            stage: 'source', group: 'supernatural', description: 'Metallische Ringmodulation mit hohler Formant-Aussparung und abgesenkter Stimme — für besessene/dämonisch überlagerte Stimmen.' },
+  portal_warp:     { name: '🌀 Portal / Dimensionsriss', stage: 'medium', group: 'supernatural', description: 'Schwingender, schneller Wah- und Flanger-Sweep für das Öffnen eines Portals oder eine Teleportation.' },
+  phantom_choir:   { name: '👻 Geisterstimme',       stage: 'source', group: 'supernatural', description: 'Mehrstimmig verdoppelte, hallende Chorus-Stimme für Geister oder ätherische Erscheinungen.' },
+  mind_control:    { name: '🧠 Telepathie / Im Kopf', stage: 'source', group: 'supernatural', description: 'Absolut trockene, extrem nahe und komprimierte Stimme mit breiter Chorus-Verdopplung anstelle von Raumhall — als würde sie direkt im Kopf erklingen.' },
+  shadow_realm:    { name: '🌑 Schattenwelt / Astral', stage: 'environment', group: 'supernatural', description: 'Gedämpfte, dunkle Klangfarbe mit langem, modulierten Hall und leicht abgesenkter Tonhöhe — für die Astralebene oder eine Schattenwelt.' },
+  fairy_pixie:     { name: '🧚 Magische Kreatur / Kobold', stage: 'source', group: 'supernatural', description: 'Hell angehobene Höhen mit kurzem, glitzerndem Hall und stark erhöhter Tonhöhe — für kleine, magische Wesen.' },
   // ── Kreaturen-Morphs ─────────────────────────────────────────
-  monster:         { name: '👹 Monster',             category: 'creature', description: 'Tiefe, verzerrte, gutturale Stimme mit angehobenen Bässen für bedrohliche Kreaturen.' },
-  hive_mind:       { name: '🐝 Schwarmbewusstsein',  category: 'creature', description: 'Schnelle Flanger-/Chorus-Modulation mit kurzem Mehrfach-Echo — für insektoide Schwarmwesen mit vielen überlagerten Stimmen.' },
-  stone_statue:    { name: '🗿 Steingolem / Lebende Statue', category: 'creature', description: 'Massiv angehobene Tiefen mit hartem Kompressor-Attack, kurzem Stein-Reflexionshall und leicht abgesenkter Tonhöhe — für schwere, lebende Statuen.' }
+  monster:         { name: '👹 Monster',             stage: 'source', group: 'creature', description: 'Tiefe, verzerrte, gutturale Stimme mit angehobenen Bässen für bedrohliche Kreaturen.' },
+  hive_mind:       { name: '🐝 Schwarmbewusstsein',  stage: 'source', group: 'creature', description: 'Schnelle Flanger-/Chorus-Modulation mit kurzem Mehrfach-Echo — für insektoide Schwarmwesen mit vielen überlagerten Stimmen.' },
+  stone_statue:    { name: '🗿 Steingolem / Lebende Statue', stage: 'source', group: 'creature', description: 'Massiv angehobene Tiefen mit hartem Kompressor-Attack, kurzem Stein-Reflexionshall und leicht abgesenkter Tonhöhe — für schwere, lebende Statuen.' }
 };
 
 // ─── EFFEKTMODULE, DIE EIN PRESET SETZEN KANN ─────────────────
 // Muss synchron mit defaultEffects()/buildEffectChain() in audio/effect-graph.js
-// gehalten werden. 'analyzer' bewusst ausgeschlossen: reine
-// Visualisierungseinstellung ohne akustische Wirkung, kein Teil eines
-// Audio-Effekt-Presets. 'enabled'/'preset' sind Sound-Laufzeitfelder,
-// keine Preset-Inhalte.
+// gehalten werden. Hüllkurve, Pan und Analyzer gehören nicht (mehr) zum Pipeline-Modell; solche Schlüssel
+// in alten Preset-Daten werden ignoriert. 'enabled'/'preset' sind Sound-Laufzeitfelder, keine Preset-Inhalte.
 export const PRESET_EFFECT_KEYS = [
-  'lowpass', 'highpass', 'notch', 'wahwah', 'pan',
+  'lowpass', 'highpass', 'notch', 'wahwah',
   'reverb', 'delay', 'chorus', 'flanger', 'tremolo',
   'eq', 'eq10', 'compressor', 'limiter', 'distortion', 'ringmod',
-  'pitchShift', 'irReverb', 'envelope', 'spatial', 'noiseGate'
+  'pitchShift', 'irReverb', 'spatial', 'noiseGate'
 ];
 
 // ─── GENERISCHE PRESET-ANWENDUNG ─────────────────────────────
@@ -114,7 +126,6 @@ export function applyPresetEffects(presetEffects) {
   const src = presetEffects || {};
   const out = {};
   for (const key of PRESET_EFFECT_KEYS) {
-    if (key === 'pan') { out.pan = typeof src.pan === 'number' ? src.pan : def.pan; continue; }
     if (key === 'eq10') {
       const bands = Array.isArray(src.eq10?.bands) ? src.eq10.bands.slice(0, 10) : def.eq10.bands.slice();
       while (bands.length < 10) bands.push(0);
@@ -126,55 +137,20 @@ export function applyPresetEffects(presetEffects) {
   return out;
 }
 
-// ─── ÜBERGEORDNETE PRESET-ANWENDUNG AUF EINE SAMMLUNG ──
-// Wendet ein Preset auf eine Sammlung von Audio-Objekten (Sounds eines
-// Sound-Profils, Ambient-Tracks einer Szene, Musik-Tracks einer Playlist) an —
-// EINMALIGE zentrale Implementierung, damit Sound-, Ambient- und Musik-Profile
-// dieselbe Logik verwenden, statt sie dreimal zu duplizieren.
-//
-// Der Aufrufer filtert `items` bereits auf die für den jeweiligen Container
-// relevanten Audioobjekte (z.B. nur `type === 'sound'` bei Sound-Profilen) —
-// diese Funktion arbeitet danach generisch über `item.effects`, unabhängig vom
-// konkreten Container-Typ.
-//
-// @param {object} params
-// @param {object[]} params.items - Audioobjekte mit einer `effects`-
-//   Eigenschaft (wird ggf. neu gesetzt).
-// @param {string} params.presetId - ID eines Built-in- oder User-Presets.
-// @param {'all'|'same'|'none'} params.overwriteMode -
-//   'all'  = Alle: ersetzt IMMER, auch bereits vorhandene andere Presets.
-//   'same' = Gleiche: Elemente ohne Preset bekommen es; Elemente mit
-//            GENAU diesem Preset werden erneut synchronisiert; alles
-//            andere bleibt unangetastet.
-//   'none' = Keine (Default): NUR Elemente ohne vorhandenes Preset bekommen es;
-//            alles mit einem Preset bleibt unangetastet.
-// @returns {{changed:number, total:number}} - für eine Erfolgsmeldung im UI.
-export function applyPresetToCollection({ items, presetId, overwriteMode }) {
-  const preset = presetId ? getPresetById(presetId) : null;
-  const list = Array.isArray(items) ? items : [];
-  if (!preset) return { changed: 0, total: list.length };
+// Die Anwendung eines Presets auf eine Sammlung (Sound-Profil, Ambient-Szene, Playlist) liegt jetzt in
+// fx-model.js (applyPipelineToCollection) — sie arbeitet auf dem Pipeline-Modell statt auf flachen Effekt-Objekten.
 
-  let changed = 0;
-  list.forEach(item => {
-    if (!item || typeof item !== 'object') return;
-    const hasExisting = !!(item.effects && item.effects.preset);
-
-    let apply;
-    if (overwriteMode === 'all') apply = true;
-    else if (overwriteMode === 'same') apply = !hasExisting || item.effects.preset === presetId;
-    else apply = !hasExisting; // 'none' (Default)
-
-    if (!apply) return;
-    // NIEMALS in ein vorhandenes Effekte-Objekt mergen —
-    // applyPresetEffects() liefert eine vollständige, normalisierte
-    // Konfiguration, die das alte Effekte-Objekt komplett ersetzt.
-    const merged = applyPresetEffects(preset.effects);
-    merged.enabled = true;
-    merged.preset  = presetId;
-    item.effects = merged;
-    changed++;
-  });
-  return { changed, total: list.length };
+/**
+ * Erzeugt aus einem Preset die Bausteine für einen Pipeline-Layer (sparsame Layer-Parameter als Snapshot).
+ * Eine im Katalog vorhandene Hüllkurve wird ignoriert; sie ist KEIN
+ * Modell-Bestandteil mehr (ignoriert).
+ * @returns {{ init:{presetId:string, params:object}, preset:object }|null}
+ */
+export function presetToLayerInit(presetId) {
+  const preset = getPresetById(presetId);
+  if (!preset) return null;
+  const full = applyPresetEffects(preset.effects);
+  return { init: { presetId, params: sparsifyParams(full) }, preset };
 }
 
 // ─── ZUGRIFF AUF PRESETS (BUILT-IN + USER, EINHEITLICH) ───────
@@ -186,15 +162,28 @@ function _ensureUserPresetsArray() {
 
 export function getBuiltinPresetIds() { return Object.keys(EFFECT_PRESETS); }
 
+/** Stufe aus der früheren Kategorie ableiten (nur eindeutige Fälle); sonst null → Heuristik über die Parameter. */
+const LEGACY_CATEGORY_TO_STAGE = { room: 'environment', barrier: 'medium', transmission: 'medium', creature: 'source' };
+
+function _userPresetStage(p) {
+  if (isStageKey(p.stage)) return { stage: p.stage, auto: p.stageAuto === true };
+  const byCat = LEGACY_CATEGORY_TO_STAGE[p.group || p.category];
+  if (byCat) return { stage: byCat, auto: true };
+  return { stage: suggestStageForParams(p.effects), auto: true };
+}
+
 /** Liefert ein einheitliches Preset-Deskriptor-Objekt, egal ob built-in oder User-Preset. */
 export function getPresetById(id) {
   if (!id) return null;
   if (Object.prototype.hasOwnProperty.call(EFFECT_PRESETS, id)) {
-    const meta = BUILTIN_PRESET_META[id] || { name: id, category: DEFAULT_CATEGORY, description: '' };
-    return { id, builtin: true, name: meta.name, category: meta.category, description: meta.description || '', effects: EFFECT_PRESETS[id] };
+    const meta = BUILTIN_PRESET_META[id] || { name: id, stage: 'medium', group: DEFAULT_GROUP, description: '' };
+    return { id, builtin: true, name: meta.name, stage: meta.stage, group: meta.group, stageAuto: false, description: meta.description || '', effects: EFFECT_PRESETS[id] };
   }
   const up = _ensureUserPresetsArray().find(p => p.id === id);
-  if (up) return { id: up.id, builtin: false, name: up.name, category: up.category || DEFAULT_CATEGORY, description: up.description || '', effects: up.effects };
+  if (up) {
+    const st = _userPresetStage(up);
+    return { id: up.id, builtin: false, name: up.name, stage: st.stage, group: up.group || up.category || DEFAULT_GROUP, stageAuto: st.auto, description: up.description || '', effects: up.effects };
+  }
   return null;
 }
 
@@ -205,8 +194,12 @@ export function getAllPresets() {
   return [...builtins, ...users];
 }
 
-export function getPresetsByCategory(category) {
-  return getAllPresets().filter(p => p.category === category);
+export function getPresetsByStage(stage) {
+  return getAllPresets().filter(p => p.stage === stage);
+}
+
+export function getPresetsByGroup(group) {
+  return getAllPresets().filter(p => p.group === group);
 }
 
 // ─── VALIDIERUNG / NORMALISIERUNG ───────────
@@ -233,12 +226,10 @@ const NUM_RANGES = {
   'ringmod.frequency': [20, 5000], 'ringmod.mix': [0, 1],
   'pitchShift.semitones': [-24, 24],
   'irReverb.wet': [0, 1],
-  'envelope.attack': [0, 5], 'envelope.decay': [0, 5], 'envelope.sustain': [0, 1], 'envelope.release': [0, 5],
   'spatial.x': [-1000, 1000], 'spatial.y': [-1000, 1000], 'spatial.z': [-1000, 1000],
   'spatial.rolloff': [0, 10], 'spatial.maxDistance': [1, 100000], 'spatial.refDistance': [0, 1000],
   'spatial.coneInnerAngle': [0, 360], 'spatial.coneOuterAngle': [0, 360], 'spatial.coneOuterGain': [0, 1],
-  'noiseGate.threshold': [-100, 0], 'noiseGate.attack': [0, 1000], 'noiseGate.release': [0, 2000],
-  'pan': [-1, 1]
+  'noiseGate.threshold': [-100, 0], 'noiseGate.attack': [0, 1000], 'noiseGate.release': [0, 2000]
 };
 
 function _num(val, range, fallback) {
@@ -264,8 +255,6 @@ export function normalizeEffectsObject(raw) {
   const def = defaultEffects();
   const src = (raw && typeof raw === 'object') ? raw : {};
   const out = {};
-
-  out.pan = _num(src.pan, NUM_RANGES.pan, def.pan);
 
   const filt = (key, extra = {}) => {
     const s = (src[key] && typeof src[key] === 'object') ? src[key] : {};
@@ -306,18 +295,24 @@ export function normalizeEffectsObject(raw) {
     wet:     _num(irSrc.wet, NUM_RANGES['irReverb.wet'], def.irReverb.wet)
   };
 
-  out.envelope = filt('envelope');
   out.spatial  = filt('spatial');
   out.noiseGate = filt('noiseGate');
 
   const eq10Src = (src.eq10 && typeof src.eq10 === 'object') ? src.eq10 : {};
-  // eq10.bands ist laut audio/effect-graph.js (_buildEQ10/EQ10_FREQS) immer ein flaches
-  // Array aus 10 reinen Gain-Werten (dB) für feste Frequenzen — keine
-  // Objekte. Jeden Eintrag auf eine gültige Zahl im zulässigen Bereich
-  // normalisieren, fehlende/ungültige Einträge auf 0 dB.
+  // eq10.bands: entweder reine Gain-Zahlen (Built-in-Presets) ODER Objekte {freq, gain, Q} (so schreibt der
+  // Editor sie, s. dialogs/sound-modal.js readEffectsFromUI()). BEIDE Formen bleiben erhalten — nur die Werte werden
+  // geklemmt. (Früher wurden Objekte hier zu 0 dB normalisiert, wodurch EQ10-Werte eigener Presets verloren gingen.)
   const rawBands = Array.isArray(eq10Src.bands) ? eq10Src.bands : def.eq10.bands;
   const bands = [];
-  for (let i = 0; i < 10; i++) bands.push(_num(rawBands[i], [-18, 18], 0));
+  for (let i = 0; i < 10; i++) {
+    const b = rawBands[i];
+    if (b && typeof b === 'object') {
+      const o = { gain: _num(b.gain, [-18, 18], 0) };
+      if (b.freq != null) o.freq = _num(b.freq, [20, 20000], 1000);
+      if (b.Q != null)    o.Q    = _num(b.Q, [0.3, 10], 1.4);
+      bands.push(o);
+    } else bands.push(_num(b, [-18, 18], 0));
+  }
   out.eq10 = { enabled: _bool(eq10Src.enabled, def.eq10.enabled), bands };
 
   return out;
@@ -325,22 +320,29 @@ export function normalizeEffectsObject(raw) {
 
 // ─── USER-PRESET CRUD ──────────────────────────
 
-function _sanitizeMeta({ name, category, description }) {
+function _sanitizeMeta({ name, group, category, stage, description }) {
   const cleanName = (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 60) : 'Eigenes Preset';
-  const cleanCategory = Object.prototype.hasOwnProperty.call(PRESET_CATEGORIES, category) ? category : DEFAULT_CATEGORY;
+  const g = group ?? category;
+  const cleanGroup = Object.prototype.hasOwnProperty.call(PRESET_GROUPS, g) ? g : DEFAULT_GROUP;
   const cleanDescription = typeof description === 'string' ? description.trim().slice(0, 300) : '';
-  return { name: cleanName, category: cleanCategory, description: cleanDescription };
+  return { name: cleanName, group: cleanGroup, stage: isStageKey(stage) ? stage : null, description: cleanDescription };
 }
 
 /** Neues User-Preset. IDs sind mit 'user_' präfixt — kann nie mit einer
- *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren. */
-export function createUserPreset({ name, category, description, effects }) {
-  const meta = _sanitizeMeta({ name, category, description });
+ *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren.
+ *  `stage` ist Pflicht-Metadatum (Rolle in der Pipeline); fehlt sie, wird sie aus den Parametern vorgeschlagen und
+ *  das Preset mit stageAuto:true markiert („Stufe prüfen“). */
+export function createUserPreset({ name, group, category, stage, description, effects }) {
+  const meta = _sanitizeMeta({ name, group, category, stage, description });
+  const normEffects = normalizeEffectsObject(effects);
+  const auto = !meta.stage;
   const preset = {
     id: 'user_' + uid(),
-    ...meta,
-    effects: normalizeEffectsObject(effects),
-    version: 1,
+    name: meta.name, group: meta.group, description: meta.description,
+    stage: meta.stage || suggestStageForParams(normEffects),
+    stageAuto: auto,
+    effects: normEffects,
+    version: 2,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -348,11 +350,17 @@ export function createUserPreset({ name, category, description, effects }) {
   return preset;
 }
 
-export function updateUserPreset(id, { name, category, description, effects } = {}) {
+export function updateUserPreset(id, { name, group, category, stage, description, effects } = {}) {
   const p = _ensureUserPresetsArray().find(x => x.id === id);
   if (!p) return null;
-  const meta = _sanitizeMeta({ name: name ?? p.name, category: category ?? p.category, description: description ?? p.description });
-  Object.assign(p, meta);
+  const cur = getPresetById(id);
+  const meta = _sanitizeMeta({ name: name ?? p.name, group: group ?? category ?? cur.group, stage: stage ?? cur.stage, description: description ?? p.description });
+  p.name = meta.name; p.group = meta.group; p.description = meta.description;
+  delete p.category;
+  p.stage = meta.stage || cur.stage;
+  // Eine ausdrücklich gesetzte Stufe ist bestätigt; ohne Angabe bleibt der Prüf-Hinweis bestehen.
+  p.stageAuto = stage ? false : cur.stageAuto;
+  p.version = 2;
   if (effects) p.effects = normalizeEffectsObject(effects);
   p.updatedAt = Date.now();
   return p;
@@ -374,7 +382,8 @@ export function duplicatePreset(sourceId, overrideName) {
   if (!src) return null;
   return createUserPreset({
     name: overrideName || (src.name + ' (Kopie)'),
-    category: src.category,
+    group: src.group,
+    stage: src.stage,
     description: src.description,
     effects: src.effects
   });
@@ -385,55 +394,68 @@ export function isUserPreset(id) {
 }
 
 /**
- * Rückwärtskompatibilität: migriert die Kategorie bereits gespeicherter
- * User-Presets, falls sich der Kategorie-Schlüssel in einer späteren Version
- * geändert hat (z.B. das alte 3er-Schema 'character' -> neues 6er-Schema). Jede
- * Kategorie, die nicht (mehr) in PRESET_CATEGORIES existiert, fällt auf
- * DEFAULT_CATEGORY zurück, statt beim Rendern stillschweigend aus dem Dropdown
- * zu verschwinden. Von storage/persistence.js load() direkt nach dem Einlesen
- * von APP.userPresets aufgerufen; idempotent und ohne Wirkung, wenn nichts zu
- * migrieren ist.
+ * Migration gespeicherter User-Presets auf das Stufenmodell (idempotent, von storage/persistence.js load() und
+ * jedem Vollimport aufgerufen):
+ *   - `category` → `group` (reine Anzeige-Gruppe; unbekannte/alte Schlüssel → 'supernatural')
+ *   - `stage` ist Pflicht: room→environment, barrier/transmission→medium, creature→source; alles andere
+ *     (supernatural war der Default für ungewählte Kategorien, somatic) → Heuristik suggestStageForParams().
+ *     Automatisch zugeordnete Presets tragen stageAuto:true — das Meta-Modal zeigt dann „Stufe prüfen“.
+ * Presets gehen dabei nie verloren; IDs ändern sich nicht. Gibt true zurück, wenn etwas geändert wurde.
  */
 const LEGACY_CATEGORY_MAP = { character: 'supernatural' };
 
-export function migratePresetCategories() {
+export function migrateUserPresetStages() {
   const arr = _ensureUserPresetsArray();
   let changed = false;
   for (const p of arr) {
-    if (Object.prototype.hasOwnProperty.call(PRESET_CATEGORIES, p.category)) continue;
-    p.category = LEGACY_CATEGORY_MAP[p.category] || DEFAULT_CATEGORY;
-    changed = true;
+    const legacyKey = p.group ?? p.category;
+    const group = Object.prototype.hasOwnProperty.call(PRESET_GROUPS, legacyKey) ? legacyKey : (LEGACY_CATEGORY_MAP[legacyKey] || DEFAULT_GROUP);
+    if (p.group !== group) { p.group = group; changed = true; }
+    if ('category' in p) { delete p.category; changed = true; }
+    if (!isStageKey(p.stage)) {
+      const byCat = LEGACY_CATEGORY_TO_STAGE[legacyKey];
+      p.stage = byCat || suggestStageForParams(p.effects);
+      p.stageAuto = true;
+      changed = true;
+    }
+    if (p.version !== 2) { p.version = 2; changed = true; }
   }
   return changed;
 }
+/** @deprecated frühere Bezeichnung */
+export const migratePresetCategories = migrateUserPresetStages;
 
 // ─── IMPORT (aufgerufen von storage/import-export.js importData()) ──
 // Eine importierte Preset-Datei mit unbekannten Zusatzfeldern wird NICHT
 // abgelehnt (Felder werden ignoriert); eine Datei mit fehlenden Pflichtfeldern
-// (kein `effects`-Objekt) WIRD abgelehnt (siehe validatePresetShape unten, von
-// storage/import-export.js vor dem Aufruf dieser Funktionen genutzt). Eine
-// unbekannte/neuere `version` wird nicht hart abgelehnt (Vorwärtskompatibilität).
-// vor dem Aufruf dieser Funktionen genutzt). Eine unbekannte/neuere
-// `version` wird nicht hart abgelehnt (Vorwärtskompatibilität) — es wird
-// lediglich versucht, effects/Metadaten bestmöglich zu übernehmen; alle
-// Werte laufen ohnehin durch normalizeEffectsObject().
-// IDs aus der Importdatei werden NIE übernommen — jeder Import erzeugt
-// immer eine frische ID, genau wie bei den bestehenden
-// _importXBundle()-Funktionen in storage/import-export.js. Ein gleicher
-// Anzeigename führt dadurch nie zu Datenverlust: das bestehende Preset
-// bleibt unter seiner eigenen ID unangetastet.
+// (kein `effects`-Objekt) WIRD abgelehnt (validatePresetShape). Eine
+// unbekannte/neuere `version` wird nicht hart abgelehnt (Vorwärtskompatibilität);
+// alle Werte laufen durch normalizeEffectsObject().
+// v1-Dateien (nur `category`) bleiben importierbar: die Stufe wird dann wie bei der Migration abgeleitet und
+// das Preset als stageAuto markiert. IDs aus der Importdatei werden NIE übernommen — jeder Import erzeugt
+// immer eine frische ID.
 
 export function validatePresetShape(raw) {
   return !!(raw && typeof raw === 'object' && raw.effects && typeof raw.effects === 'object');
 }
 
 export function importSinglePresetData(raw) {
-  return createUserPreset({
+  const legacyKey = raw?.group ?? raw?.category;
+  let stage = isStageKey(raw?.stage) ? raw.stage : null;
+  let auto = isStageKey(raw?.stage) && raw?.stageAuto === true;
+  if (!stage) {
+    stage = LEGACY_CATEGORY_TO_STAGE[legacyKey] || null;
+    auto = true;
+  }
+  const p = createUserPreset({
     name: raw?.name,
-    category: raw?.category,
+    group: legacyKey,
+    stage: stage || undefined,
     description: raw?.description,
     effects: raw?.effects
   });
+  p.stageAuto = !!auto;
+  return p;
 }
 
 export function importPresetCollectionData(rawArray) {

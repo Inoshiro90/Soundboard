@@ -228,19 +228,28 @@ export async function exportAmbientTrack(trackId) {
 // ('fx_preset_collection') sind bewusst zwei unterschiedliche, jeweils klar
 // versionierte kinds statt eines vermischten Formats.
 
+// Preset-Export v2: `stage` (Rolle in der Pipeline) + `group` (Anzeigegruppe). `category` bleibt als Alias der
+// Gruppe erhalten, damit ältere App-Versionen die Datei weiterhin lesen können (dort gilt sie als Kategorie).
+function _presetExportShape(p) {
+  const group = p.group || p.category;
+  const shape = { id: p.id, name: p.name, stage: p.stage, group, category: group, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) };
+  if (p.stageAuto) shape.stageAuto = true;
+  return shape;
+}
+
 export async function exportPreset(presetId) {
   const p = getPresetById(presetId);
   if (!p) { toast('Preset nicht gefunden', 'err'); return; }
-  const data = { id: p.id, name: p.name, category: p.category, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) };
-  _downloadJson({ kind: 'fx_preset', version: 1, preset: data }, `preset_${_slug(p.name)}.json`);
+  const data = _presetExportShape(p);
+  _downloadJson({ kind: 'fx_preset', version: 2, preset: data }, `preset_${_slug(p.name)}.json`);
   toast('Preset exportiert ✓', 'ok');
 }
 
 export async function exportUserPresets() {
   const list = APP.userPresets || [];
   if (!list.length) { toast('Keine eigenen Presets vorhanden', 'err'); return; }
-  const presets = list.map(p => ({ id: p.id, name: p.name, category: p.category, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) }));
-  _downloadJson({ kind: 'fx_preset_collection', version: 1, presets }, 'presets_sammlung.json');
+  const presets = list.map(p => _presetExportShape(getPresetById(p.id) || p));
+  _downloadJson({ kind: 'fx_preset_collection', version: 2, presets }, 'presets_sammlung.json');
   toast(`${list.length} Preset(s) exportiert ✓`, 'ok');
 }
 
@@ -448,6 +457,7 @@ export async function importData(file, { onSuccess }) {
           }
           default: toast('Unbekannter Import-Typ', 'err'); return;
         }
+        migrateEffects();   // importierte Sounds/Tracks (auch Alt-Exporte mit flachen Effekten) → Pipeline v2
         await runIdbMigrationIfNeeded();
         _saveRaw();
         onSuccess();

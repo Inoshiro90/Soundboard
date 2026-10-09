@@ -56,7 +56,7 @@ export function registerTileEvents() {
     onDiscard: () => _discardAudioRollback(),
   }));
 
-  // Effekt-Editor-Preview (inkl. Analyzer/RAF) IMMER beenden,
+  // Effekt-Editor-Preview  IMMER beenden,
   // sobald #soundModal zu schließen beginnt — unabhängig davon, ob über X,
   // Abbruch, Backdrop, Escape oder programmatisch nach Speichern/Löschen
   // geschlossen wird (hide.bs.modal deckt alle diese Wege einheitlich ab,

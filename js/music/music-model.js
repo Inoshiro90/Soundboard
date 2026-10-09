@@ -5,7 +5,8 @@
 import { APP, CMP, CMTracks } from '../core/state.js';
 import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
-import { defaultEffects } from '../audio/effect-graph.js';
+import { defaultPipelineEffects } from '../audio/fx-pipeline.js';
+import { ensureEffectsV2 } from '../fx-model.js';
 import { idbSet, idbDelete, audioKey, IDB_SENTINEL } from '../db.js';
 import { _saveRaw } from '../storage/persistence.js';
 // Zirkulärer Import (music-playback.js importiert umgekehrt ensureMusicState/
@@ -83,7 +84,7 @@ function _mkTrack(name) {
     trimStart: 0, trimEnd: null,
     // Vollständiges Effekt-Modell analog zu Sound/Ambient —
     // dieselbe defaultEffects()-Fabrik, kein eigenes Musik-Effektmodell.
-    effects: defaultEffects()
+    effects: defaultPipelineEffects()
   };
 }
 
@@ -211,7 +212,7 @@ export function setMusicTrackEffects(trackId, effects) {
   const t = _findTrack(trackId); if (!t) return;
   // Tiefe Kopie: der Editor-Draft (_musicEditEffects) darf nach dem Speichern kein gemeinsames
   // Objekt mit dem Track bleiben.
-  t.effects = effects ? JSON.parse(JSON.stringify(effects)) : defaultEffects();
+  t.effects = effects ? ensureEffectsV2(JSON.parse(JSON.stringify(effects))) : defaultPipelineEffects();
   _persist();
   applyMusicTrackEffectsLive(trackId, t.effects);
 }

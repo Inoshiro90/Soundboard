@@ -6,7 +6,8 @@
 import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
-import { buildEffectChain } from '../audio/effect-graph.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { asPipelineEffects } from '../fx-model.js';
 import { scheduleFadeCurve } from '../renderPipeline.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { buildNoiseGenerator } from '../generators.js';
@@ -172,6 +173,7 @@ async function _playGeneratorTrack(trackId) {
   _active.set(trackId, { kind: 'generator', src: null, gain: null, timerId: null });
   const ctx = actx();
   const node = await buildNoiseGenerator(ctx, _find(trackId)?.generatorType || 'pink');
+  await _prepareFx(ctx, _find(trackId)?.effects);
 
   // Re-Check: Track könnte während des (async) Worklet-Ladens gestoppt
   // worden sein.
@@ -195,25 +197,34 @@ async function _playGeneratorTrack(trackId) {
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
   if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
   gainNode.connect(ctx.destination);
-  _connectWithFx(ctx, node, t.effects, gainNode);
+  rec.fxDispose = _connectWithFx(ctx, node, t.effects, gainNode);
 
   rec.src  = node;
   rec.gain = gainNode;
   _updateRowPlayState(trackId, true);
 }
 
-/** Routes src → [pitch] → [FX chain] → gainNode, applying the track's effects (if enabled). */
+/** Lädt vor dem (synchronen) Graph-Bau das Pitch-Worklet des Contexts — nach jedem await-Re-Check kein weiteres await. */
+async function _prepareFx(ctx, effects) {
+  try { await preparePipelineContext(ctx, resolvePlan(asPipelineEffects(effects)), TARGET_CAPS.ambient); }
+  catch (e) { console.warn('[ambient] FX-Vorbereitung fehlgeschlagen:', e); }
+}
+
+/**
+ * Routes src → Pipeline (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → gainNode.
+ * Gibt die Aufräumfunktion zurück. Bei Buffer-Quellen wird sie automatisch nach 'ended' (+ Nachklang) ausgeführt;
+ * Generator-Knoten (kein 'ended') räumt stopAmbientTrack() über rec.fxDispose auf.
+ */
 function _connectWithFx(ctx, src, effects, gainNode) {
-  if (effects?.pitchShift?.enabled && effects.pitchShift.semitones) {
-    try { src.detune.value = (effects.pitchShift.semitones ?? 0) * 100; } catch (e) {}
+  const plan  = resolvePlan(asPipelineEffects(effects));
+  const graph = buildPipelineGraph(ctx, plan, { numChannels: src.buffer?.numberOfChannels || 2, caps: TARGET_CAPS.ambient });
+  if (graph.detuneSemitones) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) {} }
+  if (graph.input) { src.connect(graph.input); graph.output.connect(gainNode); }
+  else src.connect(gainNode);
+  if (src.addEventListener && src.buffer !== undefined) {
+    src.addEventListener('ended', () => setTimeout(graph.dispose, Math.ceil(estimateTail(plan) * 1000) + 500));
   }
-  const chain = effects?.enabled ? buildEffectChain(ctx, effects) : null;
-  if (chain) {
-    src.connect(chain.input);
-    chain.output.connect(gainNode);
-  } else {
-    src.connect(gainNode);
-  }
+  return graph.dispose;
 }
 
 async function _startLoopPlayback(trackId) {
@@ -233,6 +244,7 @@ async function _startLoopPlayback(trackId) {
   if (!file) { toast('Keine Audiodatei geladen', 'err'); return; }
   const ctx = actx();
   const buf = await getOrDecodeBuffer(file.id, 0, file.data, ctx);
+  await _prepareFx(ctx, t.effects);
   if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); return; }
   if (_active.has(trackId)) return; // started elsewhere while decoding
 
@@ -298,6 +310,7 @@ async function _playChainCycle(trackId) {
 
   const ctx = actx();
   const buf = await getOrDecodeBuffer(file.id, 0, file.data, ctx);
+  await _prepareFx(ctx, t.effects);
 
   rec = _active.get(trackId);
   if (!rec || rec.kind !== 'chain') return; // stopped while decoding
@@ -409,6 +422,7 @@ async function _playIntervalCycle(trackId) {
 
   const ctx = actx();
   const buf = await getOrDecodeBuffer(file.id, 0, file.data, ctx);
+  await _prepareFx(ctx, t.effects);
 
   // Re-check after the async decode — the track may have been stopped while we waited.
   rec = _active.get(trackId);
@@ -484,6 +498,7 @@ export function stopAmbientTrack(trackId, { fade = true } = {}) {
     } catch (e) { /* already stopped */ }
     if ('onended' in rec.src) rec.src.onended = null; // prevent the natural-end handler from re-scheduling (n/a for generator nodes)
   }
+  if (rec.fxDispose) { const d = rec.fxDispose; rec.fxDispose = null; setTimeout(d, 600); }   // Generator-Pipeline (kein 'ended')
   _active.delete(trackId);
   _updateRowPlayState(trackId, false);
 }
