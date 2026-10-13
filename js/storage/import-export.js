@@ -7,7 +7,7 @@ import { APP, CItems, CATracks, CMTracks } from '../core/state.js';
 import { uid }                             from '../utils.js';
 import { toast }                            from '../notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL, isIdbRef } from '../db.js';
-import { getPresetById, validatePresetShape, importSinglePresetData, importPresetCollectionData, migratePresetCategories } from '../presets.js';
+import { getPresetById, validatePresetShape, importSinglePresetData, importPresetCollectionData, migratePresetCategories, presetEffectsForExport, presetFieldsForExport } from '../presets.js';
 import { mkProfile, mkAmbientProfile, mkMusicProfile } from './factories.js';
 import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
 import { migrateEffects, migratePlaybackSettings, migrateProfileColors, runIdbMigrationIfNeeded } from './migration.js';
@@ -232,7 +232,9 @@ export async function exportAmbientTrack(trackId) {
 // Gruppe erhalten, damit ältere App-Versionen die Datei weiterhin lesen können (dort gilt sie als Kategorie).
 function _presetExportShape(p) {
   const group = p.group || p.category;
-  const shape = { id: p.id, name: p.name, stage: p.stage, group, category: group, description: p.description || '', effects: JSON.parse(JSON.stringify(p.effects)) };
+  // Unbekannte Module/Felder (Beutel `x`, AE-18) werden wieder in die Datei geschrieben, damit nichts verloren geht;
+  // Zusatzfelder (z. B. Makros einer neueren Version) stehen auf oberster Ebene, wie sie importiert wurden.
+  const shape = { ...presetFieldsForExport(p), id: p.id, name: p.name, stage: p.stage, group, category: group, description: p.description || '', effects: presetEffectsForExport(p) };
   if (p.stageAuto) shape.stageAuto = true;
   return shape;
 }

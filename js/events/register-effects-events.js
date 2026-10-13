@@ -333,7 +333,7 @@ export function registerEffectsEvents() {
     // Save current UI state to sound before exporting
     const effects = readEffectsFromUI();
     s.effects = effects;
-    import('../audio/playback.js').then(m => m.exportSoundToWav(s));
+    import('../export.js').then(m => m.exportSoundWav(s));   // ein einziger Exportpfad (B-12)
   });
 
   // Pitch Shift

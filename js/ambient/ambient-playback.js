@@ -197,7 +197,7 @@ async function _playGeneratorTrack(trackId) {
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
   if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
   gainNode.connect(ctx.destination);
-  rec.fxDispose = _connectWithFx(ctx, node, t.effects, gainNode);
+  rec.fxDispose = _connectWithFx(ctx, node, t.effects, gainNode, rec);
 
   rec.src  = node;
   rec.gain = gainNode;
@@ -215,12 +215,13 @@ async function _prepareFx(ctx, effects) {
  * Gibt die Aufräumfunktion zurück. Bei Buffer-Quellen wird sie automatisch nach 'ended' (+ Nachklang) ausgeführt;
  * Generator-Knoten (kein 'ended') räumt stopAmbientTrack() über rec.fxDispose auf.
  */
-function _connectWithFx(ctx, src, effects, gainNode) {
+function _connectWithFx(ctx, src, effects, gainNode, rec = null) {
   const plan  = resolvePlan(asPipelineEffects(effects));
   const graph = buildPipelineGraph(ctx, plan, { numChannels: src.buffer?.numberOfChannels || 2, caps: TARGET_CAPS.ambient });
   if (graph.detuneSemitones) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) {} }
   if (graph.input) { src.connect(graph.input); graph.output.connect(gainNode); }
   else src.connect(gainNode);
+  if (rec) rec.fxRuntime = graph.runtime;       // Handle für spätere Live-Updates (Phase 3; Verdrahtung in P7)
   if (src.addEventListener && src.buffer !== undefined) {
     src.addEventListener('ended', () => setTimeout(graph.dispose, Math.ceil(estimateTail(plan) * 1000) + 500));
   }

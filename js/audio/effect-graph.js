@@ -6,36 +6,14 @@
 
 import { _pitchWorkletReadyContexts } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
+import { defaultModules } from './engine/registry.js';
 
 // ─── DEFAULT EFFECTS ─────────────────────────────────────────
 
 export function defaultEffects() {
-  return {
-    enabled: false, preset: null,
-    lowpass:  { enabled: false, frequency: 20000, Q: 0.7 },
-    highpass: { enabled: false, frequency: 20,    Q: 0.7 },
-    notch:    { enabled: false, frequency: 50, Q: 10 },
-    wahwah:   { enabled: false, frequency: 800, depth: 0.7, rate: 2, resonance: 5 },
-    reverb:   { enabled: false, amount: 0.35, duration: 2.2, decay: 2.0 },
-    delay:    { enabled: false, time: 0.22, feedback: 0.35, wet: 0.35 },
-    chorus:   { enabled: false, baseDelay: 15, depth: 8,   rate: 0.8, mix: 0.3 },
-    flanger:  { enabled: false, baseDelay: 2,  depth: 1.5, rate: 0.2, feedback: 0.5, mix: 0.5 },
-    tremolo:  { enabled: false, rate: 5, depth: 0.5, waveform: 'sine' },
-    eq:       { enabled: false, low: 0, mid: 0, high: 0 },
-    eq10:     { enabled: false, bands: [0,0,0,0,0,0,0,0,0,0] },
-    compressor: { enabled: false, threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 },
-    limiter:    { enabled: false, threshold: -1,  knee: 0,  ratio: 20, attack: 0.001, release: 0.08 },
-    // mode: softClip (Standard), hardClip oder bitcrush. Presets ohne "mode"-Feld fallen über den
-    // switch-default in _buildDistortionCurve() auf softClip zurück — kein Migrationsschritt nötig.
-    distortion: { enabled: false, mode: 'softClip', amount: 40, oversample: '4x' },
-    ringmod:    { enabled: false, frequency: 440, mix: 1 },
-    pitchShift: { enabled: false, semitones: 0 },
-    irReverb:   { enabled: false, impulse: null, wet: 0.35 },
-    spatial:    { enabled: false, x: 0, y: 0, z: -1, rolloff: 1, maxDistance: 10000, refDistance: 1, coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0 },
-    // attack/release: Compressor-Approximation (siehe buildEffectChain). Presets ohne diese
-    // Felder funktionieren unverändert, da buildEffectChain() sie mit `?? 5`/`?? 150` defaultet.
-    noiseGate:  { enabled: false, threshold: -50, attack: 5, release: 150 }
-  };
+  // Einzige Quelle der Modul-Defaults ist die Registry (audio/engine/registry.js, AE-01′). Das Ergebnis ist
+  // byte-identisch zur früheren handgeschriebenen Liste (Test: tests/suites/09-registry.js gegen den Phase-1-Stand).
+  return defaultModules();
 }
 
 /**
@@ -56,8 +34,36 @@ export function defaultPlayback() {
 }
 
 // ─── NODE BUILDERS ───────────────────────────────────────────
+//
+// Jedes Modul ist eine INSTANZ (Phase 3, AE-04′): { key, input, output, update(p) → boolean, … }.
+//   • Die Parameter→Knoten-Abbildung (inkl. aller Klemmwerte) steht je Modul EINMAL in `apply(p, smooth)`. Beim Bau läuft
+//     sie mit smooth=false (direkte Zuweisung — exakt das bisherige Verhalten), beim Live-Update mit smooth=true
+//     (`setTargetAtTime`, klickfrei). Dadurch gibt es keine zweite Formel, die vom Bau abweichen könnte.
+//   • `update(p)` liefert true, wenn alle Änderungen live angewendet wurden, und false, wenn sich ein NICHT glättbarer Wert
+//     geändert hat (IR, Verzerrungskurve, LFO-Form …). Dann muss der Aufrufer neu bauen/überblenden (runtime.js).
 
 export const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+/** Zeitkonstante der Parameterglättung (s): ≈ 95 % nach 3·τ = 45 ms. */
+export const SMOOTH_TC = 0.015;
+
+const _cl = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
+const _setter = (ctx, smooth) => (param, v) => {
+  if (!smooth) param.value = v;
+  else param.setTargetAtTime(v, ctx.currentTime, SMOOTH_TC);
+};
+
+/** Versieht ein Segment {input, output} mit Schlüssel und update(); `sig(p)` = Signatur der nicht glättbaren Werte. */
+function _inst(key, seg, p, { apply, sig = null }) {
+  const s0 = sig ? sig(p) : '';
+  seg.key = key;
+  seg.update = np => {
+    if (sig && sig(np) !== s0) return false;
+    apply(np, true);
+    return true;
+  };
+  return seg;
+}
 
 /**
  * bands[i] kann sowohl das alte Format (reine Zahl = Gain, fester Q=1.4) als auch das
@@ -65,40 +71,58 @@ export const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
  * Sounds im Flat-Array-Format (u.a. alle mitgelieferten FX-Presets).
  */
 function _buildEQ10(ctx, p) {
-  const bands = p.bands || new Array(10).fill(0);
-  const nodes = EQ10_FREQS.map((defaultFreq, i) => {
+  const nodes = EQ10_FREQS.map((_, i) => {
     const n = ctx.createBiquadFilter();
-    n.type  = i === 0 ? 'lowshelf' : i === 9 ? 'highshelf' : 'peaking';
-    const b = bands[i];
-    const isObj = typeof b === 'object' && b !== null;
-    const gain = isObj ? (b.gain ?? 0) : (b ?? 0);
-    const freq = isObj && b.freq ? b.freq : defaultFreq;
-    const q    = isObj && b.Q    ? b.Q    : 1.4;
-    n.frequency.value = freq;
-    n.Q.value = Math.max(0.3, Math.min(10, q));
-    n.gain.value = Math.max(-18, Math.min(18, gain));
+    n.type = i === 0 ? 'lowshelf' : i === 9 ? 'highshelf' : 'peaking';
     return n;
   });
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const bands = q.bands || new Array(10).fill(0);
+    nodes.forEach((n, i) => {
+      const b = bands[i];
+      const isObj = typeof b === 'object' && b !== null;
+      const gain = isObj ? (b.gain ?? 0) : (b ?? 0);
+      const freq = isObj && b.freq ? b.freq : EQ10_FREQS[i];
+      const qq   = isObj && b.Q    ? b.Q    : 1.4;
+      set(n.frequency, freq);
+      set(n.Q, Math.max(0.3, Math.min(10, qq)));
+      set(n.gain, Math.max(-18, Math.min(18, gain)));
+    });
+  };
+  apply(p, false);
   for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
-  return { input: nodes[0], output: nodes[nodes.length - 1] };
+  return _inst('eq10', { input: nodes[0], output: nodes[nodes.length - 1] }, p, { apply });
 }
 
 function _buildEQ3(ctx, p) {
-  const ls = ctx.createBiquadFilter(); ls.type = 'lowshelf';  ls.frequency.value = 200;  ls.gain.value = Math.max(-18, Math.min(18, p.low  ?? 0));
-  const mp = ctx.createBiquadFilter(); mp.type = 'peaking';   mp.frequency.value = 1000; mp.Q.value = 1.0; mp.gain.value = Math.max(-18, Math.min(18, p.mid ?? 0));
-  const hs = ctx.createBiquadFilter(); hs.type = 'highshelf'; hs.frequency.value = 4000; hs.gain.value = Math.max(-18, Math.min(18, p.high ?? 0));
+  const ls = ctx.createBiquadFilter(); ls.type = 'lowshelf';  ls.frequency.value = 200;
+  const mp = ctx.createBiquadFilter(); mp.type = 'peaking';   mp.frequency.value = 1000; mp.Q.value = 1.0;
+  const hs = ctx.createBiquadFilter(); hs.type = 'highshelf'; hs.frequency.value = 4000;
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(ls.gain, Math.max(-18, Math.min(18, q.low  ?? 0)));
+    set(mp.gain, Math.max(-18, Math.min(18, q.mid  ?? 0)));
+    set(hs.gain, Math.max(-18, Math.min(18, q.high ?? 0)));
+  };
+  apply(p, false);
   ls.connect(mp); mp.connect(hs);
-  return { input: ls, output: hs };
+  return _inst('eq', { input: ls, output: hs }, p, { apply });
 }
 
-function _buildCompressor(ctx, p) {
+/** Kompressor (auch Limiter-Näherung bis P11): `key` = 'compressor' | 'limiter'. */
+function _buildCompressor(ctx, p, key = 'compressor') {
   const n = ctx.createDynamicsCompressor();
-  n.threshold.value = p.threshold ?? -24;
-  n.knee.value      = p.knee      ?? 30;
-  n.ratio.value     = Math.min(20, p.ratio ?? 12);
-  n.attack.value    = p.attack    ?? 0.003;
-  n.release.value   = p.release   ?? 0.25;
-  return n;
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(n.threshold, q.threshold ?? -24);
+    set(n.knee,      q.knee      ?? 30);
+    set(n.ratio,     Math.min(20, q.ratio ?? 12));
+    set(n.attack,    q.attack    ?? 0.003);
+    set(n.release,   q.release   ?? 0.25);
+  };
+  apply(p, false);
+  return _inst(key, { input: n, output: n }, p, { apply });
 }
 
 /**
@@ -108,9 +132,11 @@ function _buildCompressor(ctx, p) {
  * Kurve abgestimmt; ein Formelwechsel würde deren Klang unbeabsichtigt verändern.
  */
 function _buildDistortionCurve(mode, amount) {
-  const n = 512; const curve = new Float32Array(n);
+  // Ungerade Länge (513): der Eingang 0 liegt EXAKT auf einer Stützstelle (Index 256). Bei gerader Länge (512)
+  // interpolierte der WaveShaper bei Stille zwischen zwei Punkten und erzeugte einen Gleichanteil (N-01, ≈ −34 dBFS).
+  const n = 513; const curve = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const x = (i * 2) / n - 1; // -1..1
+    const x = (i * 2) / (n - 1) - 1; // -1..1, x(256) = 0 exakt
     switch (mode) {
       case 'hardClip': {
         const threshold = Math.max(0.05, Math.min(1, amount / 100)); // amount 0-100 -> threshold 1-0.05
@@ -133,30 +159,48 @@ function _buildDistortionCurve(mode, amount) {
   return curve;
 }
 
+/** Verzerrung: Kurve und Oversampling sind nicht glättbar → jede Änderung verlangt Neubau/Überblendung. */
+function _buildDistortion(ctx, p) {
+  const s = ctx.createWaveShaper();
+  s.curve = _buildDistortionCurve(p.mode, p.amount ?? 40);
+  s.oversample = ['none', '2x', '4x'].includes(p.oversample) ? p.oversample : '4x';
+  return _inst('distortion', { input: s, output: s }, p, { apply: () => {}, sig: q => `${q.mode}|${q.amount ?? 40}|${q.oversample}` });
+}
+
+function _buildBiquadModule(ctx, p, key, type, { fMin, fMax, fDef, qMin, qMax, qDef }) {
+  const n = ctx.createBiquadFilter(); n.type = type;
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(n.frequency, Math.max(fMin, Math.min(fMax, q.frequency ?? fDef)));
+    set(n.Q, Math.max(qMin, Math.min(qMax, q.Q ?? qDef)));
+  };
+  apply(p, false);
+  return _inst(key, { input: n, output: n }, p, { apply });
+}
+
 /** Schmalbandige Frequenzunterdrückung, primär gegen Netzbrummen (50/60Hz). */
 function _buildNotch(ctx, p) {
-  const n = ctx.createBiquadFilter();
-  n.type = 'notch';
-  n.frequency.value = Math.max(20, Math.min(20000, p.frequency ?? 50));
-  n.Q.value = Math.max(0.5, Math.min(30, p.Q ?? 10));
-  return { input: n, output: n };
+  return _buildBiquadModule(ctx, p, 'notch', 'notch', { fMin: 20, fMax: 20000, fDef: 50, qMin: 0.5, qMax: 30, qDef: 10 });
 }
 
 /**
  * Klassische Lautstärke-Modulation. Gain = dcOffset + LFO*lfoGain,
  * pendelt zwischen [1-depth, 1] (depth=0 → konstant 1, kein Effekt;
- * depth=1 → pendelt zwischen 0 und 1).
+ * depth=1 → pendelt zwischen 0 und 1). Die LFO-Form ist nicht glättbar (Signatur).
  */
 function _buildTremolo(ctx, p, tr) {
   const lfo = ctx.createOscillator();
   lfo.type = ['sine', 'triangle', 'square'].includes(p.waveform) ? p.waveform : 'sine';
-  lfo.frequency.value = Math.max(0.1, Math.min(20, p.rate ?? 5));
-
   const lfoGain = ctx.createGain();
-  lfoGain.gain.value = Math.max(0, Math.min(1, p.depth ?? 0.5)) * 0.5; // auf ±0.5 skaliert
-
   const dcOffset = ctx.createConstantSource();
-  dcOffset.offset.value = 1 - lfoGain.gain.value; // Basispegel, damit Gain nie negativ wird
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const lg = Math.max(0, Math.min(1, q.depth ?? 0.5)) * 0.5;   // auf ±0.5 skaliert
+    set(lfo.frequency, Math.max(0.1, Math.min(20, q.rate ?? 5)));
+    set(lfoGain.gain, lg);
+    set(dcOffset.offset, 1 - (sm ? lg : lfoGain.gain.value));    // Basispegel, damit Gain nie negativ wird
+  };
+  apply(p, false);
 
   const outGain = ctx.createGain();
   outGain.gain.value = 0; // wird ausschließlich per LFO+DC moduliert
@@ -165,7 +209,7 @@ function _buildTremolo(ctx, p, tr) {
   lfo.start(); dcOffset.start();
   if (tr) tr.push(lfo, dcOffset);
 
-  return { input: outGain, output: outGain };
+  return _inst('tremolo', { input: outGain, output: outGain }, p, { apply, sig: q => String(q.waveform) });
 }
 
 /**
@@ -175,33 +219,37 @@ function _buildTremolo(ctx, p, tr) {
  * muss baseDelay+depth mit Sicherheitsabstand abdecken, sonst würde die
  * LFO-Modulation bei hohen depth-Werten den erlaubten Bereich verlassen.
  */
-function _buildModulatedDelay(ctx, p, { withFeedback, maxDelay = 0.05 }, tr) {
+function _buildModulatedDelay(ctx, p, { key, withFeedback, maxDelay = 0.05 }, tr) {
   const input = ctx.createGain();
   const delay = ctx.createDelay(maxDelay);
-  delay.delayTime.value = Math.max(0, (p.baseDelay ?? 15) / 1000);
-
   const lfo = ctx.createOscillator();
   lfo.type = 'sine';
-  lfo.frequency.value = Math.max(0.01, Math.min(10, p.rate ?? 0.8));
   const lfoGain = ctx.createGain();
-  lfoGain.gain.value = Math.max(0, (p.depth ?? 8) / 1000); // ms -> s
+  const wetGain = ctx.createGain();
+  const dryGain = ctx.createGain();
+  const fb = withFeedback ? ctx.createGain() : null;
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(delay.delayTime, Math.max(0, (q.baseDelay ?? 15) / 1000));
+    set(lfo.frequency, Math.max(0.01, Math.min(10, q.rate ?? 0.8)));
+    set(lfoGain.gain, Math.max(0, (q.depth ?? 8) / 1000));       // ms -> s
+    const w = Math.max(0, Math.min(1, q.mix ?? 0.3));
+    set(wetGain.gain, w);
+    set(dryGain.gain, 1 - (sm ? w : wetGain.gain.value));
+    if (fb) set(fb.gain, Math.max(0, Math.min(0.95, q.feedback ?? 0.5)));
+  };
+  apply(p, false);
   lfo.connect(lfoGain).connect(delay.delayTime);
   lfo.start();
   if (tr) tr.push(lfo);
 
-  const wetGain = ctx.createGain(); wetGain.gain.value = Math.max(0, Math.min(1, p.mix ?? 0.3));
-  const dryGain = ctx.createGain(); dryGain.gain.value = 1 - wetGain.gain.value;
   const output = ctx.createGain();
-
   input.connect(dryGain).connect(output);
   input.connect(delay);
-  if (withFeedback) {
-    const fb = ctx.createGain(); fb.gain.value = Math.max(0, Math.min(0.95, p.feedback ?? 0.5));
-    delay.connect(fb).connect(delay);
-  }
+  if (fb) delay.connect(fb).connect(delay);
   delay.connect(wetGain).connect(output);
 
-  return { input, output };
+  return _inst(key, { input, output }, p, { apply });
 }
 
 // Chorus: lange Basis-Delay-Zeit (10-30ms), kein Feedback — "mehrere
@@ -212,8 +260,8 @@ function _buildModulatedDelay(ctx, p, { withFeedback, maxDelay = 0.05 }, tr) {
 // den jeweiligen Parametertabellen) gewählt — DelayNode moduliert additiv
 // (delayTime-AudioParam + LFO-Signal), ein zu knapper Puffer würde die
 // LFO-Modulation bei hohen depth-Werten stillschweigend kappen.
-function _buildChorus(ctx, p, tr)  { return _buildModulatedDelay(ctx, p, { withFeedback: false, maxDelay: 0.08 }, tr); }
-function _buildFlanger(ctx, p, tr) { return _buildModulatedDelay(ctx, p, { withFeedback: true,  maxDelay: 0.04 }, tr); }
+function _buildChorus(ctx, p, tr)  { return _buildModulatedDelay(ctx, p, { key: 'chorus',  withFeedback: false, maxDelay: 0.08 }, tr); }
+function _buildFlanger(ctx, p, tr) { return _buildModulatedDelay(ctx, p, { key: 'flanger', withFeedback: true,  maxDelay: 0.04 }, tr); }
 
 /**
  * Wahwah — LFO-modulierter Bandpass, klassischer "Wah"-Sweep-Klang.
@@ -224,83 +272,133 @@ function _buildFlanger(ctx, p, tr) { return _buildModulatedDelay(ctx, p, { withF
 function _buildWahwah(ctx, p, tr) {
   const filter = ctx.createBiquadFilter();
   filter.type = 'bandpass';
-  const baseFreq = Math.max(100, Math.min(5000, p.frequency ?? 800));
-  const depthHz  = Math.max(0, Math.min(1, p.depth ?? 0.7)) * baseFreq * 3;
-  filter.frequency.value = baseFreq;
-  filter.Q.value = Math.max(1, Math.min(20, p.resonance ?? 5));
-
   const lfo = ctx.createOscillator(); lfo.type = 'sine';
-  lfo.frequency.value = Math.max(0.1, Math.min(10, p.rate ?? 2));
-  const lfoGain = ctx.createGain(); lfoGain.gain.value = depthHz;
+  const lfoGain = ctx.createGain();
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const baseFreq = Math.max(100, Math.min(5000, q.frequency ?? 800));
+    const depthHz  = Math.max(0, Math.min(1, q.depth ?? 0.7)) * baseFreq * 3;
+    set(filter.frequency, baseFreq);
+    set(filter.Q, Math.max(1, Math.min(20, q.resonance ?? 5)));
+    set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
+    set(lfoGain.gain, depthHz);
+  };
+  apply(p, false);
   lfo.connect(lfoGain).connect(filter.frequency);
   lfo.start();
   if (tr) tr.push(lfo);
 
-  return { input: filter, output: filter };
+  return _inst('wahwah', { input: filter, output: filter }, p, { apply });
 }
 
 /**
  * Ring Modulation — Träger-Oszillator moduliert direkt den Gain des Eingangssignals
- * (Web-Audio-Parameter-Modulation als pragmatische Näherung an echte Signal-Multiplikation:
- * bei Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer Multiplikation
- * Input×Träger — technisch keine exakte Ring-Modulation wie mit einem dedizierten
- * AudioWorklet, klanglich aber der charakteristische metallische/oktavierte Effekt).
+ * (Web-Audio-Parameter-Modulation: bei Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer
+ * echten Multiplikation Input×Träger; nur Sinusform, 20–5000 Hz).
  */
 function _buildRingMod(ctx, p, tr) {
   const carrier = ctx.createOscillator();
   carrier.type = 'sine';
-  carrier.frequency.value = Math.max(20, Math.min(5000, p.frequency ?? 440));
   const ringGain = ctx.createGain(); ringGain.gain.value = 0; // Träger moduliert direkt den Gain
+  const wet = ctx.createGain();
+  const dry = ctx.createGain();
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(carrier.frequency, Math.max(20, Math.min(5000, q.frequency ?? 440)));
+    const w = Math.max(0, Math.min(1, q.mix ?? 1));
+    set(wet.gain, w);
+    set(dry.gain, 1 - (sm ? w : wet.gain.value));
+  };
+  apply(p, false);
   carrier.connect(ringGain.gain);
   carrier.start();
   if (tr) tr.push(carrier);
 
-  const wet = ctx.createGain(); wet.gain.value = Math.max(0, Math.min(1, p.mix ?? 1));
-  const dry = ctx.createGain(); dry.gain.value = 1 - wet.gain.value;
   const input = ctx.createGain(); const output = ctx.createGain();
   input.connect(dry).connect(output);
   input.connect(ringGain).connect(wet).connect(output);
 
-  return { input, output };
+  return _inst('ringmod', { input, output }, p, { apply });
 }
 
-function _buildReverb(ctx, p) {
-  const wet = Math.max(0, Math.min(1, p.amount ?? 0.35));
+/**
+ * Gibt den Faltungspuffer eines ConvolverNodes bei dispose() frei. Chrome hält pro `conv.buffer = …` eine native
+ * Faltungs-Engine (FFT-Partitionen ≈ Vielfaches der IR-Größe), die nur über den GC freigegeben wird — dessen Druck
+ * sieht diesen Speicher nicht. Gemessen (Phase 0, Chrome 154): Absturz nach ≈ 275 Bau-/Entsorgungszyklen bei 3,5-s-IR,
+ * ≈ 200 bei 5-s-IR, unabhängig vom Abstand der Zyklen (L-02). `buffer = null` gibt die Engine sofort frei.
+ * `tr` ist die dispose()-Liste der Pipeline (Einträge mit stop()).
+ */
+function _trackConvolver(conv, tr) {
+  if (tr) tr.push({ stop() { try { conv.buffer = null; } catch (e) { /* Knoten bereits verworfen */ } } });
+}
+
+/** Gemeinsame Hall-Hülle: Dry/Wet um einen Convolver. `wetOf(p)` liefert den Anteil; die IR ist nicht glättbar (Signatur). */
+function _buildConvolverModule(ctx, p, tr, { key, wetOf, irOf, sig }) {
   const inp  = ctx.createGain(); const dry = ctx.createGain();
   const wetG = ctx.createGain(); const out = ctx.createGain();
   const conv = ctx.createConvolver();
-  dry.gain.value = 1 - wet; wetG.gain.value = wet;
-  conv.buffer = getGenericIR(ctx, p);
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const wet = wetOf(q);
+    set(dry.gain, 1 - wet); set(wetG.gain, wet);
+  };
+  apply(p, false);
+  conv.buffer = irOf(ctx, p);
+  _trackConvolver(conv, tr);
   inp.connect(dry); inp.connect(conv); conv.connect(wetG);
   dry.connect(out); wetG.connect(out);
-  return { input: inp, output: out };
+  return _inst(key, { input: inp, output: out }, p, { apply, sig });
 }
 
-function _buildIRReverb(ctx, p) {
-  const wet = Math.max(0, Math.min(1, p.wet ?? 0.35));
-  const inp  = ctx.createGain(); const dry = ctx.createGain();
-  const wetG = ctx.createGain(); const out = ctx.createGain();
-  const conv = ctx.createConvolver();
-  dry.gain.value = 1 - wet; wetG.gain.value = wet;
-  conv.buffer = getIRBuffer(ctx, p.impulse);
-  inp.connect(dry); inp.connect(conv); conv.connect(wetG);
-  dry.connect(out); wetG.connect(out);
-  return { input: inp, output: out };
+function _buildReverb(ctx, p, tr) {
+  return _buildConvolverModule(ctx, p, tr, {
+    key: 'reverb', wetOf: q => Math.max(0, Math.min(1, q.amount ?? 0.35)), irOf: getGenericIR,
+    sig: q => `${q.duration ?? 2.2}|${q.decay ?? 2.0}|${q.pre ?? 0.005}`
+  });
+}
+
+function _buildIRReverb(ctx, p, tr) {
+  return _buildConvolverModule(ctx, p, tr, {
+    key: 'irReverb', wetOf: q => Math.max(0, Math.min(1, q.wet ?? 0.35)), irOf: (c, q) => getIRBuffer(c, q.impulse),
+    sig: q => String(q.impulse)
+  });
 }
 
 function _buildDelay(ctx, p) {
-  const time = Math.max(0.01, Math.min(2.0, p.time ?? 0.22));
-  const fb   = Math.max(0, Math.min(0.95, p.feedback ?? 0.35));
-  const wet  = Math.max(0, Math.min(0.95, p.wet ?? 0.35));
   const inp  = ctx.createGain(); const dry = ctx.createGain();
   const wetG = ctx.createGain(); const out = ctx.createGain();
   const del  = ctx.createDelay(5.0); const fbG = ctx.createGain();
-  del.delayTime.value = time; fbG.gain.value = fb;
-  dry.gain.value = 1 - wet; wetG.gain.value = wet;
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const time = Math.max(0.01, Math.min(2.0, q.time ?? 0.22));
+    const fb   = Math.max(0, Math.min(0.95, q.feedback ?? 0.35));
+    const wet  = Math.max(0, Math.min(0.95, q.wet ?? 0.35));
+    set(del.delayTime, time); set(fbG.gain, fb);
+    set(dry.gain, 1 - wet); set(wetG.gain, wet);
+  };
+  apply(p, false);
   del.connect(fbG); fbG.connect(del);
   inp.connect(dry); inp.connect(del); del.connect(wetG);
   dry.connect(out); wetG.connect(out);
-  return { input: inp, output: out };
+  return _inst('delay', { input: inp, output: out }, p, { apply });
+}
+
+/**
+ * Noise-Gate: Compressor-Approximation. Das ist AUSDRÜCKLICH kein echtes Gate (ein DynamicsCompressorNode dämpft
+ * oberhalb, nicht unterhalb des Thresholds) — nur eine hörbare Näherung (B-03, wird in P11 ersetzt).
+ */
+function _buildNoiseGate(ctx, p) {
+  const g = ctx.createDynamicsCompressor();
+  g.ratio.value = 20;        // maximal mögliches Ratio der Web Audio API
+  g.knee.value = 0;          // harte Kennlinie, Annäherung an Gate-Verhalten
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    set(g.threshold, Math.max(-100, Math.min(0, q.threshold ?? -45)));
+    set(g.attack, Math.max(0.001, (q.attack ?? 5) / 1000));
+    set(g.release, Math.max(0.01, (q.release ?? 150) / 1000));
+  };
+  apply(p, false);
+  return _inst('noiseGate', { input: g, output: g }, p, { apply });
 }
 
 /**
@@ -331,8 +429,18 @@ export function buildPitchNode(ctx, p, numChannels = 2) {
         channelInterpretation: 'discrete',
         outputChannelCount: [ch]
       });
-      n.parameters.get('pitchFactor').setValueAtTime(Math.pow(2, semitones / 12), ctx.currentTime);
-      return { input: n, output: n };
+      const pf = n.parameters.get('pitchFactor');
+      pf.setValueAtTime(Math.pow(2, semitones / 12), ctx.currentTime);
+      // Live-Update: nur die Tonhöhe selbst ist glättbar. Ob der Knoten überhaupt existiert (Halbtöne ≠ 0), entscheidet
+      // die Runtime (Strukturvergleich) — deshalb liefert update() bei Halbtönen = 0 false (Neubau/Überblendung nötig).
+      const seg = { input: n, output: n, key: 'pitchShift' };
+      seg.update = np => {
+        const st = np?.semitones ?? 0;
+        if (!st) return false;
+        pf.setTargetAtTime(Math.pow(2, st / 12), ctx.currentTime, SMOOTH_TC);
+        return true;
+      };
+      return seg;
     } catch (e) { console.warn('[audio] PitchWorklet node failed:', e.message); }
   }
   return null; // caller uses src.detune as fallback
@@ -345,9 +453,22 @@ function _buildSpatialPanner(ctx, spatial) {
     const p = ctx.createPanner(); p.panningModel = 'HRTF'; p.distanceModel = 'inverse';
     if (p.positionX) { p.positionX.value = spatial.x ?? 0; p.positionY.value = spatial.y ?? 0; p.positionZ.value = spatial.z ?? -1; }
     else p.setPosition(spatial.x ?? 0, spatial.y ?? 0, spatial.z ?? -1);
-    p.rolloffFactor = spatial.rolloff ?? 1; p.maxDistance = spatial.maxDistance ?? 10000; p.refDistance = spatial.refDistance ?? 1;
-    p.coneInnerAngle = spatial.coneInnerAngle ?? 360; p.coneOuterAngle = spatial.coneOuterAngle ?? 360; p.coneOuterGain = spatial.coneOuterGain ?? 0;
-    return { input: p, output: p };
+    const props = s => {
+      p.rolloffFactor = s.rolloff ?? 1; p.maxDistance = s.maxDistance ?? 10000; p.refDistance = s.refDistance ?? 1;
+      p.coneInnerAngle = s.coneInnerAngle ?? 360; p.coneOuterAngle = s.coneOuterAngle ?? 360; p.coneOuterGain = s.coneOuterGain ?? 0;
+    };
+    props(spatial);
+    const seg = { input: p, output: p, key: 'spatial' };
+    // Live-Update: Position über AudioParams (geglättet); die übrigen Eigenschaften sind einfache Zuweisungen. Ohne
+    // AudioParam-Positionen (ältere Browser) ist nur Neubau möglich.
+    seg.update = np => {
+      if (!p.positionX) return false;
+      const t = ctx.currentTime;
+      p.positionX.setTargetAtTime(np.x ?? 0, t, SMOOTH_TC); p.positionY.setTargetAtTime(np.y ?? 0, t, SMOOTH_TC); p.positionZ.setTargetAtTime(np.z ?? -1, t, SMOOTH_TC);
+      props(np);
+      return true;
+    };
+    return seg;
   } catch(e) { return null; }
 }
 
@@ -370,36 +491,24 @@ export function buildTerminalPanner(ctx, pan) {
 /**
  * Die Modulkette EINES Effekt-Objekts in fester Modulreihenfolge (ohne Panner). `tr` (optional) sammelt alle
  * gestarteten Quellen (LFOs, Träger, ConstantSources), damit der Aufrufer sie über dispose() wieder stoppen kann.
+ * Jedes Element ist eine Modul-Instanz mit `key` und `update()` (s. NODE BUILDERS).
  */
 function _collectSegments(ctx, effects, tr) {
   const segs = [];
 
-  if (effects.highpass?.enabled) {
-    const n = ctx.createBiquadFilter(); n.type = 'highpass';
-    n.frequency.value = Math.max(20, Math.min(5000, effects.highpass.frequency ?? 20));
-    n.Q.value = Math.max(0.1, Math.min(10, effects.highpass.Q ?? 0.7));
-    segs.push({ input: n, output: n });
-  }
-  if (effects.lowpass?.enabled) {
-    const n = ctx.createBiquadFilter(); n.type = 'lowpass';
-    n.frequency.value = Math.max(100, Math.min(20000, effects.lowpass.frequency ?? 20000));
-    n.Q.value = Math.max(0.1, Math.min(10, effects.lowpass.Q ?? 0.7));
-    segs.push({ input: n, output: n });
-  }
+  if (effects.highpass?.enabled)
+    segs.push(_buildBiquadModule(ctx, effects.highpass, 'highpass', 'highpass', { fMin: 20, fMax: 5000, fDef: 20, qMin: 0.1, qMax: 10, qDef: 0.7 }));
+  if (effects.lowpass?.enabled)
+    segs.push(_buildBiquadModule(ctx, effects.lowpass, 'lowpass', 'lowpass', { fMin: 100, fMax: 20000, fDef: 20000, qMin: 0.1, qMax: 10, qDef: 0.7 }));
   if (effects.notch?.enabled)      segs.push(_buildNotch(ctx, effects.notch));
   if (effects.wahwah?.enabled)     segs.push(_buildWahwah(ctx, effects.wahwah, tr));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));
 
-  if (effects.limiter?.enabled)    { const n = _buildCompressor(ctx, effects.limiter);    segs.push({ input: n, output: n }); }
-  else if (effects.compressor?.enabled) { const n = _buildCompressor(ctx, effects.compressor); segs.push({ input: n, output: n }); }
+  if (effects.limiter?.enabled)    segs.push(_buildCompressor(ctx, effects.limiter, 'limiter'));
+  else if (effects.compressor?.enabled) segs.push(_buildCompressor(ctx, effects.compressor, 'compressor'));
 
-  if (effects.distortion?.enabled) {
-    const s = ctx.createWaveShaper();
-    s.curve = _buildDistortionCurve(effects.distortion.mode, effects.distortion.amount ?? 40);
-    s.oversample = ['none','2x','4x'].includes(effects.distortion.oversample) ? effects.distortion.oversample : '4x';
-    segs.push({ input: s, output: s });
-  }
+  if (effects.distortion?.enabled) segs.push(_buildDistortion(ctx, effects.distortion));
   if (effects.ringmod?.enabled)    segs.push(_buildRingMod(ctx, effects.ringmod, tr));
 
   // Chorus/Flanger: Modulationseffekte, bewusst vor Reverb/Delay platziert
@@ -410,8 +519,8 @@ function _collectSegments(ctx, effects, tr) {
   if (effects.chorus?.enabled)     segs.push(_buildChorus(ctx, effects.chorus, tr));
   if (effects.flanger?.enabled)    segs.push(_buildFlanger(ctx, effects.flanger, tr));
 
-  if (effects.irReverb?.enabled)   segs.push(_buildIRReverb(ctx, effects.irReverb));
-  else if (effects.reverb?.enabled) segs.push(_buildReverb(ctx, effects.reverb));
+  if (effects.irReverb?.enabled)   segs.push(_buildIRReverb(ctx, effects.irReverb, tr));
+  else if (effects.reverb?.enabled) segs.push(_buildReverb(ctx, effects.reverb, tr));
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay));
 
@@ -420,26 +529,38 @@ function _collectSegments(ctx, effects, tr) {
   // Trockensignal.
   if (effects.tremolo?.enabled)    segs.push(_buildTremolo(ctx, effects.tremolo, tr));
 
-  // Noise-Gate: Compressor-Approximation. Das ist AUSDRÜCKLICH kein echtes Gate
-  // (ein DynamicsCompressorNode dämpft oberhalb, nicht unterhalb des Thresholds) —
-  // nur eine hörbare Näherung. Ein echter Envelope-Follower-Gate als AudioWorkletNode
-  // (analog pitch-processor.js) wäre die exakte Lösung.
-  if (effects.noiseGate?.enabled) {
-    const g = ctx.createDynamicsCompressor();
-    g.threshold.value = Math.max(-100, Math.min(0, effects.noiseGate.threshold ?? -45));
-    g.ratio.value = 20;        // maximal mögliches Ratio der Web Audio API
-    g.knee.value = 0;          // harte Kennlinie, Annäherung an Gate-Verhalten
-    g.attack.value = Math.max(0.001, (effects.noiseGate.attack ?? 5) / 1000);
-    g.release.value = Math.max(0.01, (effects.noiseGate.release ?? 150) / 1000);
-    segs.push({ input: g, output: g });
-  }
+  // Noise-Gate: Compressor-Approximation (B-03), s. _buildNoiseGate().
+  if (effects.noiseGate?.enabled)  segs.push(_buildNoiseGate(ctx, effects.noiseGate));
   return segs;
+}
+
+/**
+ * Bypass-Hülle (AE-04′): input → [Modul] → Summe  ∥  input → Dry → Summe. `setBypass(true)` blendet auf Dry, `false` zurück
+ * (Dry und Wet stammen aus derselben Quelle, sind also kohärent: Summe der Gains = 1, kein Pegelsprung). Nur auf Anforderung
+ * (`bypassable`), weil sie zwei Summenknoten je Modul kostet und die Kanalform der Kette berührt (Mono-Dry gegen Stereo-Wet,
+ * M-3): bestehende Konsumenten bauen ohne Hülle und bleiben damit bit-gleich.
+ */
+function _wrapBypass(ctx, seg) {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain(), dry = ctx.createGain();
+  wet.gain.value = 1; dry.gain.value = 0;
+  inp.connect(seg.input); seg.output.connect(wet); wet.connect(out);
+  inp.connect(dry); dry.connect(out);
+  const w = { ...seg, input: inp, output: out, bypassed: false };
+  w.inner = seg;
+  w.update = np => seg.update(np);
+  w.setBypass = (on, smooth = true) => {
+    w.bypassed = !!on;
+    const t = ctx.currentTime;
+    if (smooth) { wet.gain.setTargetAtTime(on ? 0 : 1, t, 0.005); dry.gain.setTargetAtTime(on ? 1 : 0, t, 0.005); }
+    else { wet.gain.value = on ? 0 : 1; dry.gain.value = on ? 1 : 0; }
+  };
+  return w;
 }
 
 function _chain(segs) {
   if (!segs.length) return null;
   for (let i = 0; i < segs.length - 1; i++) segs[i].output.connect(segs[i + 1].input);
-  return { input: segs[0].input, output: segs[segs.length - 1].output };
+  return { input: segs[0].input, output: segs[segs.length - 1].output, modules: segs };
 }
 
 /**
@@ -460,12 +581,15 @@ export function buildEffectChain(ctx, effects) {
  * der Spatial-Panner (falls aktiv) am Layer-Ende. Kein Master-Schalter, kein terminaler Panner, kein Pitch
  * (Pitch ist ein eigener Knoten am Layer-Kopf, s. fx-pipeline.js). Liefert null, wenn der Layer nichts tut
  * (reines Durchreichen). `opts.track` sammelt gestartete Quellen für dispose().
+ * Ergebnis: { input, output, modules } — `modules` = Modul-Instanzen in Kettenreihenfolge (key, update, ggf. setBypass).
+ * `opts.bypassable`: jedes Modul in eine Bypass-Hülle setzen (s. _wrapBypass).
  */
 export function buildLayerChain(ctx, params, opts = {}) {
   if (!params) return null;
-  const segs = _collectSegments(ctx, params, opts.track);
+  let segs = _collectSegments(ctx, params, opts.track);
   const sp = _buildSpatialPanner(ctx, params.spatial);
   if (sp) segs.push(sp);
+  if (opts.bypassable) segs = segs.map(s => _wrapBypass(ctx, s));
   return _chain(segs);
 }
 

@@ -10,11 +10,11 @@ import { APP }  from './core/state.js';
 import { toast } from './notifications.js';
 import { bk }   from './utils.js';
 import './audio/context.js';
-import { renderSoundGraph } from './renderPipeline.js';
+import { renderSoundGraph, effectivePlaybackRate, slotBufferSpan } from './renderPipeline.js';
 import { resolvePlan, exportTailSeconds } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
-import { idbGet, audioKey, isIdbRef } from './db.js';
-import { decodeAudio } from './audio/playback.js';
+import { getOrDecodeBuffer } from './audioCache.js';
+import { actx } from './audio/context.js';
 import { timelineMixdown } from './timeline.js';
 
 // ─── WAV ENCODING ─────────────────────────────────────────────
@@ -96,42 +96,44 @@ export function audioBufferToMp3Blob(buffer, kbps = 128) {
 
 // ─── RENDER SOUND WITH EFFECTS ────────────────────────────────
 
+/**
+ * EINZIGER Render-Pfad für den Einzel-Export (WAV und MP3). Der frühere Zweitpfad `exportSoundToWav()` in
+ * audio/playback.js delegiert hierher (B-12). Der Buffer kommt über den zentralen Cache (getOrDecodeBuffer) —
+ * kein ungeprüfter Legacy-Decode mit fester Wartezeit mehr.
+ * Länge = wirksame Spielzeit (Material ÷ Abspielrate) + Effekt-Nachklang; deckt sich mit der Live-Wiedergabe (B-10).
+ */
 export async function renderSoundOffline(s, slotIdx) {
   slotIdx = slotIdx ?? (s.curSlot || 0) % Math.max(1, (s.slots || []).length);
   const slot = (s.slots || [])[slotIdx];
   if (!slot || !slot.data) return null;
 
   let liveBuf = APP.audioBuffers[bk(s.id, slotIdx)];
-  if (!liveBuf && isIdbRef(slot.data)) {
-    const b64 = await idbGet(audioKey(s.id, slotIdx));
-    if (b64) { decodeAudio(bk(s.id, slotIdx), b64); await new Promise(r => setTimeout(r, 150)); }
-    liveBuf = APP.audioBuffers[bk(s.id, slotIdx)];
-  }
+  if (!liveBuf) liveBuf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, actx());
   if (!liveBuf) return null;
 
-  const ts  = slot.trimStart || 0;
-  let   te  = slot.trimEnd ?? liveBuf.duration;
-  if (te <= ts) te = liveBuf.duration;
-  const dur = te - ts;
-  if (dur <= 0) return null;
+  const { bufferDur } = slotBufferSpan(slot, liveBuf);
+  if (bufferDur <= 0) return null;
 
-  const tail   = exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)));
-  const numCh  = liveBuf.numberOfChannels;
-  const sr     = liveBuf.sampleRate;
-  const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + tail) * sr), sr);
+  const tail = exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)));
+  const numCh = liveBuf.numberOfChannels;
+  const sr    = liveBuf.sampleRate;
 
-  // renderSoundOffline() ist der tatsächlich von exportSoundWav()/exportSoundMp3()
-  // genutzte Render-Pfad — derselbe Baustein wie überall sonst (renderPipeline.js),
-  // inkl. Fades. Trim geschieht per start(when, offset, duration) direkt
-  // auf dem ungetrimmten liveBuf (funktioniert für OfflineAudioContext identisch
-  // wie live), eine manuelle Trim-Buffer-Kopie ist dadurch nicht nötig.
-  const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
-    mode: 'export',
-    destination: offCtx.destination
-  });
-  graph.start(0);
-  try { return await offCtx.startRendering(); } finally { graph.dispose(); }
+  // Trim geschieht per start(when, offset, duration) direkt auf dem ungetrimmten liveBuf (identisch zu live);
+  // derselbe Baustein wie überall sonst (renderPipeline.js), inkl. Fades.
+  const build = async lengthS => {
+    const offCtx = new OfflineAudioContext(numCh, Math.max(1, Math.ceil(lengthS * sr)), sr);
+    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: offCtx.destination });
+    return { offCtx, graph };
+  };
+  let r = await build(bufferDur / effectivePlaybackRate(s.pitch) + tail);
+  // Fehlt der Pitch-Worklet, kommt ein Detune-Notbehelf hinzu und ändert die Rate erst beim Graph-Aufbau → einmal mit der echten Länge neu aufsetzen.
+  const wanted = r.graph.dur + tail;
+  if (Math.abs(wanted * sr - r.offCtx.length) > 1) { r.graph.dispose(); r = await build(wanted); }
+  r.graph.start(0);
+  try { return await r.offCtx.startRendering(); } finally { r.graph.dispose(); }
 }
+
+const _safeFileName = (name, fallback = 'sound') => ((name || fallback).replace(/[^a-zA-Z0-9äöüÄÖÜß _-]/g, '').trim() || fallback);
 
 // ─── PUBLIC EXPORT FUNCTIONS ──────────────────────────────────
 
@@ -140,7 +142,7 @@ export async function exportSoundWav(s) {
   try {
     const buf  = await renderSoundOffline(s);
     if (!buf) { toast('Kein Audio', 'err'); return; }
-    _download(audioBufferToWavBlob(buf), (s.name || 'sound') + '.wav');
+    _download(audioBufferToWavBlob(buf), _safeFileName(s.name) + '.wav');
     toast('WAV Export ✓', 'ok');
   } catch (e) { toast('Export fehlgeschlagen: ' + e.message, 'err'); }
 }
@@ -151,8 +153,8 @@ export async function exportSoundMp3(s, kbps = 128) {
     const buf  = await renderSoundOffline(s);
     if (!buf) { toast('Kein Audio', 'err'); return; }
     const blob = audioBufferToMp3Blob(buf, kbps);
-    if (!blob) { _download(audioBufferToWavBlob(buf), (s.name || 'sound') + '.wav'); return; }
-    _download(blob, (s.name || 'sound') + '.mp3');
+    if (!blob) { _download(audioBufferToWavBlob(buf), _safeFileName(s.name) + '.wav'); return; }
+    _download(blob, _safeFileName(s.name) + '.mp3');
     toast('MP3 Export ✓', 'ok');
   } catch (e) { toast('Export fehlgeschlagen: ' + e.message, 'err'); }
 }

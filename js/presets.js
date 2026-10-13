@@ -14,8 +14,10 @@
  */
 
 import { APP } from './core/state.js';
-import { defaultEffects } from './audio/effect-graph.js';
-import { IR_IMPULSE_NAMES } from './audio/ir-data.js';
+import { MODULE_KEYS } from './audio/engine/registry.js';
+import {
+  fillLayerParams, normalizeEffectsObject as _normalizeEffectsObject, normalizeEffectsObjectX, addToBag, cleanX, inheritX, isUnsafeKey
+} from './audio/engine/schema.js';
 import { EFFECT_PRESETS } from './presets/effect-presets-data.js';
 import { uid } from './utils.js';
 import { STAGE_ORDER, PIPELINE_STAGES, isStageKey, sparsifyParams, suggestStageForParams } from './audio/fx-pipeline.js';
@@ -105,15 +107,10 @@ export const BUILTIN_PRESET_META = {
 };
 
 // ─── EFFEKTMODULE, DIE EIN PRESET SETZEN KANN ─────────────────
-// Muss synchron mit defaultEffects()/buildEffectChain() in audio/effect-graph.js
-// gehalten werden. Hüllkurve, Pan und Analyzer gehören nicht (mehr) zum Pipeline-Modell; solche Schlüssel
-// in alten Preset-Daten werden ignoriert. 'enabled'/'preset' sind Sound-Laufzeitfelder, keine Preset-Inhalte.
-export const PRESET_EFFECT_KEYS = [
-  'lowpass', 'highpass', 'notch', 'wahwah',
-  'reverb', 'delay', 'chorus', 'flanger', 'tremolo',
-  'eq', 'eq10', 'compressor', 'limiter', 'distortion', 'ringmod',
-  'pitchShift', 'irReverb', 'spatial', 'noiseGate'
-];
+// Abgeleitet aus der Modul-Registry (audio/engine/registry.js, AE-01′) — nicht von Hand pflegen. Hüllkurve, Pan und
+// Analyzer gehören nicht (mehr) zum Pipeline-Modell; solche Schlüssel in alten Preset-Daten werden bewusst ignoriert
+// (REMOVED_KEYS). 'enabled'/'preset' sind Sound-Laufzeitfelder, keine Preset-Inhalte.
+export const PRESET_EFFECT_KEYS = MODULE_KEYS.slice();
 
 // ─── GENERISCHE PRESET-ANWENDUNG ─────────────────────────────
 // Baut aus einem (Teil-)Effekte-Objekt eines Presets ein vollständiges
@@ -122,19 +119,7 @@ export const PRESET_EFFECT_KEYS = [
 // Preset gesetzte Module fallen auf Default zurück, exakt gesetzte Felder werden
 // übernommen. `enabled`/`preset` werden vom Aufrufer gesetzt (hier nicht enthalten).
 export function applyPresetEffects(presetEffects) {
-  const def = defaultEffects();
-  const src = presetEffects || {};
-  const out = {};
-  for (const key of PRESET_EFFECT_KEYS) {
-    if (key === 'eq10') {
-      const bands = Array.isArray(src.eq10?.bands) ? src.eq10.bands.slice(0, 10) : def.eq10.bands.slice();
-      while (bands.length < 10) bands.push(0);
-      out.eq10 = { ...def.eq10, ...(src.eq10 || {}), bands };
-      continue;
-    }
-    out[key] = { ...def[key], ...(src[key] || {}) };
-  }
-  return out;
+  return fillLayerParams(presetEffects);
 }
 
 // Die Anwendung eines Presets auf eine Sammlung (Sound-Profil, Ambient-Szene, Playlist) liegt jetzt in
@@ -150,7 +135,14 @@ export function presetToLayerInit(presetId) {
   const preset = getPresetById(presetId);
   if (!preset) return null;
   const full = applyPresetEffects(preset.effects);
-  return { init: { presetId, params: sparsifyParams(full) }, preset };
+  const params = sparsifyParams(full);
+  // Beutel (AE-18): unbekannte Felder bekannter Module wandern in aktive Module des Layers, unbekannte Module in layer.x
+  for (const [k, extra] of Object.entries(preset.x?.params || {})) {
+    if (k !== '__skipped' && params[k] && extra && typeof extra === 'object') Object.assign(params[k], JSON.parse(JSON.stringify(extra)));
+  }
+  const init = { presetId, params };
+  if (preset.x?.modules) init.x = { modules: preset.x.modules };
+  return { init, preset };
 }
 
 // ─── ZUGRIFF AUF PRESETS (BUILT-IN + USER, EINHEITLICH) ───────
@@ -182,7 +174,7 @@ export function getPresetById(id) {
   const up = _ensureUserPresetsArray().find(p => p.id === id);
   if (up) {
     const st = _userPresetStage(up);
-    return { id: up.id, builtin: false, name: up.name, stage: st.stage, group: up.group || up.category || DEFAULT_GROUP, stageAuto: st.auto, description: up.description || '', effects: up.effects };
+    return { id: up.id, builtin: false, name: up.name, stage: st.stage, group: up.group || up.category || DEFAULT_GROUP, stageAuto: st.auto, description: up.description || '', effects: up.effects, ...(up.x ? { x: up.x } : {}) };
   }
   return null;
 }
@@ -209,113 +201,15 @@ export function getPresetsByGroup(group) {
 // ungültige Strings/Werte außerhalb des sinnvollen Bereichs in
 // importierten Presets, bevor sie in die Audio-Engine gelangen.
 
-const NUM_RANGES = {
-  'lowpass.frequency': [20, 20000],    'lowpass.Q': [0.1, 20],
-  'highpass.frequency': [20, 20000],   'highpass.Q': [0.1, 20],
-  'notch.frequency': [20, 20000],      'notch.Q': [0.5, 30],
-  'wahwah.frequency': [100, 5000],     'wahwah.depth': [0, 1], 'wahwah.rate': [0.1, 10], 'wahwah.resonance': [1, 20],
-  'reverb.amount': [0, 1], 'reverb.duration': [0.05, 10], 'reverb.decay': [0.1, 10],
-  'delay.time': [0, 2], 'delay.feedback': [0, 0.95], 'delay.wet': [0, 1],
-  'chorus.baseDelay': [1, 40], 'chorus.depth': [0, 20], 'chorus.rate': [0.01, 10], 'chorus.mix': [0, 1],
-  'flanger.baseDelay': [0.5, 10], 'flanger.depth': [0, 10], 'flanger.rate': [0.01, 10], 'flanger.feedback': [0, 0.95], 'flanger.mix': [0, 1],
-  'tremolo.rate': [0.1, 20], 'tremolo.depth': [0, 1],
-  'eq.low': [-18, 18], 'eq.mid': [-18, 18], 'eq.high': [-18, 18],
-  'compressor.threshold': [-60, 0], 'compressor.knee': [0, 40], 'compressor.ratio': [1, 20], 'compressor.attack': [0, 1], 'compressor.release': [0, 1],
-  'limiter.threshold': [-24, 0],
-  'distortion.amount': [0, 100],
-  'ringmod.frequency': [20, 5000], 'ringmod.mix': [0, 1],
-  'pitchShift.semitones': [-24, 24],
-  'irReverb.wet': [0, 1],
-  'spatial.x': [-1000, 1000], 'spatial.y': [-1000, 1000], 'spatial.z': [-1000, 1000],
-  'spatial.rolloff': [0, 10], 'spatial.maxDistance': [1, 100000], 'spatial.refDistance': [0, 1000],
-  'spatial.coneInnerAngle': [0, 360], 'spatial.coneOuterAngle': [0, 360], 'spatial.coneOuterGain': [0, 1],
-  'noiseGate.threshold': [-100, 0], 'noiseGate.attack': [0, 1000], 'noiseGate.release': [0, 2000]
-};
-
-function _num(val, range, fallback) {
-  const n = typeof val === 'number' ? val : parseFloat(val);
-  if (!isFinite(n)) return fallback; // fängt NaN und ±Infinity ab
-  const [min, max] = range;
-  return Math.max(min, Math.min(max, n));
-}
-function _bool(val, fallback) { return typeof val === 'boolean' ? val : fallback; }
-function _enum(val, allowed, fallback) { return allowed.includes(val) ? val : fallback; }
-
 /**
- * Nimmt beliebiges (potenziell nicht vertrauenswürdiges, z.B. importiertes)
- * Rohdaten-Objekt entgegen und liefert ein vollständiges, garantiert
- * gültiges Effekte-Objekt (alle PRESET_EFFECT_KEYS, alle Zahlenwerte
- * geklemmt, unbekannte Felder/Module verworfen). Unbekannte
- * zusätzliche Effektmodule im Rohdaten-Objekt werden dabei stillschweigend
- * ignoriert (nicht Teil von PRESET_EFFECT_KEYS) — der Import wird NICHT
- * abgelehnt, es erscheint aber auch keine Fehlfunktion, da nur bekannte
- * Module überhaupt an die Audio-Engine weitergereicht werden.
+ * Nimmt beliebiges (potenziell nicht vertrauenswürdiges, z.B. importiertes) Rohdaten-Objekt entgegen und liefert ein
+ * vollständiges, garantiert gültiges Effekte-Objekt (alle Registry-Module, alle Zahlenwerte geklemmt). Die Bereiche und
+ * Regeln stehen in der Registry (audio/engine/registry.js) und im Schema (audio/engine/schema.js).
+ * Unbekannte Module/Felder fließen NICHT in dieses Ergebnis (die Engine bekäme sie nicht); sie bleiben über
+ * normalizeEffectsObjectX() im Erweiterungsbeutel erhalten (User-Presets: `preset.x`, AE-18).
  */
 export function normalizeEffectsObject(raw) {
-  const def = defaultEffects();
-  const src = (raw && typeof raw === 'object') ? raw : {};
-  const out = {};
-
-  const filt = (key, extra = {}) => {
-    const s = (src[key] && typeof src[key] === 'object') ? src[key] : {};
-    const d = def[key];
-    const o = { enabled: _bool(s.enabled, d.enabled) };
-    for (const field of Object.keys(d)) {
-      if (field === 'enabled') continue;
-      const rangeKey = `${key}.${field}`;
-      if (NUM_RANGES[rangeKey]) o[field] = _num(s[field], NUM_RANGES[rangeKey], d[field]);
-      else o[field] = (extra.enumFields && extra.enumFields[field]) ? _enum(s[field], extra.enumFields[field], d[field]) : (s[field] ?? d[field]);
-    }
-    return o;
-  };
-
-  out.lowpass  = filt('lowpass');
-  out.highpass = filt('highpass');
-  out.notch    = filt('notch');
-  out.wahwah   = filt('wahwah');
-  out.reverb   = filt('reverb');
-  out.delay    = filt('delay');
-  out.chorus   = filt('chorus');
-  out.flanger  = filt('flanger');
-  out.tremolo  = filt('tremolo', { enumFields: { waveform: ['sine', 'triangle', 'square'] } });
-  out.eq       = filt('eq');
-  out.compressor = filt('compressor');
-  out.limiter     = filt('limiter');
-  out.distortion  = filt('distortion', { enumFields: {
-    mode:       ['softClip', 'hardClip', 'bitcrush'],
-    oversample: ['none', '2x', '4x']
-  } });
-  out.ringmod  = filt('ringmod');
-  out.pitchShift = filt('pitchShift');
-
-  const irSrc = (src.irReverb && typeof src.irReverb === 'object') ? src.irReverb : {};
-  out.irReverb = {
-    enabled: _bool(irSrc.enabled, def.irReverb.enabled),
-    impulse: IR_IMPULSE_NAMES.includes(irSrc.impulse) ? irSrc.impulse : (irSrc.impulse == null ? null : def.irReverb.impulse),
-    wet:     _num(irSrc.wet, NUM_RANGES['irReverb.wet'], def.irReverb.wet)
-  };
-
-  out.spatial  = filt('spatial');
-  out.noiseGate = filt('noiseGate');
-
-  const eq10Src = (src.eq10 && typeof src.eq10 === 'object') ? src.eq10 : {};
-  // eq10.bands: entweder reine Gain-Zahlen (Built-in-Presets) ODER Objekte {freq, gain, Q} (so schreibt der
-  // Editor sie, s. dialogs/sound-modal.js readEffectsFromUI()). BEIDE Formen bleiben erhalten — nur die Werte werden
-  // geklemmt. (Früher wurden Objekte hier zu 0 dB normalisiert, wodurch EQ10-Werte eigener Presets verloren gingen.)
-  const rawBands = Array.isArray(eq10Src.bands) ? eq10Src.bands : def.eq10.bands;
-  const bands = [];
-  for (let i = 0; i < 10; i++) {
-    const b = rawBands[i];
-    if (b && typeof b === 'object') {
-      const o = { gain: _num(b.gain, [-18, 18], 0) };
-      if (b.freq != null) o.freq = _num(b.freq, [20, 20000], 1000);
-      if (b.Q != null)    o.Q    = _num(b.Q, [0.3, 10], 1.4);
-      bands.push(o);
-    } else bands.push(_num(b, [-18, 18], 0));
-  }
-  out.eq10 = { enabled: _bool(eq10Src.enabled, def.eq10.enabled), bands };
-
-  return out;
+  return _normalizeEffectsObject(raw);
 }
 
 // ─── USER-PRESET CRUD ──────────────────────────
@@ -328,13 +222,49 @@ function _sanitizeMeta({ name, group, category, stage, description }) {
   return { name: cleanName, group: cleanGroup, stage: isStageKey(stage) ? stage : null, description: cleanDescription };
 }
 
+// Bekannte Felder einer Preset-Datei/eines User-Presets; alles andere (z. B. Makros, `engine` einer neueren Version)
+// wird im Beutel `x.fields` erhalten und beim Export wieder ausgegeben.
+const _KNOWN_PRESET_FIELDS = new Set(['kind', 'id', 'name', 'group', 'category', 'stage', 'stageAuto', 'description', 'effects', 'version', 'createdAt', 'updatedAt', 'x']);
+
+/** Beutel eines Presets aus (a) unbekannten Teilen der Effekte, (b) einem bestehenden Beutel, (c) unbekannten Preset-Feldern. */
+function _presetBag({ ex, xIn, fields }) {
+  const base = inheritX(xIn);
+  return cleanX({
+    modules: addToBag(addToBag({}, base.modules), ex?.modules),
+    params:  addToBag(addToBag({}, base.params),  ex?.params),
+    fields:  addToBag(addToBag({}, base.fields),  fields)
+  });
+}
+
+function _unknownPresetFields(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') for (const [k, v] of Object.entries(raw)) if (!_KNOWN_PRESET_FIELDS.has(k) && !isUnsafeKey(k)) out[k] = v;
+  return out;
+}
+
+/**
+ * Form für den Export (JSON-Datei): die Effekte enthalten wieder die unbekannten Module/Felder (wie in der
+ * Originaldatei), Zusatzfelder stehen auf oberster Ebene. Ältere App-Versionen ignorieren, was sie nicht kennen.
+ */
+export function presetEffectsForExport(p) {
+  const eff = JSON.parse(JSON.stringify(p.effects || {}));
+  for (const [k, extra] of Object.entries(p.x?.params || {})) if (k !== '__skipped' && eff[k] && typeof eff[k] === 'object') Object.assign(eff[k], JSON.parse(JSON.stringify(extra)));
+  for (const [k, v] of Object.entries(p.x?.modules || {})) if (k !== '__skipped' && !(k in eff)) eff[k] = JSON.parse(JSON.stringify(v));
+  return eff;
+}
+export function presetFieldsForExport(p) {
+  const out = {};
+  for (const [k, v] of Object.entries(p.x?.fields || {})) if (k !== '__skipped' && !_KNOWN_PRESET_FIELDS.has(k)) out[k] = JSON.parse(JSON.stringify(v));
+  return out;
+}
+
 /** Neues User-Preset. IDs sind mit 'user_' präfixt — kann nie mit einer
  *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren.
  *  `stage` ist Pflicht-Metadatum (Rolle in der Pipeline); fehlt sie, wird sie aus den Parametern vorgeschlagen und
  *  das Preset mit stageAuto:true markiert („Stufe prüfen“). */
-export function createUserPreset({ name, group, category, stage, description, effects }) {
+export function createUserPreset({ name, group, category, stage, description, effects, x, fields }) {
   const meta = _sanitizeMeta({ name, group, category, stage, description });
-  const normEffects = normalizeEffectsObject(effects);
+  const { effects: normEffects, x: ex } = normalizeEffectsObjectX(effects);
   const auto = !meta.stage;
   const preset = {
     id: 'user_' + uid(),
@@ -346,6 +276,8 @@ export function createUserPreset({ name, group, category, stage, description, ef
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
+  const bag = _presetBag({ ex, xIn: x, fields });
+  if (bag) preset.x = bag;
   _ensureUserPresetsArray().push(preset);
   return preset;
 }
@@ -361,7 +293,12 @@ export function updateUserPreset(id, { name, group, category, stage, description
   // Eine ausdrücklich gesetzte Stufe ist bestätigt; ohne Angabe bleibt der Prüf-Hinweis bestehen.
   p.stageAuto = stage ? false : cur.stageAuto;
   p.version = 2;
-  if (effects) p.effects = normalizeEffectsObject(effects);
+  if (effects) {
+    const { effects: ne, x: ex } = normalizeEffectsObjectX(effects);
+    p.effects = ne;
+    const bag = _presetBag({ ex, xIn: p.x });          // bestehende unbekannte Teile bleiben erhalten (AE-18)
+    if (bag) p.x = bag; else delete p.x;
+  }
   p.updatedAt = Date.now();
   return p;
 }
@@ -385,7 +322,8 @@ export function duplicatePreset(sourceId, overrideName) {
     group: src.group,
     stage: src.stage,
     description: src.description,
-    effects: src.effects
+    effects: src.effects,
+    x: src.x
   });
 }
 
@@ -427,7 +365,7 @@ export const migratePresetCategories = migrateUserPresetStages;
 
 // ─── IMPORT (aufgerufen von storage/import-export.js importData()) ──
 // Eine importierte Preset-Datei mit unbekannten Zusatzfeldern wird NICHT
-// abgelehnt (Felder werden ignoriert); eine Datei mit fehlenden Pflichtfeldern
+// abgelehnt; unbekannte Module/Felder bleiben im Beutel `x` erhalten (AE-18, Phase 2); eine Datei mit fehlenden Pflichtfeldern
 // (kein `effects`-Objekt) WIRD abgelehnt (validatePresetShape). Eine
 // unbekannte/neuere `version` wird nicht hart abgelehnt (Vorwärtskompatibilität);
 // alle Werte laufen durch normalizeEffectsObject().
@@ -452,7 +390,9 @@ export function importSinglePresetData(raw) {
     group: legacyKey,
     stage: stage || undefined,
     description: raw?.description,
-    effects: raw?.effects
+    effects: raw?.effects,
+    x: raw?.x,
+    fields: _unknownPresetFields(raw)
   });
   p.stageAuto = !!auto;
   return p;

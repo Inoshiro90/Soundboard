@@ -32,6 +32,7 @@ export const APP = {
     playing: false, loading: false,
     soundId: null, slotIdx: null,
     src: null, masterGain: null,
+    runtime: null,            // PipelineRuntime der laufenden Vorschau (Phase 3; Live-Update-Verdrahtung folgt in P7)
     kind: null,          // 'buffer' | 'noise' | null — bestimmt, wie die Quelle beendet wird
     token: 0
   },

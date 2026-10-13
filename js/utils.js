@@ -8,8 +8,12 @@
  * Generates a short unique ID.
  * @returns {string}
  */
+let _uidSeq = 0;
 export function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  // Zeit (ms, Basis 36) + 4 Zufallszeichen + 2 Zeichen Zähler. Format bleibt alphanumerisch und beginnt wie bisher;
+  // der Zähler macht IDs innerhalb einer Sitzung auch bei vielen Aufrufen im selben Tick eindeutig (B-19).
+  _uidSeq = (_uidSeq + 1) % 1296;
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + _uidSeq.toString(36).padStart(2, '0');
 }
 
 /**

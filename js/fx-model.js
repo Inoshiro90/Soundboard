@@ -19,6 +19,8 @@ import {
   fillLayerParams, sparsifyParams, hasActiveModules, suggestStageForParams, isStageKey
 } from './audio/fx-pipeline.js';
 import { getPresetById, presetToLayerInit } from './presets.js';
+import { MODULE_BY_KEY, REMOVED_KEYS } from './audio/engine/registry.js';
+import { addToBag, cleanX, isUnsafeKey, migrateRev } from './audio/engine/schema.js';
 
 
 // ─── NORMALISIERUNG (v2) ─────────────────────────────────────
@@ -50,7 +52,16 @@ export function migrateEffectsV1toV2(v1) {
 
   // Alte Hüllkurve (`envelope`), Pan (`pan`) und Analyzer (`analyzer`) gehören nicht mehr zum Modell: sie werden
   // bewusst verworfen (das Original bleibt im Backup <STORAGE_KEY>:pre-pipeline erhalten, s. storage/migration.js).
+  // ALLES ANDERE Unbekannte (Module/Felder einer neueren Version) bleibt im Erweiterungsbeutel `x.fields` erhalten
+  // (AE-18) und wird beim Export wieder ausgegeben.
   out.enabled = src.enabled === true;
+  const unknown = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (MODULE_BY_KEY[k] || k === 'enabled' || k === 'preset' || k === 'v' || REMOVED_KEYS.includes(k) || isUnsafeKey(k)) continue;
+    unknown[k] = v;
+  }
+  const xbag = cleanX({ fields: addToBag({}, unknown) });
+  if (xbag) out.x = xbag;
 
   const params = sparsifyParams(fillLayerParams(src));
   const presetId = (typeof src.preset === 'string' && src.preset) ? src.preset : null;
@@ -69,7 +80,7 @@ export function migrateEffectsV1toV2(v1) {
 
 /** Idempotent: v2 → normalisiert; v1/Unbekanntes → migriert. Gibt immer ein gültiges v2-Objekt zurück. */
 export function ensureEffectsV2(fx) {
-  if (fx && typeof fx === 'object' && fx.v === PIPELINE_VERSION) return normalizeEffectsV2(fx);
+  if (fx && typeof fx === 'object' && fx.v === PIPELINE_VERSION) return migrateRev(normalizeEffectsV2(fx));   // rev: Migrationen innerhalb von v2 (AE-19)
   return migrateEffectsV1toV2(fx);
 }
 

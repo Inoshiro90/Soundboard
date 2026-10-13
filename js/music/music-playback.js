@@ -152,7 +152,9 @@ function _reconnectSlotFx(rec, effects) {
   const ctx = actx();
   // Gleiche Pipeline wie überall (Reihenfolge = Benutzerreihenfolge). Das Pitch-Worklet muss vorher geladen sein
   // (_loadIntoSlot()/applyMusicTrackEffectsLive() erledigen das); fehlt es, greift der dokumentierte Notbehelf.
-  const graph = buildPipelineGraph(ctx, resolvePlan(asPipelineEffects(effects)), { numChannels: 2, caps: TARGET_CAPS.music });
+  // live:true — Ein-/Ausgangs-Gain halten die Verbindung dauerhaft, damit applyMusicTrackEffectsLive() per runtime.update()
+  // (Parameter live, Strukturänderung per Überblendung) statt per Reconnect (Klick) umstellen kann.
+  const graph = buildPipelineGraph(ctx, resolvePlan(asPipelineEffects(effects)), { numChannels: 2, caps: TARGET_CAPS.music, live: true });
   if (graph.input) { rec.source.connect(graph.input); graph.output.connect(rec.gain); }
   else rec.source.connect(rec.gain);
   rec.fxChain = graph;
@@ -161,8 +163,9 @@ function _reconnectSlotFx(rec, effects) {
 /**
  * Nach „Musikstück speichern": Effektkette eines GERADE geladenen Tracks (aktiver oder auslaufender Slot)
  * sofort auf die gespeicherten Effekte umstellen, statt erst beim nächsten Laden. Berührt weder
- * Gain-Automation noch Position/Pause-Zustand — nur die Verbindung Source → [Kette] → Gain wird neu
- * aufgebaut (_reconnectSlotFx(), s.o.). Während eines Crossfades unverändert (keine Eingriffe in die Rampen).
+ * Gain-Automation noch Position/Pause-Zustand — nur die Effektkette Source → [Kette] → Gain wird umgestellt
+ * aufgebaut (_reconnectSlotFx(), s.o.). Seit Phase 3 über runtime.update(): Parameter live, Strukturänderung klickfrei
+ * überblendet (Equal-Power, 40 ms). Während eines Crossfades unverändert (keine Eingriffe in die Rampen).
  */
 export function applyMusicTrackEffectsLive(trackId, effects) {
   if (!_players || _crossfading) return;
@@ -171,7 +174,15 @@ export function applyMusicTrackEffectsLive(trackId, effects) {
     if (rec?.trackId === trackId && rec.source) {
       preparePipelineContext(actx(), resolvePlan(asPipelineEffects(effects)), TARGET_CAPS.music)
         .catch(() => {})
-        .then(() => { if (rec.trackId === trackId && rec.source) _reconnectSlotFx(rec, effects); });
+        .then(() => {
+          if (!(rec.trackId === trackId && rec.source)) return;
+          const rt = rec.fxChain?.runtime;
+          // Laufende Runtime: Parameter live bzw. Strukturänderung überblendet (klickfrei). Sonst/bei Fehler: wie bisher neu verbinden.
+          if (rt && rt.live && !rt.disposed) {
+            Promise.resolve(rt.update(resolvePlan(asPipelineEffects(effects))))
+              .catch(e => { console.warn('[music] Live-Update fehlgeschlagen, verbinde neu:', e); if (rec.trackId === trackId && rec.source) _reconnectSlotFx(rec, effects); });
+          } else _reconnectSlotFx(rec, effects);
+        });
     }
   });
 }

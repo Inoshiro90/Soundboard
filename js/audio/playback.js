@@ -10,8 +10,6 @@ import { toast }       from '../notifications.js';
 import '../db.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
-import { resolvePlan, exportTailSeconds } from './fx-pipeline.js';
-import { asPipelineEffects } from '../fx-model.js';
 // Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
 // hasAudioContext aus audio/context.js und buildEffectChain aus
 // audio/effect-graph.js) — funktioniert für reine Funktionsreferenzen, die
@@ -351,53 +349,13 @@ export async function runMacro(m, callStack = []) {
 }
 
 // ─── WAV EXPORT ──────────────────────────────────────────────
-
-function _bufToWav(buffer) {
-  const numCh = buffer.numberOfChannels; const sr = buffer.sampleRate; const len = buffer.length;
-  const bps = 16; const block = numCh * bps / 8; const dataSize = len * block;
-  const ab = new ArrayBuffer(44 + dataSize); const v = new DataView(ab);
-  const wr = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  wr(0,'RIFF'); v.setUint32(4, 36 + dataSize, true); wr(8,'WAVE'); wr(12,'fmt ');
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, numCh, true);
-  v.setUint32(24, sr, true); v.setUint32(28, sr * block, true);
-  v.setUint16(32, block, true); v.setUint16(34, bps, true);
-  wr(36,'data'); v.setUint32(40, dataSize, true);
-  let off = 44;
-  for (let f = 0; f < len; f++) for (let ch = 0; ch < numCh; ch++) { const s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[f])); v.setInt16(off, s < 0 ? s * 32768 : s * 32767, true); off += 2; }
-  return ab;
-}
-
+/**
+ * @deprecated Es gibt nur noch EINEN Exportpfad (export.js → renderSoundOffline). Diese Funktion bleibt als dünne
+ * Weiterleitung für bestehende Aufrufer erhalten (dynamischer Import, um keinen Importzyklus zu erzeugen).
+ */
 export async function exportSoundToWav(s) {
-  const slotIdx = (s.curSlot || 0) % Math.max(1, (s.slots || []).length);
-  const slot    = (s.slots || [])[slotIdx]; if (!slot?.data) { toast('Kein Audio', 'err'); return; }
-  let liveBuf   = APP.audioBuffers[bk(s.id, slotIdx)];
-  if (!liveBuf && hasAudioContext()) liveBuf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, actx());
-  if (!liveBuf) { toast('Audio nicht geladen', 'err'); return; }
-  const ts = slot.trimStart || 0; let te = slot.trimEnd ?? liveBuf.duration; if (te <= ts) te = liveBuf.duration;
-  const dur = te - ts; if (dur <= 0) { toast('Ungültige Trim-Punkte', 'err'); return; }
-  toast('Exportiere WAV…');
-  try {
-    const numCh = liveBuf.numberOfChannels; const sr = liveBuf.sampleRate;
-    // Tail-Puffer für Reverb/Delay-Ausklang — aus der Pipeline abgeleitet (mind. 3,5 s bei aktiven Effekten).
-    const offCtx = new OfflineAudioContext(numCh, Math.ceil((dur + exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)))) * sr), sr);
-
-    // Derselbe Graph-Aufbau wie Live-Playback/Preview (renderPipeline.js). Trim geschieht per
-    // start(when, offset, duration) direkt auf dem UNGETRIMMTEN liveBuf — AudioBufferSourceNode.start()
-    // mit offset/duration funktioniert für OfflineAudioContext identisch wie live. Fades
-    // werden dabei korrekt mitgerendert.
-    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, {
-      mode: 'export',
-      destination: offCtx.destination
-    });
-    graph.start(0);
-    let rendered;
-    try { rendered = await offCtx.startRendering(); } finally { graph.dispose(); }
-
-    const blob = new Blob([_bufToWav(rendered)], { type: 'audio/wav' });
-    const url  = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url;
-    a.download = (s.name || 'sound').replace(/[^a-zA-Z0-9äöüÄÖÜß _-]/g, '') + '.wav'; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000); toast('WAV exportiert ✓', 'ok');
-  } catch(err) { console.error('[audio] WAV Export:', err); toast('Export fehlgeschlagen: ' + err.message, 'err'); }
+  const m = await import('../export.js');
+  return m.exportSoundWav(s);
 }
 
 // ─── UI SYNC ─────────────────────────────────────────────────

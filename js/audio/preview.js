@@ -47,14 +47,28 @@ function _stopPreviewSourceOnly() {
  * Start einer neuen Preview (ersetzt die alte), Modal-Schließen,
  * Speichern und Abbrechen.
  */
-export function stopEffectPreview() {
+const PREVIEW_ALIAS_PREFIXES = ['_fxpreview_', '_ambpreview_'];
+
+/**
+ * Entfernt alle Preview-Aliase aus dem Buffer-Cache (`_fxpreview_<id>_<slot>` / `_ambpreview_<id>_<slot>`).
+ * Die Event-Handler registrieren diese Schlüssel vor jeder Vorschau (gleicher AudioBuffer wie `_ed_N`/Original);
+ * ohne Aufräumen wuchs der Cache je Sound/Entwurf und lieferte später veraltete Buffer (B-06).
+ */
+export function releasePreviewAliases() {
+  for (const k of Object.keys(APP.audioBuffers)) {
+    if (PREVIEW_ALIAS_PREFIXES.some(pre => k.startsWith(pre))) delete APP.audioBuffers[k];
+  }
+}
+
+export function stopEffectPreview({ keepAliases = false } = {}) {
   const p = APP.audioPreview;
   p.token++; // entwertet jede noch wartende startEffectPreview()-Anfrage (Decode/Graph-Aufbau)
   _stopPreviewSourceOnly();
   p.playing = false; p.loading = false;
   if (p.dispose) { try { p.dispose(); } catch (e) {} p.dispose = null; }   // LFOs/Träger/Worklets der Effektkette freigeben
-  p.src = null; p.masterGain = null;
+  p.src = null; p.masterGain = null; p.runtime = null;
   p.soundId = null; p.slotIdx = null; p.kind = null;
+  if (!keepAliases) releasePreviewAliases();   // beim Neustart (startEffectPreview) bleiben die gerade vorgewärmten Aliase erhalten
   _updatePreviewButton();
 }
 
@@ -83,11 +97,11 @@ export function bindPreviewModalLifecycle(modalEl) {
 
 async function startEffectPreview(s, slotIdx, opts = {}) {
   const p = APP.audioPreview;
-  stopEffectPreview(); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden
+  stopEffectPreview({ keepAliases: true }); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden (Aliase des neuen Starts bleiben)
   const myToken = p.token; // stopEffectPreview() hat token bereits erhöht — dieser Aufruf "besitzt" ihn jetzt
 
   const slot = s.slots?.[slotIdx];
-  if (!slot?.data) { toast('Slot ' + (slotIdx + 1) + ' leer'); return; }
+  if (!slot?.data) { toast('Slot ' + (slotIdx + 1) + ' leer'); releasePreviewAliases(); return; }
 
   p.loading = true; _updatePreviewButton();
   actx(); // stellt AudioContext innerhalb der User-Geste sicher
@@ -112,7 +126,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
 
   if (!buf) {
     toast('Audio konnte nicht geladen werden', 'err');
-    p.loading = false; _updatePreviewButton();
+    p.loading = false; releasePreviewAliases(); _updatePreviewButton();
     return;
   }
 
@@ -134,13 +148,13 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
 
   if (!graph) {
     toast('Vorschau-Fehler', 'err');
-    p.loading = false; _updatePreviewButton();
+    p.loading = false; releasePreviewAliases(); _updatePreviewButton();
     return;
   }
 
   const { src, masterGain, dur } = graph;
   p.loading = false; p.playing = true;
-  p.src = src; p.masterGain = masterGain; p.dispose = graph.dispose;
+  p.src = src; p.masterGain = masterGain; p.dispose = graph.dispose; p.runtime = graph.runtime;
   p.soundId = s.id; p.slotIdx = slotIdx; p.kind = 'buffer';
 
   src.onended = () => {
@@ -217,7 +231,7 @@ export async function previewNoiseGenerator(g) {
   masterGain.connect(ctx.destination);
 
   p.loading = false; p.playing = true; p.kind = 'noise';
-  p.src = node; p.masterGain = masterGain; p.dispose = conn ? conn.dispose : null;
+  p.src = node; p.masterGain = masterGain; p.dispose = conn ? conn.dispose : null; p.runtime = conn?.graph?.runtime ?? null;
   p.soundId = '_noisepreview'; p.slotIdx = 0;
   _updatePreviewButton();
 

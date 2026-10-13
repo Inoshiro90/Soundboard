@@ -10,6 +10,7 @@ import { defaultPlayback }                from '../audio/effect-graph.js';
 import { STORAGE_KEY }                   from '../core/constants.js';
 import { PIPELINE_VERSION, defaultPipelineEffects } from '../audio/fx-pipeline.js';
 import { ensureEffectsV2 }               from '../fx-model.js';
+import { REMOVED_KEYS }                  from '../audio/engine/registry.js';
 import { toast }                            from '../notifications.js';
 import { idbSet, migrateAudioToIdb, audioKey, IDB_SENTINEL, isBase64Data } from '../db.js';
 // Zirkulärer Import (persistence.js importiert umgekehrt migrateEffects/
@@ -30,8 +31,8 @@ export function forEachEffectHolder(cb) {
 
 const PRE_PIPELINE_BACKUP = STORAGE_KEY + ':pre-pipeline';
 
-/** Alte Schlüssel, die das Pipeline-Modell nicht mehr kennt (Hüllkurve, Ausgang/Pan, Analyzer). */
-const REMOVED_FX_KEYS = ['envelope', 'output', 'analyzer'];
+/** Alte Schlüssel, die das Pipeline-Modell nicht mehr kennt (Hüllkurve, Ausgang/Pan, Analyzer) — Liste in der Registry. */
+const REMOVED_FX_KEYS = REMOVED_KEYS;
 
 /** True für v1-Objekte und für v2-Objekte, die noch entfernte Schlüssel tragen (→ Backup + Bereinigung). */
 function _needsPipelineMigration(fx) {
@@ -43,7 +44,7 @@ function _needsPipelineMigration(fx) {
  * Überführt ALLE Effekt-Objekte in das Pipeline-Modell (v2). Idempotent: v2-Objekte werden nur normalisiert.
  * Sicherheitsnetz: vor der ersten Migration wird der gespeicherte Rohzustand einmalig unter
  * `<STORAGE_KEY>:pre-pipeline` gesichert; scheitert die Migration eines einzelnen Elements, bekommt es eine leere
- * Pipeline und das Original unter `effects.legacyV1` (nichts geht verloren, nichts wird still falsch einsortiert).
+ * Pipeline und das Original unter `effects.x.legacyV1` (nichts geht verloren, nichts wird still falsch einsortiert).
  * Entfernte Schlüssel (envelope/output/analyzer) werden dabei verworfen; die Migration ist wiederholbar.
  * @returns {number} Anzahl migrierter (v1 oder bereinigter v2-)Objekte
  */
@@ -67,7 +68,7 @@ export function migrateEffects() {
       console.error('[storage] Effekt-Migration fehlgeschlagen für', h.id, e);
       const orig = h.effects;
       h.effects = defaultPipelineEffects();
-      h.effects.legacyV1 = JSON.parse(JSON.stringify(orig ?? null));
+      h.effects.x = { legacyV1: JSON.parse(JSON.stringify(orig ?? null)) };   // Rettungsanker im Erweiterungsbeutel (AE-18)
     }
     if (!wasCurrent) migrated++;
   });

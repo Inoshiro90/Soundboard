@@ -154,7 +154,9 @@ function _readFlatFromUI() {
       y:              num('fxSpatialY',    0),
       z:              num('fxSpatialZ',   -1),
       rolloff:        num('fxSpatialRolloff', 1),
-      maxDistance:    num('fxSpatialMaxDist', 10000),
+      // Es gibt (bewusst) kein Control für maxDistance; der geladene Wert wird am Container mitgeführt und beim
+      // Auslesen zurückgegeben — vorher überschrieb das Auslesen jeden Preset-/Importwert mit 10000 (B-09).
+      maxDistance:    (() => { const v = parseFloat(g('fxSpatialControls')?.dataset?.maxDistance); return Number.isFinite(v) ? v : 10000; })(),
       refDistance:    1,
       coneInnerAngle: 360,
       coneOuterAngle: 360,
@@ -284,7 +286,7 @@ function _writeFlatToUI(fx) {
   set('fxSpatialY', fx.spatial?.y ?? 0); lbl('fxSpatialYLbl', (fx.spatial?.y ?? 0).toFixed(1));
   set('fxSpatialZ', fx.spatial?.z ?? -1); lbl('fxSpatialZLbl', (fx.spatial?.z ?? -1).toFixed(1));
   set('fxSpatialRolloff', fx.spatial?.rolloff ?? 1); lbl('fxSpatialRolloffLbl', (fx.spatial?.rolloff ?? 1).toFixed(1));
-  set('fxSpatialMaxDist', fx.spatial?.maxDistance ?? 10000);
+  { const sc = document.getElementById('fxSpatialControls'); if (sc) sc.dataset.maxDistance = String(fx.spatial?.maxDistance ?? 10000); }
 
   chk('fxNoiseGateEnabled', fx.noiseGate?.enabled);
   set('fxNoiseGateThreshold', fx.noiseGate?.threshold ?? -50);

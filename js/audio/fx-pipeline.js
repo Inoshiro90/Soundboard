@@ -28,9 +28,16 @@
  */
 
 import { uid } from '../utils.js';
-import { defaultEffects, buildLayerChain, buildTerminalPanner, buildPitchNode } from './effect-graph.js';
+import { defaultEffects } from './effect-graph.js';
 import { ensurePitchWorkletFor } from './context.js';
 import { getIRDuration } from './ir-data.js';
+import { PipelineRuntime } from './engine/runtime.js';
+import { MODULE_KEYS, REMOVED_KEYS } from './engine/registry.js';
+import {
+  fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
+} from './engine/schema.js';
+
+export { fillLayerParams, sparsifyParams };
 
 export const PIPELINE_VERSION = 2;
 
@@ -46,56 +53,30 @@ export const PIPELINE_STAGES = {
 
 export function isStageKey(k) { return STAGE_ORDER.includes(k); }
 
-/** Module, die ein Layer enthalten kann. Envelope, Pan und Analyzer gehören NICHT in einen Layer. */
-export const LAYER_PARAM_KEYS = [
-  'lowpass', 'highpass', 'notch', 'wahwah',
-  'reverb', 'delay', 'chorus', 'flanger', 'tremolo',
-  'eq', 'eq10', 'compressor', 'limiter', 'distortion', 'ringmod',
-  'pitchShift', 'irReverb', 'spatial', 'noiseGate'
-];
+/**
+ * Module, die ein Layer enthalten kann — abgeleitet aus der Registry (audio/engine/registry.js, AE-01′); nicht von Hand
+ * pflegen. Envelope, Pan und Analyzer gehören NICHT in einen Layer.
+ */
+export const LAYER_PARAM_KEYS = MODULE_KEYS.slice();
 
 const clone = x => JSON.parse(JSON.stringify(x));
 
 // ─── LAYER-PARAMETER ─────────────────────────────────────────
-
-/** Vollständiges Parameterobjekt (alle LAYER_PARAM_KEYS) aus einem sparsamen/teilweisen. Deterministisch. */
-export function fillLayerParams(params) {
-  const def = defaultEffects();
-  const src = (params && typeof params === 'object') ? params : {};
-  const out = {};
-  for (const key of LAYER_PARAM_KEYS) {
-    if (key === 'eq10') {
-      const bands = Array.isArray(src.eq10?.bands) ? src.eq10.bands.slice(0, 10) : def.eq10.bands.slice();
-      while (bands.length < 10) bands.push(0);
-      out.eq10 = { ...def.eq10, ...(src.eq10 || {}), bands };
-      continue;
-    }
-    out[key] = { ...def[key], ...(src[key] || {}) };
-  }
-  return out;
-}
-
-/** Sparsame Form für die Speicherung: nur aktive Module (Defaults werden bei fillLayerParams() ergänzt). */
-export function sparsifyParams(params) {
-  const out = {};
-  if (!params || typeof params !== 'object') return out;
-  for (const key of LAYER_PARAM_KEYS) {
-    const m = params[key];
-    if (m && typeof m === 'object' && m.enabled === true) out[key] = clone(m);
-  }
-  return out;
-}
 
 export function hasActiveModules(params) {
   if (!params) return false;
   return LAYER_PARAM_KEYS.some(k => params[k]?.enabled === true);
 }
 
-/** Vergleichsform: gefüllte Parameter, nur aktive Module, stabile Schlüsselreihenfolge. */
+/**
+ * Vergleichsform: gefüllte Parameter, nur KLINGENDE Module (aktiv und nicht von einem Vorrangmodul derselben
+ * Exklusivgruppe überlagert, B-02), stabile Schlüsselreihenfolge. Dadurch gelten Layer mit und ohne ein überlagertes,
+ * nie gebautes Modul als gleich (wichtig für „angepasst“ nach der klangneutralen Preset-Datenkorrektur, Phase 2).
+ */
 export function activeSignature(params) {
   const full = fillLayerParams(params);
   const act = {};
-  for (const k of LAYER_PARAM_KEYS) if (full[k].enabled) act[k] = full[k];
+  for (const k of effectiveActiveKeys(full)) act[k] = full[k];
   return JSON.stringify(act);
 }
 
@@ -109,9 +90,12 @@ export function isLayerModified(layer, presetEffects) {
 
 export function newLayerId() { return 'ly_' + uid(); }
 
-export function makeLayer({ presetId = null, params = {}, enabled = true, stageAuto = false, id } = {}) {
-  const layer = { id: id || newLayerId(), presetId: presetId || null, enabled: enabled !== false, params: sparsifyParams(params) };
+export function makeLayer({ presetId = null, params = {}, enabled = true, stageAuto = false, id, x } = {}) {
+  const { sparse, x: ux } = splitLayerParams(params);
+  const layer = { id: id || newLayerId(), presetId: presetId || null, enabled: enabled !== false, params: sparse };
   if (stageAuto) layer.stageAuto = true;
+  const bag = cleanX({ ...inheritX(x), modules: addToBag(addToBag({}, inheritX(x).modules), ux?.modules) });
+  if (bag) layer.x = bag;
   return layer;
 }
 
@@ -129,38 +113,78 @@ export function defaultPipelineEffects() {
  * Strukturelle Normalisierung eines v2-Objekts (ohne Zahlen-Klemmung der Parameter — die macht
  * presets.js normalizeEffectsV2() zusätzlich). Garantiert: alle vier Stufen vorhanden, layers ist ein Array,
  * jeder Layer hat eine EINDEUTIGE id (doppelte/fehlende ids werden neu vergeben — die Reihenfolge bleibt),
- * unbekannte Stufen werden verworfen, Layer-Parameter enthalten nur LAYER_PARAM_KEYS.
+ * Layer-Parameter enthalten nur Registry-Module.
+ *
+ * Datenerhalt (AE-18): Unbekanntes wird nicht verworfen, sondern im Erweiterungsbeutel `x` mitgeführt
+ * (effects.x: Zusatzfelder, unbekannte Stufen, Rettungsanker legacyV1; layer.x: unbekannte Module/Zusatzfelder).
+ * Bewusst verworfen werden nur die entfernten Schlüssel (REMOVED_KEYS: Hüllkurve, Pan, Ausgang, Analyzer).
+ * Revision (AE-19): `rev` bleibt nur erhalten, wenn ≠ 1 (fehlend = 1); neuere Revisionen bleiben unangetastet.
  */
+const _KNOWN_TOP = new Set(['v', 'enabled', 'stages', 'legacy', 'rev', 'x', 'legacyV1']);
+const _KNOWN_STAGE = new Set(['enabled', 'layers']);
+const _KNOWN_LAYER = new Set(['id', 'presetId', 'enabled', 'params', 'stageAuto', 'x']);
+
 export function normalizePipelineStructure(raw) {
-  const def = defaultPipelineEffects();
   const src = (raw && typeof raw === 'object') ? raw : {};
   const out = {
     v: PIPELINE_VERSION,
     enabled: src.enabled === true,
     stages: {}
   };
+  const rev = readRev(src);
+  if (rev !== 1) out.rev = rev;
   if (src.legacy && typeof src.legacy === 'object') out.legacy = clone(src.legacy);
+
+  // Erweiterungsbeutel (bestehender Beutel zuerst, neu gefundenes Unbekanntes überschreibt gleichnamige Einträge)
+  const xin = inheritX(src.x);
+  const xTop = {}, xStages = {}, xStageFields = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (_KNOWN_TOP.has(k) || REMOVED_KEYS.includes(k) || isUnsafeKey(k)) continue;
+    xTop[k] = v;
+  }
+  if (src.stages && typeof src.stages === 'object') {
+    for (const [k, v] of Object.entries(src.stages)) if (!isStageKey(k) && !isUnsafeKey(k)) xStages[k] = v;
+  }
 
   const seen = new Set();
   for (const k of STAGE_ORDER) {
     const st = src.stages?.[k];
     const layers = [];
+    if (st && typeof st === 'object') {
+      const extra = {};
+      for (const [f, v] of Object.entries(st)) if (!_KNOWN_STAGE.has(f) && !isUnsafeKey(f)) extra[f] = v;
+      if (Object.keys(extra).length) xStageFields[k] = extra;
+    }
     for (const l of (Array.isArray(st?.layers) ? st.layers : [])) {
       if (!l || typeof l !== 'object') continue;
       let id = (typeof l.id === 'string' && l.id) ? l.id : null;
       if (!id || seen.has(id)) id = newLayerId();
       seen.add(id);
+      const { sparse, x: ux } = splitLayerParams(l.params);
       const layer = {
         id,
         presetId: (typeof l.presetId === 'string' && l.presetId) ? l.presetId : null,
         enabled: l.enabled !== false,
-        params: sparsifyParams(l.params)
+        params: sparse
       };
       if (l.stageAuto === true) layer.stageAuto = true;
+      const lx = inheritX(l.x), lf = {};
+      for (const [f, v] of Object.entries(l)) if (!_KNOWN_LAYER.has(f) && !isUnsafeKey(f)) lf[f] = v;
+      const lbag = cleanX({ modules: addToBag(addToBag({}, lx.modules), ux?.modules), fields: addToBag(addToBag({}, lx.fields), lf) });
+      if (lbag) layer.x = lbag;
       layers.push(layer);
     }
     out.stages[k] = { enabled: st ? st.enabled !== false : true, layers };
   }
+
+  const legacyV1 = src.legacyV1 !== undefined ? src.legacyV1 : xin.legacyV1;
+  const xbag = cleanX({
+    fields: addToBag(addToBag({}, xin.fields), xTop),
+    stages: addToBag(addToBag({}, xin.stages), xStages),
+    stageFields: addToBag(addToBag({}, xin.stageFields), xStageFields),
+    ...(legacyV1 !== undefined && legacyV1 !== null ? { legacyV1: (() => { try { return JSON.parse(JSON.stringify(legacyV1)); } catch (e) { return undefined; } })() } : {})
+  });
+  if (xbag) out.x = xbag;
   return out;
 }
 
@@ -289,16 +313,8 @@ export function exportTailSeconds(plan) {
 
 /** Heuristik für automatische Stufenzuordnung (User-Presets/ungelabelte Alt-Effekte). Gleichstand → Medium. */
 export function suggestStageForParams(params) {
-  const p = fillLayerParams(params);
-  let source = 0, medium = 0, environment = 0;
-  if (p.pitchShift.enabled) source += 2;
-  if (p.ringmod.enabled)    source += 2;
-  if (p.chorus.enabled)     source += 1;
-  if (p.flanger.enabled)    source += 1;
-  for (const k of ['highpass', 'lowpass', 'notch', 'distortion', 'compressor', 'limiter', 'noiseGate', 'eq', 'eq10']) if (p[k].enabled) medium += 1;
-  if (p.irReverb.enabled)  environment += 3;
-  if (p.reverb.enabled && (p.reverb.duration ?? 0) >= 1.5) environment += 2;
-  if (p.delay.enabled && (p.delay.time ?? 0) >= 0.12)      environment += 1;
+  // Punkte je Stufe stammen aus den `stageHint`s der Registry (audio/engine/registry.js) — keine Modulliste hier.
+  const { source, medium, environment } = stageScores(params);
   if (source > medium && source >= environment) return 'source';
   if (environment > medium && environment > source) return 'environment';
   return 'medium';
@@ -317,46 +333,27 @@ export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound
  * Je Schritt (= je Layer-Instanz) ein eigener Pitch-Knoten und eine eigene Kette; es wird nichts
  * zusammengefasst, umsortiert oder übersprungen. Ein Layer ohne aktive Module reicht durch.
  *
+ * Seit Phase 3 ist das eine FASSADE über `PipelineRuntime` (engine/runtime.js): derselbe Aufbau, zusätzlich Handles für
+ * Live-Update/Überblendung/Tail/Kosten. Ohne `live` fügt die Runtime keine Knoten hinzu (bit-gleich zu Phase 2).
+ *
+ * @param {object} [o] { numChannels, caps, live (Ein-/Ausgangs-Gain + swapTo), bypassable (Bypass-Hülle je Modul), xfade }
  * @returns {{input:AudioNode|null, output:AudioNode|null, detuneSemitones:number, skippedPitch:number,
- *            dispose:()=>void}}
- *   input/output = null, wenn die Pipeline leer ist (Aufrufer verbindet dann die Quelle direkt).
+ *            dispose:()=>void, runtime:PipelineRuntime, update:Function, tailSeconds:()=>number, cost:Function}}
+ *   input/output = null, wenn die Pipeline leer ist (Aufrufer verbindet dann die Quelle direkt) — im Live-Modus nie null.
  *   detuneSemitones: nur gesetzt, wenn ein Pitch-Worklet für diesen Schritt nicht verfügbar war (Notbehelf
  *   über src.detune, Reihenfolge dann NICHT garantiert; Console-Warnung). skippedPitch: vom Ziel nicht ausgeführte Pitch-Schritte.
  */
-export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound } = {}) {
-  const track = [];      // gestartete Quellen (LFO/Träger) → dispose() stoppt sie
-  const nodes = [];      // Verbindungsknoten → dispose() trennt sie
-  let input = null, tail = null, detuneSemitones = 0, skippedPitch = 0;
-
-  const link = seg => {
-    if (!seg) return;
-    nodes.push(seg.input, seg.output);
-    if (!input) input = seg.input; else tail.connect(seg.input);
-    tail = seg.output;
+export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound, live = false, bypassable = false, xfade } = {}) {
+  const rt = new PipelineRuntime(ctx, plan, { numChannels, caps, live, bypassable, xfade });
+  return {
+    input: rt.input, output: rt.output,
+    detuneSemitones: rt.detuneSemitones, skippedPitch: rt.skippedPitch,
+    dispose: () => rt.dispose(),
+    runtime: rt,
+    update: p => rt.update(p),
+    tailSeconds: () => rt.tailSeconds(),
+    cost: () => rt.cost()
   };
-
-  for (const step of plan.steps) {
-    const ps = step.params.pitchShift;
-    if (ps.enabled && ps.semitones) {
-      if (caps.pitch === 'worklet') {
-        const n = buildPitchNode(ctx, ps, numChannels);
-        if (n) link(n);
-        else {
-          detuneSemitones += ps.semitones;
-          console.warn('[pipeline] Pitch-Worklet nicht verfügbar — Notbehelf über detune (Reihenfolge nicht garantiert)');
-        }
-      } else skippedPitch++;
-    }
-    link(buildLayerChain(ctx, step.params, { track }));
-  }
-  if (input && plan.needsPanner) link(buildTerminalPanner(ctx, 0));
-
-  const dispose = () => {
-    for (const s of track) { try { s.stop(); } catch (e) { /* bereits gestoppt */ } }
-    for (const n of nodes) { try { n.disconnect(); } catch (e) { /* bereits getrennt */ } }
-    track.length = 0; nodes.length = 0;
-  };
-  return { input, output: tail, detuneSemitones, skippedPitch, dispose };
 }
 
 /**

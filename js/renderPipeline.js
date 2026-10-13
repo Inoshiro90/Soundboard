@@ -143,6 +143,23 @@ function _applyPlaybackFades(ctx, gainNode, playback, dur, s, crossfadeIn) {
 }
 
 /**
+ * Wirksame Abspielrate einer Quelle: playbackRate (`s.pitch`) mal ein evtl. Detune-Notbehelf (Pitch ohne Worklet).
+ * Die Rate verkürzt/verlängert die ECHTE Spielzeit: ein Clip aus `bufferDur` Sekunden Material dauert `bufferDur / rate`.
+ */
+export function effectivePlaybackRate(pitch, detuneSemitones = 0) {
+  const r = Math.abs(Number(pitch) || 1) * Math.pow(2, (Number(detuneSemitones) || 0) / 12);
+  return Math.max(0.01, r);
+}
+
+/** Länge des getrimmten Quellmaterials (Pufferzeit, unabhängig von der Abspielrate) und Trim-Start. */
+export function slotBufferSpan(slot, buffer) {
+  const ts = slot.trimStart || 0;
+  let te = slot.trimEnd ?? buffer.duration;
+  if (te <= ts) te = buffer.duration;
+  return { ts, bufferDur: te - ts };
+}
+
+/**
  * Baut den vollständigen Verarbeitungsgraphen für einen Sound-Slot und
  * verbindet ihn zwischen Quelle und `opts.destination`. Funktioniert identisch
  * für Live-AudioContext und OfflineAudioContext — der einzige Unterschied
@@ -165,19 +182,22 @@ function _applyPlaybackFades(ctx, gainNode, playback, dur, s, crossfadeIn) {
  * @param {boolean} [opts.allowLoop=true] - false erzwingt Einmal-Wiedergabe selbst
  *   bei s.loop (z.B. sequenzielle Makro-Wiedergabe)
  * @param {{duration:number, curve:string}} [opts.crossfadeIn] - s. _applyPlaybackFades()
+ * @param {boolean} [opts.live=false] - Runtime mit Ein-/Ausgangs-Gain (swapTo möglich; Preview/Musik). Standard: bit-gleich zu Phase 2.
+ * @param {boolean} [opts.bypassable=false] - Bypass-Hülle je Modul (runtime.setModuleBypass).
  * @returns {Promise<{
  *   src: AudioBufferSourceNode, masterGain: GainNode,
- *   dur: number, ts: number, start: (when?: number) => void
+ *   dur: number (wirksame Spielzeit in Context-Zeit), bufferDur: number (Material in Pufferzeit), rate: number,
+ *   ts: number, start: (when?: number) => void
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false } = opts;
   const isLive    = mode === 'live';
 
-  const ts = slot.trimStart || 0;
-  let   te = slot.trimEnd ?? buffer.duration;
-  if (te <= ts) te = buffer.duration;
-  const dur = te - ts;
+  // Zeitbasis (B-10): `bufferDur` = Quellmaterial in PUFFERzeit (so erwartet es start(when, offset, duration));
+  // `dur` = WIRKSAME Spielzeit in Context-Zeit = bufferDur / Abspielrate. Fades, Fortschritt und Export-Länge
+  // laufen in Context-Zeit und müssen daher mit `dur` rechnen — bei s.pitch = 2 ist der Clip nur halb so lang.
+  const { ts, bufferDur } = slotBufferSpan(slot, buffer);
 
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -193,8 +213,10 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // zusammenfasst oder umordnet (auch kein Pitch-Coalescing). Der Pitch-Worklet wird je Layer-Instanz gebaut.
   const plan = resolvePlan(asPipelineEffects(s.effects));
   await preparePipelineContext(ctx, plan, TARGET_CAPS.sound);
-  const graph = buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound });
+  const graph = buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound, live, bypassable });
   if (graph.detuneSemitones) src.detune.value = graph.detuneSemitones * 100;
+  const rate = effectivePlaybackRate(s.pitch, graph.detuneSemitones);
+  const dur  = bufferDur / rate;
 
   // Legacy-Fades (s.fade / slot.fadeIn / slot.fadeOut): eigener Gain-Node mit Form 0..1; die eigentliche
   // Lautstärke sitzt separat im masterGain.
@@ -221,12 +243,14 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   masterGain.connect(destination);
 
   return {
-    src, masterGain, dur, ts,
+    src, masterGain, dur, bufferDur, rate, ts,
     /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
     plan, tailSeconds: estimateTail(plan), dispose: graph.dispose,
+    /** PipelineRuntime (Phase 3): update(plan)/swapTo(plan)/setModuleBypass/tailSeconds()/cost(). Mit `opts.live` überblendbar. */
+    runtime: graph.runtime,
     /** Startet die Quelle. `when` ist eine ctx-relative Zeit (Default: sofort). */
     start(when = 0) {
-      src.start(when, ts, src.loop ? undefined : dur);
+      src.start(when, ts, src.loop ? undefined : bufferDur);
     }
   };
 }
