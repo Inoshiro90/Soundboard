@@ -18,6 +18,7 @@
 
 import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
+import { attachSend } from './audio/engine/reverb-hub.js';
 
 /**
  * Plant eine einzelne Fade-Rampe mit wählbarer Kurvenform auf einem Gain-Node.
@@ -184,6 +185,10 @@ export function slotBufferSpan(slot, buffer) {
  * @param {{duration:number, curve:string}} [opts.crossfadeIn] - s. _applyPlaybackFades()
  * @param {boolean} [opts.live=false] - Runtime mit Ein-/Ausgangs-Gain (swapTo möglich; Preview/Musik). Standard: bit-gleich zu Phase 2.
  * @param {boolean} [opts.bypassable=false] - Bypass-Hülle je Modul (runtime.setModuleBypass).
+ * @param {Function} [opts.admit]   - Phase 3a: `plan => { plan, release, heavy, degraded, points }` (Voice-Budget, nur Live/Preview)
+ * @param {object}   [opts.stagger] - Phase 3a: Staffelung schwerer Aufbauten (createStagger)
+ * @param {boolean} [opts.sharedReverb=false] - Phase 3b (AE-17): sendfähiger Hall über den geteilten Hub (reverb-hub.js). Standard aus =
+ *   bisheriger Pfad (Hall je Voice), bit-gleich zu Phase 3. Hall liegt dann NACH Fade/Lautstärke (D1).
  * @returns {Promise<{
  *   src: AudioBufferSourceNode, masterGain: GainNode,
  *   dur: number (wirksame Spielzeit in Context-Zeit), bufferDur: number (Material in Pufferzeit), rate: number,
@@ -191,7 +196,7 @@ export function slotBufferSpan(slot, buffer) {
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null } = opts;
   const isLive    = mode === 'live';
 
   // Zeitbasis (B-10): `bufferDur` = Quellmaterial in PUFFERzeit (so erwartet es start(when, offset, duration));
@@ -211,9 +216,18 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // Pipeline: EIN Plan (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → EINE serielle
   // Knotenkette. Live, Preview und Export laufen durch dieselbe Funktion; es gibt keine Optimierung, die Layer
   // zusammenfasst oder umordnet (auch kein Pitch-Coalescing). Der Pitch-Worklet wird je Layer-Instanz gebaut.
-  const plan = resolvePlan(asPipelineEffects(s.effects));
-  await preparePipelineContext(ctx, plan, TARGET_CAPS.sound);
-  const graph = buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound, live, bypassable });
+  let plan = resolvePlan(asPipelineEffects(s.effects));
+  // Voice-Budget (Phase 3a, AE-16): nur Live und Preview. `admit(plan)` meldet die Voice an und liefert ggf. einen
+  // DEGRADIERTEN Plan (gleiche Layer-Reihenfolge); der Export läuft nie degradiert (Qualität vor Echtzeit).
+  const admission = (admit && mode !== 'export') ? admit(plan) : null;
+  if (admission) plan = admission.plan;
+  let graph;
+  try {
+    await preparePipelineContext(ctx, plan, TARGET_CAPS.sound);
+    const build = () => buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound, live, bypassable, shareReverb: sharedReverb });
+    // Schwere Aufbauten (Pitch-Worklet, eigener Faltungs-Hall) gestaffelt: Firefox/Chrome blockieren sonst den Haupt-Thread (E6, M-1).
+    graph = (stagger && admission?.heavy) ? await stagger.run(build) : build();
+  } catch (e) { admission?.release(); throw e; }
   if (graph.detuneSemitones) src.detune.value = graph.detuneSemitones * 100;
   const rate = effectivePlaybackRate(s.pitch, graph.detuneSemitones);
   const dur  = bufferDur / rate;
@@ -240,12 +254,23 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   node.connect(fadeGain);
   fadeGain.connect(playbackFadeGain);
   playbackFadeGain.connect(masterGain);
-  masterGain.connect(destination);
+  // Geteilter Hall (Phase 3b): Dry und Send zweigen HINTER dem Master-Gain ab (Fades/Lautstärke wirken auf beide, Makro-Fadeout
+  // und Crossfade greifen weiter über `masterGain`); sonst Ausgang direkt wie bisher.
+  let sendHandle = null;
+  if (graph.send) {
+    sendHandle = attachSend(ctx, masterGain, { send: graph.send, channels: buffer.numberOfChannels, destination, scope: mode === 'preview' ? 'preview' : 'main' });
+  } else masterGain.connect(destination);
 
   return {
     src, masterGain, dur, bufferDur, rate, ts,
     /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
-    plan, tailSeconds: estimateTail(plan), dispose: graph.dispose,
+    // Sendfähig: der Hall-Nachklang liegt im Hub (eigener Lebenszyklus) — die Voice braucht nur die Ketten-Restzeit.
+    plan, tailSeconds: graph.send ? graph.tailSeconds() : estimateTail(plan),
+    dispose: () => { try { sendHandle?.dispose(); } finally { try { graph.dispose(); } finally { admission?.release(); } } },
+    /** Voice-Budget: die Voice wurde degradiert angemeldet (Phase 3a) bzw. Kostenpunkte der Voice. */
+    degraded: !!admission?.degraded, voicePoints: admission?.points ?? null,
+    /** Geteilter Hall aktiv? (Beschreibung des Sends oder null) */
+    send: graph.send,
     /** PipelineRuntime (Phase 3): update(plan)/swapTo(plan)/setModuleBypass/tailSeconds()/cost(). Mit `opts.live` überblendbar. */
     runtime: graph.runtime,
     /** Startet die Quelle. `when` ist eine ctx-relative Zeit (Default: sofort). */

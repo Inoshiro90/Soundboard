@@ -16,6 +16,7 @@ import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
 import { duckAmbient } from '../ambient/ambient-playback.js';
 import { actx, hasAudioContext } from './context.js';
+import { makeAdmit, stagger, initVoiceBudget } from './engine/budget.js';   // Phase 3a: Voice-Budget
 
 // ─── DECODE ───────────────────────────────────────────────
 
@@ -140,12 +141,17 @@ export async function playSelectedSlot(s, idx, opts = {}) {
 
   // Identischer Graph-Aufbau wie beim Export (renderPipeline.js): Live-Wiedergabe, Preview und
   // Export teilen sich dieselbe Pipeline (Pitch, Noise-Gate, Fades).
+  initVoiceBudget(ctx);   // Phase 3a: einmalig Kapazität laden/kalibrieren, Wächter starten (idempotent)
+  const voiceRef = {};
   const graph = await renderSoundGraph(ctx, buf, slot, s, {
     mode: opts.isPreview ? 'preview' : 'live',
     destination: ctx.destination,
     masterVol: gs.masterVol ?? 1,
-    crossfadeIn: doCrossfade ? { duration: cf.duration, curve: cf.curve || 'linear' } : null
+    sharedReverb: gs.reverbShare !== false,   // Phase 3b: „Hall: Geteilt“ (Standard) | „Pro Stimme (exakt)“
+    crossfadeIn: doCrossfade ? { duration: cf.duration, curve: cf.curve || 'linear' } : null,
+    admit: makeAdmit({ kind: opts.isPreview ? 'preview' : 'sound', id: s.id, loop: !!s.loop, ref: voiceRef }), stagger   // Phase 3a
   });
+  voiceRef.graph = graph;
   const { src, masterGain, dur } = graph;
 
   if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];
@@ -189,12 +195,17 @@ export function playSoundAndWait(s) {
     // allowLoop:false — sequenzielle
     // Makro-Wiedergabe darf NIE loopen, sonst würde `onended` nie feuern
     // und die await-Kette der Makro-Sequenz für immer hängen bleiben.
+    initVoiceBudget(ctx);   // Phase 3a (idempotent)
+    const voiceRef = {};
     const graph = await renderSoundGraph(ctx, buf, slot, s, {
       mode: 'live',
       destination: ctx.destination,
       masterVol: gs.masterVol ?? 1,
-      allowLoop: false
+      sharedReverb: gs.reverbShare !== false,
+      allowLoop: false,
+      admit: makeAdmit({ kind: 'sound', id: s.id, loop: false, ref: voiceRef }), stagger   // Phase 3a
     });
+    voiceRef.graph = graph;
     const { src, masterGain, dur } = graph;
 
     if (!APP.activeAudio[s.id]) APP.activeAudio[s.id] = [];

@@ -23,8 +23,10 @@
  * `layerOrder`: kanonische Position INNERHALB eines Layers (E8, identisch zu _collectSegments() in effect-graph.js;
  *   pitchShift sitzt als eigener Knoten am Layer-Kopf, spatial am Layer-Ende). Die Reihenfolge ZWISCHEN Layern
  *   bestimmt der Nutzer (Invariante des Pipeline-Modells).
- * `cost`: Kostenpunkte je Voice (AE-13′). ACHTUNG: `measured:false` — Startwerte aus dem Plan, KEINE Messung;
- *   verbindlich erst nach M-1 (Phase 3a).
+ * `cost`: Kostenpunkte je Voice (AE-13′), `measured:true` seit M-1 (Phase 3a, Suite 13). Einheit: 1 Punkt = Rechenzeit eines
+ *   Tiefpass-Biquads. Messbasis: 16 parallele Instanzen im Offline-Render, Chrome 155 und Firefox 158 (Windows) [S];
+ *   je Modul gilt das Maximum beider Engines (konservativ). Die absolute Kapazität in Punkten bestimmt die Kalibrierung
+ *   (engine/calibrate.js), nicht diese Tabelle. Safari/iOS/Android sind nicht gemessen [H].
  * `tail(params)`: Nachklang in Sekunden (derselbe Wert wie estimateTail() in fx-pipeline.js, getestet).
  */
 
@@ -37,7 +39,12 @@ export const REMOVED_KEYS = ['envelope', 'pan', 'output', 'analyzer'];
 export const CURRENT_REV = 1;
 
 const ALL_CONSUMERS = { sound: true, ambient: true, music: true, noise: true };
-const c = (base, extra) => ({ base, measured: false, ...(extra || {}) });
+const c = (base, extra) => ({ base, measured: true, ...(extra || {}) });
+
+/** Faltung (ConvolverNode): Punkte = CONVOLVER_BASE + CONVOLVER_PER_SECOND × IR-Sekunden. Linearer Fit an M-1 (Chrome: 0,35 s → 19, 3,5 s → 167, 5 s → 224; Firefox ≈ 60 % davon) [S]. */
+export const CONVOLVER_BASE = 4;
+export const CONVOLVER_PER_SECOND = 44;
+export const convolverPoints = seconds => CONVOLVER_BASE + CONVOLVER_PER_SECOND * Math.max(0, Number(seconds) || 0);
 
 const filterQ = (def, range) => ({ def, range, label: 'Güte (Q)' });
 
@@ -48,7 +55,7 @@ export const MODULES = [
     params: { frequency: { def: 20, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz' }, Q: filterQ(0.7, [0.1, 20]) } },
   { key: 'notch', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxNotchEnabled' }, family: 'filter', label: 'Notch (Kerbfilter)', layerOrder: 30, consumers: ALL_CONSUMERS, cost: c(1),
     params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz' }, Q: filterQ(10, [0.5, 30]) } },
-  { key: 'wahwah', ui: { enabledId: 'fxWahwahEnabled' }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(3),
+  { key: 'wahwah', ui: { enabledId: 'fxWahwahEnabled' }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(4),
     params: {
       frequency: { def: 800, range: [100, 5000], unit: 'Hz', label: 'Mittenfrequenz' },
       depth: { def: 0.7, range: [0, 1], label: 'Tiefe' },
@@ -56,14 +63,14 @@ export const MODULES = [
       resonance: { def: 5, range: [1, 20], label: 'Resonanz' }
     } },
   { key: 'reverb', stageHint: p => ((p?.duration ?? 0) >= 1.5 ? { stage: 'environment', weight: 2 } : null), ui: { enabledId: 'fxRevEnabled' }, family: 'space', label: 'Hall (algorithmisch)', layerOrder: 110, consumers: ALL_CONSUMERS,
-    cost: p => ({ base: 3 + (p?.duration ?? 2.2), measured: false }), degrade: { irLength: true },
+    cost: p => ({ base: convolverPoints(p?.duration ?? 2.2), measured: true }), degrade: { irLength: true },
     tail: p => p?.duration ?? 2.2,
     params: {
       amount: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' },
       duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer' },
       decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen' }
     } },
-  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { enabledId: 'fxDelEnabled' }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { enabledId: 'fxDelEnabled' }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: c(4),
     tail: p => {
       const time = Math.max(0.01, p?.time ?? 0.22);
       const fb = Math.max(0, Math.min(0.95, p?.feedback ?? 0.35));
@@ -75,14 +82,14 @@ export const MODULES = [
       feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung' },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' }
     } },
-  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxChorusEnabled' }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: c(3),
+  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxChorusEnabled' }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: c(4),
     params: {
       baseDelay: { def: 15, range: [1, 40], unit: 'ms', label: 'Grundverzögerung' },
       depth: { def: 8, range: [0, 20], unit: 'ms', label: 'Tiefe' },
       rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate' },
       mix: { def: 0.3, range: [0, 1], label: 'Mix' }
     } },
-  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxFlangerEnabled' }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS, cost: c(3),
+  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxFlangerEnabled' }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS, cost: c(7),
     params: {
       baseDelay: { def: 2, range: [0.5, 10], unit: 'ms', label: 'Grundverzögerung' },
       depth: { def: 1.5, range: [0, 10], unit: 'ms', label: 'Tiefe' },
@@ -102,9 +109,9 @@ export const MODULES = [
       mid: { def: 0, range: [-18, 18], unit: 'dB', label: 'Mitten' },
       high: { def: 0, range: [-18, 18], unit: 'dB', label: 'Höhen' }
     } },
-  { key: 'eq10', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxEq10Enabled' }, family: 'eq', label: '10-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(10),
+  { key: 'eq10', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxEq10Enabled' }, family: 'eq', label: '10-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(12),
     params: { bands: { def: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bands: true, label: 'Bänder' } } },
-  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxCompEnabled' }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxCompEnabled' }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(12.5),
     params: {
       threshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Schwelle' },
       knee: { def: 30, range: [0, 40], unit: 'dB', label: 'Knie' },
@@ -112,7 +119,7 @@ export const MODULES = [
       attack: { def: 0.003, range: [0, 1], unit: 's', label: 'Attack' },
       release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release' }
     } },
-  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxLimEnabled' }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxLimEnabled' }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(16),
     params: {
       threshold: { def: -1, range: [-24, 0], unit: 'dB', label: 'Schwelle' },
       knee: { def: 0, raw: true, unit: 'dB', label: 'Knie' },
@@ -121,7 +128,7 @@ export const MODULES = [
       release: { def: 0.08, raw: true, unit: 's', label: 'Release' }
     } },
   { key: 'distortion', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxDistEnabled' }, family: 'distortion', label: 'Verzerrung', layerOrder: 70, consumers: ALL_CONSUMERS,
-    cost: p => ({ base: ({ none: 1, '2x': 2, '4x': 4 })[p?.oversample ?? '4x'] ?? 4, measured: false }), degrade: { oversample: true },
+    cost: p => ({ base: ({ none: 1, '2x': 5, '4x': 10 })[p?.oversample ?? '4x'] ?? 10, measured: true }), degrade: { oversample: true },
     // mode: softClip (Standard), hardClip oder bitcrush. Presets ohne „mode“-Feld fallen über den switch-default in
     // _buildDistortionCurve() auf softClip zurück — kein Migrationsschritt nötig.
     params: {
@@ -129,21 +136,21 @@ export const MODULES = [
       amount: { def: 40, range: [0, 100], label: 'Stärke' },
       oversample: { def: '4x', enum: ['none', '2x', '4x'], label: 'Oversampling' }
     } },
-  { key: 'ringmod', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxRingmodEnabled' }, family: 'distortion', label: 'Ringmodulation', layerOrder: 80, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'ringmod', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxRingmodEnabled' }, family: 'distortion', label: 'Ringmodulation', layerOrder: 80, consumers: ALL_CONSUMERS, cost: c(2.5),
     params: {
       frequency: { def: 440, range: [20, 5000], unit: 'Hz', label: 'Trägerfrequenz' },
       mix: { def: 1, range: [0, 1], label: 'Mix' }
     } },
-  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxPitchEnabled' }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, cost: c(3),
+  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxPitchEnabled' }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, cost: c(28),
     params: { semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne' } } },
   { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { enabledId: 'fxIrEnabled' }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
-    cost: p => ({ base: 3 + getIRDuration(p?.impulse ?? null), measured: false }), degrade: { irLength: true },
+    cost: p => ({ base: convolverPoints(getIRDuration(p?.impulse ?? null)), measured: true }), degrade: { irLength: true },
     tail: p => getIRDuration(p?.impulse ?? null),
     params: {
       impulse: { def: null, impulse: true, label: 'Raum' },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' }
     } },
-  { key: 'spatial', ui: { enabledId: 'fxSpatialEnabled' }, family: 'position', label: 'Räumliche Position (3D)', layerOrder: 150, consumers: ALL_CONSUMERS, cost: c(3), degrade: { hrtf: true },
+  { key: 'spatial', ui: { enabledId: 'fxSpatialEnabled' }, family: 'position', label: 'Räumliche Position (3D)', layerOrder: 150, consumers: ALL_CONSUMERS, cost: c(4), degrade: { hrtf: true },
     params: {
       x: { def: 0, range: [-1000, 1000], label: 'X' },
       y: { def: 0, range: [-1000, 1000], label: 'Y' },
@@ -157,7 +164,7 @@ export const MODULES = [
     } },
   // attack/release: Compressor-Näherung (siehe _collectSegments). Presets ohne diese Felder funktionieren unverändert,
   // da die Engine sie mit `?? 5`/`?? 150` defaultet. (B-03: ersetzt in Phase 11 durch ein echtes Gate.)
-  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxNoiseGateEnabled' }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxNoiseGateEnabled' }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: c(17.5),
     params: {
       threshold: { def: -50, range: [-100, 0], unit: 'dB', label: 'Schwelle' },
       attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack' },

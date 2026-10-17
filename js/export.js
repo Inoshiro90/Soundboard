@@ -122,7 +122,7 @@ export async function renderSoundOffline(s, slotIdx) {
   // derselbe Baustein wie überall sonst (renderPipeline.js), inkl. Fades.
   const build = async lengthS => {
     const offCtx = new OfflineAudioContext(numCh, Math.max(1, Math.ceil(lengthS * sr)), sr);
-    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: offCtx.destination });
+    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: offCtx.destination, sharedReverb: APP.globalSettings.reverbShare !== false });
     return { offCtx, graph };
   };
   let r = await build(bufferDur / effectivePlaybackRate(s.pitch) + tail);

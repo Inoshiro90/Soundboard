@@ -45,6 +45,25 @@
               <input type="checkbox" id="setMultiClick" checked>
               Mehrfachklick
             </label>
+            <!-- Phase 3b (AE-17): Hall-Berechnung. An = ein gemeinsamer Hall je Impulsantwort (spart CPU; der Nachhall klingt
+                 nach einem Fade-Out aus). Aus = „Pro Stimme (exakt)“: jede Stimme rechnet ihren eigenen Hall wie bisher. -->
+            <label class="popover-check" title="Geteilt: ein gemeinsamer Hall für alle Stimmen (spart Rechenlast, Nachhall klingt nach Fade-Out aus). Aus: jede Stimme rechnet ihren Hall selbst (exakt, aber aufwendiger).">
+              <input type="checkbox" id="setReverbShare" checked>
+              Hall geteilt (spart Rechenlast)
+            </label>
+            <!-- Phase 3a (AE-16): Stimmenlimit. Auto = Rechenbudget des Geräts; bei Überlast werden aufwendige Effekte zuerst vereinfacht,
+                 danach die älteste Stimme ausgeblendet. Musik und Ambient werden nie entfernt. Zahl = feste Höchstzahl gleichzeitiger Sounds. -->
+            <label class="popover-check popover-check--select" for="setVoiceLimit" title="Auto: das Gerät bestimmt, wie viele aufwendige Sounds gleichzeitig laufen; bei Überlast werden Effekte vereinfacht, dann die älteste Stimme ausgeblendet. Musik und Ambient bleiben immer.">
+              Stimmenlimit
+              <select id="setVoiceLimit" aria-label="Stimmenlimit">
+                <option value="auto">Auto (empfohlen)</option>
+                <option value="4">Höchstens 4 Sounds</option>
+                <option value="8">Höchstens 8 Sounds</option>
+                <option value="12">Höchstens 12 Sounds</option>
+                <option value="16">Höchstens 16 Sounds</option>
+                <option value="off">Aus (kann bei Überlast aussetzen)</option>
+              </select>
+            </label>
             <!-- Senkt die Ambient-Ebene automatisch ab, solange mindestens ein
                  Sound-Kachel-Sound spielt (audio/playback.js
                  notifyDuckTrigger()/notifyDuckRelease() +

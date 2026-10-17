@@ -283,6 +283,8 @@ export function registerTileEvents() {
   document.getElementById('setOverlap')?.addEventListener('change',    e => { APP.globalSettings.overlap    = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; _syncPlaybackSettingsIndicator(); });
+  document.getElementById('setReverbShare')?.addEventListener('change', e => { APP.globalSettings.reverbShare = e.target.checked; _syncPlaybackSettingsIndicator(); });   // Phase 3b: wirkt ab der nächsten Wiedergabe
+  document.getElementById('setVoiceLimit')?.addEventListener('change', e => { APP.globalSettings.voiceLimit = e.target.value; _syncPlaybackSettingsIndicator(); });   // Phase 3a: wirkt ab der nächsten Wiedergabe
 
   // Lautstärke: Dialogbox — #masterVol/#masterVolNum.
   document.getElementById('btnOpenSoundVolumeModal')?.addEventListener('click', () => {

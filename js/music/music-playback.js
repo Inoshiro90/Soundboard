@@ -8,6 +8,7 @@ import { fmtTime } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
 import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
 import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // Zirkulärer Import (music-model.js importiert umgekehrt stopMusic/
@@ -149,12 +150,19 @@ function _ensurePlayers() {
 function _reconnectSlotFx(rec, effects) {
   try { rec.source.disconnect(); } catch (e) {}
   if (rec.fxChain) { try { rec.fxChain.dispose(); } catch (e) {} rec.fxChain = null; }   // alte LFOs/Träger/Worklets freigeben
+  if (rec.voice) { rec.voice.release(); rec.voice = null; }                                 // Phase 3a: alte Voice-Anmeldung freigeben
   const ctx = actx();
   // Gleiche Pipeline wie überall (Reihenfolge = Benutzerreihenfolge). Das Pitch-Worklet muss vorher geladen sein
   // (_loadIntoSlot()/applyMusicTrackEffectsLive() erledigen das); fehlt es, greift der dokumentierte Notbehelf.
   // live:true — Ein-/Ausgangs-Gain halten die Verbindung dauerhaft, damit applyMusicTrackEffectsLive() per runtime.update()
   // (Parameter live, Strukturänderung per Überblendung) statt per Reconnect (Klick) umstellen kann.
-  const graph = buildPipelineGraph(ctx, resolvePlan(asPipelineEffects(effects)), { numChannels: 2, caps: TARGET_CAPS.music, live: true });
+  const plan = resolvePlan(asPipelineEffects(effects));
+  initVoiceBudget(ctx);
+  // Phase 3a: geschützte Voice (gezählt, nie vereinfacht/entfernt); Hall bei Musik immer pro Stimme. Live-Updates (runtime.update) ändern die Kosten nicht nach.
+  rec.voice = makeAdmit({ kind: 'music', id: rec.trackId, share: false, noDegrade: true })(plan);
+  let graph;
+  try { graph = buildPipelineGraph(ctx, plan, { numChannels: 2, caps: TARGET_CAPS.music, live: true }); }
+  catch (e) { rec.voice.release(); rec.voice = null; throw e; }
   if (graph.input) { rec.source.connect(graph.input); graph.output.connect(rec.gain); }
   else rec.source.connect(rec.gain);
   rec.fxChain = graph;
@@ -342,6 +350,7 @@ export function stopMusic() {
         rec.audio.onended = null;
         try { rec.audio.pause(); } catch (e) {}
         rec.trackId = null;
+        if (rec.voice) { rec.voice.release(); rec.voice = null; }   // Phase 3a: gestoppte Musik zählt nicht mehr
       }
     });
   }

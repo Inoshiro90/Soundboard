@@ -8,6 +8,9 @@ export const APP = {
   activeProfileId: null,
   globalSettings: {
     overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
+    // Phase 3b (AE-17): true = „Hall: Geteilt“ (ein Convolver je Impulsantwort), false = „Pro Stimme (exakt)“ (bisheriger Pfad).
+    reverbShare: true,
+    voiceLimit: 'auto',   // Phase 3a: Stimmenlimit — 'auto' (Budget + Degradation) | 'off' | feste Höchstzahl als Text
     // Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
     // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
     // Siehe audio/playback.js notifyDuckTrigger()/notifyDuckRelease() + ambient/ambient-playback.js duckAmbient().

@@ -38,11 +38,14 @@ export function getIRDuration(name) {
 // Cache-Schlüssel enthält die Sample-Rate: ein ConvolverNode akzeptiert nur Buffer mit der Rate seines
 // Contexts (sonst NotSupportedError). Live (AudioContext) und Export (OfflineAudioContext mit der Rate
 // der Quelldatei) können unterschiedliche Raten haben.
-export function getIRBuffer(ctx, name) {
+export function getIRBuffer(ctx, name, maxDur) {
   const key = name || 'default';
-  const ck  = ctx.sampleRate + ':' + key;
+  const base = IR_PARAMS[key] || IR_PARAMS.default;
+  // Degradation (Phase 3a, AE-16): `maxDur` kürzt die IR (eigener Cache-Eintrag); ohne Obergrenze unverändert.
+  const cut = Number.isFinite(maxDur) && maxDur > 0 && base.duration > maxDur;
+  const ck  = ctx.sampleRate + ':' + key + (cut ? '@' + maxDur : '');
   if (APP.irCache[ck]) return APP.irCache[ck];
-  const p   = IR_PARAMS[key] || IR_PARAMS.default;
+  const p   = cut ? { ...base, duration: maxDur } : base;
   const buf = _buildIR(ctx, p);
   APP.irCache[ck] = buf;
   return buf;

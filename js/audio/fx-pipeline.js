@@ -32,7 +32,8 @@ import { defaultEffects } from './effect-graph.js';
 import { ensurePitchWorkletFor } from './context.js';
 import { getIRDuration } from './ir-data.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, REMOVED_KEYS } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS } from './engine/registry.js';
+import { describeSend } from './engine/reverb-hub.js';
 import {
   fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
 } from './engine/schema.js';
@@ -320,6 +321,36 @@ export function suggestStageForParams(params) {
   return 'medium';
 }
 
+// ─── GETEILTER REVERB-SEND (Phase 3b, AE-17) ─────────────────
+
+const _LAYER_ORDER = Object.fromEntries(MODULES.map(m => [m.key, m.layerOrder]));
+
+/** Klingende Module eines Schritts: aktiv, nicht überlagert (B-02); Pitch nur mit Halbtönen ≠ 0 (sonst wird kein Knoten gebaut). */
+function _soundingKeys(params) {
+  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || (params.pitchShift.enabled && params.pitchShift.semitones));
+}
+
+/**
+ * Ist der Hall des Plans sendfähig? REIN (ohne AudioContext). Alle Bedingungen müssen gelten:
+ *   1. Das klingende Hall-Modul (irReverb vor reverb) gehört zum LETZTEN klingenden Schritt — danach kein Layer mit klingendem Modul.
+ *   2. Im selben Layer folgt nach dem Hall kein klingendes Modul (Delay, Tremolo, Noise-Gate, Spatial; kanonische Layer-Reihenfolge).
+ * (Die dritte Bedingung — Einstellung „Geteilt“ und Hub-Dienst — prüft der Aufrufer.)
+ * @returns {{step:number, key:string, wet:number, irKey:string, getIR:Function}|null}
+ */
+export function sendEligibility(plan) {
+  if (!plan || !plan.needsPanner) return null;
+  let last = -1;
+  plan.steps.forEach((s, i) => { if (_soundingKeys(s.params).length) last = i; });
+  if (last < 0) return null;
+  const step = plan.steps[last];
+  const keys = _soundingKeys(step.params);
+  const rev = keys.find(k => k === 'irReverb' || k === 'reverb');
+  if (!rev) return null;
+  if (keys.some(k => _LAYER_ORDER[k] > _LAYER_ORDER[rev])) return null;
+  const d = describeSend(rev, step.params[rev]);
+  return d ? { step: step.index, ...d } : null;
+}
+
 // ─── EXECUTOR ────────────────────────────────────────────────
 
 /** Lädt, falls nötig, das Pitch-Worklet im Ziel-Context (muss vor buildPipelineGraph() fertig sein). */
@@ -336,16 +367,20 @@ export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound
  * Seit Phase 3 ist das eine FASSADE über `PipelineRuntime` (engine/runtime.js): derselbe Aufbau, zusätzlich Handles für
  * Live-Update/Überblendung/Tail/Kosten. Ohne `live` fügt die Runtime keine Knoten hinzu (bit-gleich zu Phase 2).
  *
- * @param {object} [o] { numChannels, caps, live (Ein-/Ausgangs-Gain + swapTo), bypassable (Bypass-Hülle je Modul), xfade }
+ * @param {object} [o] { numChannels, caps, live (Ein-/Ausgangs-Gain + swapTo), bypassable (Bypass-Hülle je Modul), xfade,
+ *                       shareReverb (Phase 3b: Hall über den Hub; Rückgabe `send` ≠ null → Aufrufer hängt reverb-hub.attachSend an) }
  * @returns {{input:AudioNode|null, output:AudioNode|null, detuneSemitones:number, skippedPitch:number,
  *            dispose:()=>void, runtime:PipelineRuntime, update:Function, tailSeconds:()=>number, cost:Function}}
  *   input/output = null, wenn die Pipeline leer ist (Aufrufer verbindet dann die Quelle direkt) — im Live-Modus nie null.
  *   detuneSemitones: nur gesetzt, wenn ein Pitch-Worklet für diesen Schritt nicht verfügbar war (Notbehelf
  *   über src.detune, Reihenfolge dann NICHT garantiert; Console-Warnung). skippedPitch: vom Ziel nicht ausgeführte Pitch-Schritte.
  */
-export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound, live = false, bypassable = false, xfade } = {}) {
-  const rt = new PipelineRuntime(ctx, plan, { numChannels, caps, live, bypassable, xfade });
+export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound, live = false, bypassable = false, xfade, shareReverb = false } = {}) {
+  // Geteilter Reverb (Phase 3b): nur statisch (nicht live/bypassable) und nur, wenn der Aufrufer ihn ausdrücklich verlangt.
+  const send = (shareReverb && !live && !bypassable) ? sendEligibility(plan) : null;
+  const rt = new PipelineRuntime(ctx, plan, { numChannels, caps, live, bypassable, xfade, send });
   return {
+    send: rt.send,
     input: rt.input, output: rt.output,
     detuneSemitones: rt.detuneSemitones, skippedPitch: rt.skippedPitch,
     dispose: () => rt.dispose(),

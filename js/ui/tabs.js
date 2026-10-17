@@ -152,6 +152,8 @@ export function applyProfileSettings() {
   const so = document.getElementById('setOverlap');    if (so) so.checked = APP.globalSettings.overlap;
   const sr = document.getElementById('setStopReplay'); if (sr) sr.checked = APP.globalSettings.stopReplay;
   const sm = document.getElementById('setMultiClick'); if (sm) sm.checked = APP.globalSettings.multiClick;
+  const rs = document.getElementById('setReverbShare'); if (rs) rs.checked = APP.globalSettings.reverbShare !== false;
+  const vl = document.getElementById('setVoiceLimit'); if (vl) vl.value = ['auto', 'off', '4', '8', '12', '16'].includes(String(APP.globalSettings.voiceLimit)) ? String(APP.globalSettings.voiceLimit) : 'auto';
   // Auto Duck
   const ad = document.getElementById('setAutoDuck'); if (ad) ad.checked = !!APP.globalSettings.autoDuck?.enabled;
   const adAmt = document.getElementById('setAutoDuckAmount');
@@ -161,7 +163,7 @@ export function applyProfileSettings() {
   // Keep the "Wiedergabe" popover trigger's active-dot in sync whenever
   // settings are (re)applied — e.g. after import/reset, not just on toggle.
   const gs = APP.globalSettings;
-  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && !gs.autoDuck?.enabled;
+  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !playbackIsDefault);
 }
 

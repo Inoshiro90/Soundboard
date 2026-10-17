@@ -359,7 +359,7 @@ function _buildReverb(ctx, p, tr) {
 
 function _buildIRReverb(ctx, p, tr) {
   return _buildConvolverModule(ctx, p, tr, {
-    key: 'irReverb', wetOf: q => Math.max(0, Math.min(1, q.wet ?? 0.35)), irOf: (c, q) => getIRBuffer(c, q.impulse),
+    key: 'irReverb', wetOf: q => Math.max(0, Math.min(1, q.wet ?? 0.35)), irOf: (c, q) => getIRBuffer(c, q.impulse, q.irMax),
     sig: q => String(q.impulse)
   });
 }
@@ -450,7 +450,7 @@ export function buildPitchNode(ctx, p, numChannels = 2) {
 function _buildSpatialPanner(ctx, spatial) {
   if (!spatial?.enabled) return null;
   try {
-    const p = ctx.createPanner(); p.panningModel = 'HRTF'; p.distanceModel = 'inverse';
+    const p = ctx.createPanner(); p.panningModel = spatial.equalPower ? 'equalpower' : 'HRTF'; p.distanceModel = 'inverse';   // equalPower: Degradation (Phase 3a), sonst HRTF
     if (p.positionX) { p.positionX.value = spatial.x ?? 0; p.positionY.value = spatial.y ?? 0; p.positionZ.value = spatial.z ?? -1; }
     else p.setPosition(spatial.x ?? 0, spatial.y ?? 0, spatial.z ?? -1);
     const props = s => {
@@ -493,7 +493,7 @@ export function buildTerminalPanner(ctx, pan) {
  * gestarteten Quellen (LFOs, Träger, ConstantSources), damit der Aufrufer sie über dispose() wieder stoppen kann.
  * Jedes Element ist eine Modul-Instanz mit `key` und `update()` (s. NODE BUILDERS).
  */
-function _collectSegments(ctx, effects, tr) {
+function _collectSegments(ctx, effects, tr, omit) {
   const segs = [];
 
   if (effects.highpass?.enabled)
@@ -519,8 +519,10 @@ function _collectSegments(ctx, effects, tr) {
   if (effects.chorus?.enabled)     segs.push(_buildChorus(ctx, effects.chorus, tr));
   if (effects.flanger?.enabled)    segs.push(_buildFlanger(ctx, effects.flanger, tr));
 
-  if (effects.irReverb?.enabled)   segs.push(_buildIRReverb(ctx, effects.irReverb, tr));
-  else if (effects.reverb?.enabled) segs.push(_buildReverb(ctx, effects.reverb, tr));
+  // `omit` (Phase 3b): Schlüssel, die NICHT gebaut werden, obwohl sie klingen würden — der geteilte Reverb-Send übernimmt den
+  // Hall (engine/reverb-hub.js). Die Exklusivität bleibt erhalten: ein überlagertes Modul wird auch dann nicht gebaut.
+  if (effects.irReverb?.enabled)   { if (!omit?.has('irReverb')) segs.push(_buildIRReverb(ctx, effects.irReverb, tr)); }
+  else if (effects.reverb?.enabled) { if (!omit?.has('reverb')) segs.push(_buildReverb(ctx, effects.reverb, tr)); }
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay));
 
@@ -583,10 +585,11 @@ export function buildEffectChain(ctx, effects) {
  * (reines Durchreichen). `opts.track` sammelt gestartete Quellen für dispose().
  * Ergebnis: { input, output, modules } — `modules` = Modul-Instanzen in Kettenreihenfolge (key, update, ggf. setBypass).
  * `opts.bypassable`: jedes Modul in eine Bypass-Hülle setzen (s. _wrapBypass).
+ * `opts.omit` (Set von Schlüsseln): diese Module nicht bauen (geteilter Reverb-Send, Phase 3b).
  */
 export function buildLayerChain(ctx, params, opts = {}) {
   if (!params) return null;
-  let segs = _collectSegments(ctx, params, opts.track);
+  let segs = _collectSegments(ctx, params, opts.track, opts.omit);
   const sp = _buildSpatialPanner(ctx, params.spatial);
   if (sp) segs.push(sp);
   if (opts.bypassable) segs = segs.map(s => _wrapBypass(ctx, s));

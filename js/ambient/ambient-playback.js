@@ -7,6 +7,7 @@ import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
 import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
 import { scheduleFadeCurve } from '../renderPipeline.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
@@ -217,15 +218,21 @@ async function _prepareFx(ctx, effects) {
  */
 function _connectWithFx(ctx, src, effects, gainNode, rec = null) {
   const plan  = resolvePlan(asPipelineEffects(effects));
-  const graph = buildPipelineGraph(ctx, plan, { numChannels: src.buffer?.numberOfChannels || 2, caps: TARGET_CAPS.ambient });
+  initVoiceBudget(ctx);
+  // Phase 3a: geschützte Voice — wird gezählt (verdrängt bei Überlast Sounds), nie degradiert oder entfernt. Hall hier immer pro Stimme (kein Hub).
+  const adm = makeAdmit({ kind: src.buffer === undefined ? 'noise' : 'ambient', share: false, noDegrade: true })(plan);
+  let graph;
+  try { graph = buildPipelineGraph(ctx, plan, { numChannels: src.buffer?.numberOfChannels || 2, caps: TARGET_CAPS.ambient }); }
+  catch (e) { adm.release(); throw e; }
+  const dispose = () => { try { graph.dispose(); } finally { adm.release(); } };
   if (graph.detuneSemitones) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) {} }
   if (graph.input) { src.connect(graph.input); graph.output.connect(gainNode); }
   else src.connect(gainNode);
   if (rec) rec.fxRuntime = graph.runtime;       // Handle für spätere Live-Updates (Phase 3; Verdrahtung in P7)
   if (src.addEventListener && src.buffer !== undefined) {
-    src.addEventListener('ended', () => setTimeout(graph.dispose, Math.ceil(estimateTail(plan) * 1000) + 500));
+    src.addEventListener('ended', () => setTimeout(dispose, Math.ceil(estimateTail(plan) * 1000) + 500));
   }
-  return graph.dispose;
+  return dispose;
 }
 
 async function _startLoopPlayback(trackId) {

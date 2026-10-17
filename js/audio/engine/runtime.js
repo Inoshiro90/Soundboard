@@ -71,7 +71,7 @@ export function assertOrder(plan, builtSteps) {
  * Baut die serielle Knotenkette eines Plans: [Pitch₁] → Kette₁ → [Pitch₂] → Kette₂ → … → [terminaler Panner].
  * (Bis Phase 2 stand dieser Code in fx-pipeline.js buildPipelineGraph; unverändert in der Verdrahtung.)
  */
-function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false } = {}) {
+function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false, send = null } = {}) {
   const track = [];      // gestartete Quellen (LFO/Träger) und Convolver → dispose() stoppt/leert sie
   const nodes = [];      // Verbindungsknoten → dispose() trennt sie
   const steps = [];
@@ -97,11 +97,14 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
         }
       } else skippedPitch++;
     }
-    const lc = buildLayerChain(ctx, step.params, { track, bypassable });
+    // Geteilter Reverb-Send (Phase 3b): das Hall-Modul dieses Schritts baut der Hub, nicht die Kette.
+    const isSend = !!send && step.index === send.step;
+    const lc = buildLayerChain(ctx, step.params, { track, bypassable, omit: isSend ? new Set([send.key]) : undefined });
     if (lc) { link(lc); rec.modules = lc.modules; for (const m of lc.modules) nodes.push(m.input, m.output); }
     steps.push(rec);
   }
-  if (input && plan.needsPanner) link(buildTerminalPanner(ctx, 0));
+  // Im Sendmodus sitzt der terminale Panner hinter dem Master-Gain (Dry- und Hub-Pfad, reverb-hub.js attachSend).
+  if (input && plan.needsPanner && !send) link(buildTerminalPanner(ctx, 0));
   assertOrder(plan, steps);
 
   let disposed = false;
@@ -136,8 +139,11 @@ export class PipelineRuntime {
     this._pending = null;
     this._swapping = false;
     this.bypassedAll = false;
+    // Sendmodus (Phase 3b): nur nicht-live und ohne Bypass-Hüllen. `o.send` = { step, key, ... } aus fx-pipeline.sendEligibility().
+    this.send = (o.send && !this.live && !this.bypassable) ? o.send : null;
+    this.sendSig = this.send ? JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) : null;
 
-    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable });
+    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, send: this.send });
     this.cur = inner;
     if (this.live) {
       this.entry = ctx.createGain(); this.exit = ctx.createGain();
@@ -180,6 +186,8 @@ export class PipelineRuntime {
         for (const m of rec.modules) { if (ok && !m.update(p[m.key])) ok = false; }
       }
     }
+    // Sendmodus: der Hall liegt außerhalb der Kette (Hub) — geänderte Hall-Parameter erfordern einen Neubau.
+    if (ok && this.send && JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) !== this.sendSig) ok = false;
     if (ok) { this.plan = plan; return 'live'; }
     return this.live ? this.swapTo(plan).then(() => 'swapped') : 'rebuild';
   }

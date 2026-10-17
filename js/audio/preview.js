@@ -2,6 +2,7 @@
  * audio/preview.js — Effekt-Editor-Vorschau
  */
 
+import { makeAdmit, stagger } from './engine/budget.js';   // Phase 3a
 import { setIcon } from '../ui/icons.js';
 import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
@@ -133,7 +134,10 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
   let graph;
   try {
     // mode:'preview' — dieselbe Pipeline wie Live/Export.
-    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: ctx.destination });
+    const voiceRef = {};
+    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: ctx.destination, sharedReverb: APP.globalSettings.reverbShare !== false,
+      admit: makeAdmit({ kind: 'preview', id: s.id, loop: false, ref: voiceRef }), stagger });   // Phase 3a: gezählt, nie entzogen
+    voiceRef.graph = graph;
   } catch (e) {
     console.error('[audio] Preview-Graph-Fehler:', e);
     graph = null;

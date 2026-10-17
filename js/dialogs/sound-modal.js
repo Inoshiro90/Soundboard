@@ -636,7 +636,7 @@ export function _markActiveAccordionSections(fx) {
  */
 export function _syncPlaybackSettingsIndicator() {
   const gs = APP.globalSettings;
-  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && !gs.autoDuck?.enabled;
+  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !isDefault);
 }
 

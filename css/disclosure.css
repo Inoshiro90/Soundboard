@@ -311,3 +311,7 @@ label.popover-check {
 #soundPlaybackModal .disclosure-section__panel > .fx-controls {
   padding-left: 0;
 }
+
+/* Phase 3a: Auswahlfeld in einer Einstellungszeile des Wiedergabe-Popovers (Stimmenlimit) */
+label.popover-check.popover-check--select { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+label.popover-check.popover-check--select select { max-width: 60%; }
