@@ -29,7 +29,8 @@
 
 import { uid } from '../utils.js';
 import { defaultEffects } from './effect-graph.js';
-import { ensurePitchWorkletFor } from './context.js';
+import { ensureWorklets } from './context.js';
+import { workletsForPlan } from './engine/worklets.js';
 import { PipelineRuntime } from './engine/runtime.js';
 import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
@@ -364,9 +365,10 @@ export function sendEligibility(plan) {
 
 // ─── EXECUTOR ────────────────────────────────────────────────
 
-/** Lädt, falls nötig, das Pitch-Worklet im Ziel-Context (muss vor buildPipelineGraph() fertig sein). */
+/** Lädt, falls nötig, die vom Plan benötigten Worklets im Ziel-Context (muss vor buildPipelineGraph() fertig sein). */
 export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound) {
-  if (plan.hasPitch && caps.pitch === 'worklet') await ensurePitchWorkletFor(ctx);
+  const ids = workletsForPlan(plan, caps);
+  if (ids.length) await ensureWorklets(ctx, ids);
 }
 
 /**

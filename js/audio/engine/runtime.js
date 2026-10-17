@@ -22,7 +22,8 @@
  */
 
 import { buildPitchNode, buildLayerChain, buildTerminalPanner } from '../effect-graph.js';
-import { ensurePitchWorkletFor } from '../context.js';
+import { ensureWorklets } from '../context.js';
+import { workletsForPlan } from './worklets.js';
 import { effectiveActiveKeys } from './schema.js';
 import { moduleTail, moduleCost } from './registry.js';
 
@@ -165,7 +166,8 @@ export class PipelineRuntime {
 
   /** Vorbereitung eines Plans im Context (Pitch-Worklet laden). */
   async prepare(plan) {
-    if (plan.hasPitch && this.caps.pitch === 'worklet') await ensurePitchWorkletFor(this.ctx);
+    const ids = workletsForPlan(plan, this.caps);
+    if (ids.length) await ensureWorklets(this.ctx, ids);
   }
 
   /**

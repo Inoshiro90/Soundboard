@@ -27,6 +27,7 @@
  *   Tiefpass-Biquads. Messbasis: 16 parallele Instanzen im Offline-Render, Chrome 155 und Firefox 158 (Windows) [S];
  *   je Modul gilt das Maximum beider Engines (konservativ). Die absolute Kapazität in Punkten bestimmt die Kalibrierung
  *   (engine/calibrate.js), nicht diese Tabelle. Safari/iOS/Android sind nicht gemessen [H].
+ * `workletModules`: IDs aus engine/worklets.js (Worklet-Registry, Phase 5), die das Modul braucht; `needsWorklet` bleibt als Kurzform.
  * `tail(params)`: Nachklang in Sekunden (derselbe Wert wie estimateTail() in fx-pipeline.js, getestet).
  */
 
@@ -141,7 +142,7 @@ export const MODULES = [
       frequency: { def: 440, range: [20, 5000], unit: 'Hz', label: 'Trägerfrequenz' },
       mix: { def: 1, range: [0, 1], label: 'Mix' }
     } },
-  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxPitchEnabled' }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, cost: c(28),
+  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxPitchEnabled' }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch'], cost: c(28),
     params: { semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne' } } },
   { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { enabledId: 'fxIrEnabled' }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(getIRDuration(p?.impulse ?? null)), measured: true }), degrade: { irLength: true },

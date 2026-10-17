@@ -9,24 +9,11 @@
  * Master-Volume und Auto Duck einheitlich greifen.
  */
 
+import { ensureWorklets } from './audio/context.js';
+
 const NOISE_TYPE_MAP = { white: 0, pink: 1, brown: 2 };
-const NOISE_WORKLET_URL = './js/worklets/noise-generator-processor.js';
 
-// Pro AudioContext einzeln verfolgt (Worklet-Module sind context-gebunden,
-// siehe audio/context.js ensurePitchWorkletFor() für dasselbe Muster).
-const _readyContexts = new WeakSet();
-const _loadingContexts = new WeakMap();
-
-async function _ensureNoiseWorklet(ctx) {
-  if (_readyContexts.has(ctx)) return true;
-  if (_loadingContexts.has(ctx)) return _loadingContexts.get(ctx);
-  const p = ctx.audioWorklet.addModule(NOISE_WORKLET_URL)
-    .then(() => { _readyContexts.add(ctx); return true; })
-    .catch(e => { console.warn('[generators] Noise-Worklet nicht verfügbar:', e.message); return false; })
-    .finally(() => _loadingContexts.delete(ctx));
-  _loadingContexts.set(ctx, p);
-  return p;
-}
+// Das Laden des Noise-Worklets (pro Context, idempotent, mit Pending-Map) übernimmt ensureWorklets() (audio/context.js, Phase 5).
 
 /**
  * Baut einen Noise-Generator-AudioWorkletNode für den gegebenen Context.
@@ -35,7 +22,7 @@ async function _ensureNoiseWorklet(ctx) {
  * @returns {Promise<AudioWorkletNode|null>} null, wenn das Worklet-Modul nicht geladen werden konnte
  */
 export async function buildNoiseGenerator(ctx, generatorType = 'pink') {
-  const ok = await _ensureNoiseWorklet(ctx);
+  const ok = (await ensureWorklets(ctx, ['noise'])).noise;
   if (!ok) return null;
   const node = new AudioWorkletNode(ctx, 'noise-generator-processor', {
     numberOfInputs: 0,
