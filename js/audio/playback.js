@@ -16,6 +16,7 @@ import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
 import { duckAmbient } from '../ambient/ambient-playback.js';
 import { actx, hasAudioContext } from './context.js';
+import { outputFor, connectToOutput } from './engine/output.js';   // Phase 4: einziger Ausgang
 import { makeAdmit, stagger, initVoiceBudget } from './engine/budget.js';   // Phase 3a: Voice-Budget
 
 // ─── DECODE ───────────────────────────────────────────────
@@ -145,7 +146,7 @@ export async function playSelectedSlot(s, idx, opts = {}) {
   const voiceRef = {};
   const graph = await renderSoundGraph(ctx, buf, slot, s, {
     mode: opts.isPreview ? 'preview' : 'live',
-    destination: ctx.destination,
+    destination: outputFor(ctx, 'sound'),
     masterVol: gs.masterVol ?? 1,
     sharedReverb: gs.reverbShare !== false,   // Phase 3b: „Hall: Geteilt“ (Standard) | „Pro Stimme (exakt)“
     crossfadeIn: doCrossfade ? { duration: cf.duration, curve: cf.curve || 'linear' } : null,
@@ -199,7 +200,7 @@ export function playSoundAndWait(s) {
     const voiceRef = {};
     const graph = await renderSoundGraph(ctx, buf, slot, s, {
       mode: 'live',
-      destination: ctx.destination,
+      destination: outputFor(ctx, 'sound'),
       masterVol: gs.masterVol ?? 1,
       sharedReverb: gs.reverbShare !== false,
       allowLoop: false,
@@ -250,7 +251,7 @@ export function playBufferPreview(buf, slot, vol, pitch) {
   const ctx      = actx();
   const gainNode = ctx.createGain();
   gainNode.gain.value = Math.max(0, vol ?? 1);
-  gainNode.connect(ctx.destination);
+  connectToOutput(gainNode, 'preview');
 
   const src = ctx.createBufferSource();
   src.buffer              = buf;

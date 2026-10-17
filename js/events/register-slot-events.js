@@ -22,6 +22,7 @@ import { findAmbientTrack } from '../ambient/ambient-model.js';
 import '../dialogs/ambient-modal.js';
 import { _fxEditContext } from '../dialogs/sound-modal.js';
 import './utils-modal.js';
+import { connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
 
 export function registerSlotEvents() {
   // ── TRIM MODAL ─────────────────────────────────────────────
@@ -73,7 +74,7 @@ export function registerSlotEvents() {
     // (bereits gain-skalierten) Signalpfad widerspiegelt.
     const meterAnalyser = ctx.createAnalyser();
     meterAnalyser.fftSize = 1024;
-    gain.connect(meterAnalyser); meterAnalyser.connect(ctx.destination);
+    gain.connect(meterAnalyser); connectToOutput(meterAnalyser, 'preview');
     const src = ctx.createBufferSource(); src.buffer = APP.trim.buf; src.connect(gain);
     src.start(0, ts, te - ts); APP.trim.previewSrc = src;
     startPeakRmsMeter(meterAnalyser);

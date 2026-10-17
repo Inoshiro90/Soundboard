@@ -10,6 +10,7 @@ import { actx } from '../audio/context.js';
 import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
 import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
+import { connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
 import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // Zirkulärer Import (music-model.js importiert umgekehrt stopMusic/
 // _revokeBlobUrl/_orderedTracks/_blobUrls/_resetShuffleOrder aus diesem
@@ -107,7 +108,7 @@ function _ensurePlayers() {
   const ctx = actx();
   const master = ctx.createGain();
   master.gain.value = APP.music.masterVol ?? 1;
-  master.connect(ctx.destination);
+  connectToOutput(master, 'music');
   const mk = () => {
     const audio = new Audio();
     audio.preload = 'metadata';

@@ -16,7 +16,7 @@
  * Dauerschleifen-Layer).
  */
 
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from './audio/fx-pipeline.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
 import { attachSend } from './audio/engine/reverb-hub.js';
 
@@ -265,7 +265,7 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
     src, masterGain, dur, bufferDur, rate, ts,
     /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
     // Sendfähig: der Hall-Nachklang liegt im Hub (eigener Lebenszyklus) — die Voice braucht nur die Ketten-Restzeit.
-    plan, tailSeconds: graph.send ? graph.tailSeconds() : estimateTail(plan),
+    plan, tailSeconds: graph.tailSeconds(),
     dispose: () => { try { sendHandle?.dispose(); } finally { try { graph.dispose(); } finally { admission?.release(); } } },
     /** Voice-Budget: die Voice wurde degradiert angemeldet (Phase 3a) bzw. Kostenpunkte der Voice. */
     degraded: !!admission?.degraded, voicePoints: admission?.points ?? null,

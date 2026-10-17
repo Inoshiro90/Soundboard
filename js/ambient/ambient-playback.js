@@ -6,7 +6,9 @@
 import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, estimateTail, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { outputFor, connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
+import { attachSend } from '../audio/engine/reverb-hub.js';               // Phase 4: geteilter Hall auch für Ambient/Rauschen
 import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
 import { scheduleFadeCurve } from '../renderPipeline.js';
@@ -197,7 +199,6 @@ async function _playGeneratorTrack(trackId) {
   const now     = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
   if (fadeIn > 0) gainNode.gain.linearRampToValueAtTime(target, now + fadeIn);
-  gainNode.connect(ctx.destination);
   rec.fxDispose = _connectWithFx(ctx, node, t.effects, gainNode, rec);
 
   rec.src  = node;
@@ -212,25 +213,35 @@ async function _prepareFx(ctx, effects) {
 }
 
 /**
- * Routes src → Pipeline (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → gainNode.
+ * Routes src → Pipeline (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → gainNode → Ausgang.
  * Gibt die Aufräumfunktion zurück. Bei Buffer-Quellen wird sie automatisch nach 'ended' (+ Nachklang) ausgeführt;
  * Generator-Knoten (kein 'ended') räumt stopAmbientTrack() über rec.fxDispose auf.
+ *
+ * Phase 4: der Ausgang von `gainNode` wird HIER verbunden (einziger Ausgang: engine/output.js). Ist der Hall des Plans sendfähig
+ * (sendEligibility, Einstellung „Hall: Geteilt“), zweigt Dry/Send HINTER dem gainNode ab (Lautstärke/Fades/Duck wirken auf beides,
+ * wie bei Sounds, AE-17) und der Nachhall liegt im geteilten Hub; sonst wie bisher ein eigener Hall pro Stimme.
  */
 function _connectWithFx(ctx, src, effects, gainNode, rec = null) {
   const plan  = resolvePlan(asPipelineEffects(effects));
+  const share = APP.globalSettings?.reverbShare !== false;
   initVoiceBudget(ctx);
-  // Phase 3a: geschützte Voice — wird gezählt (verdrängt bei Überlast Sounds), nie degradiert oder entfernt. Hall hier immer pro Stimme (kein Hub).
-  const adm = makeAdmit({ kind: src.buffer === undefined ? 'noise' : 'ambient', share: false, noDegrade: true })(plan);
+  // Phase 3a: geschützte Voice — wird gezählt (verdrängt bei Überlast Sounds), nie degradiert oder entfernt. Kosten mit Send, wenn sendfähig (Phase 4).
+  const adm = makeAdmit({ kind: src.buffer === undefined ? 'noise' : 'ambient', share, noDegrade: true })(plan);
+  const channels = src.buffer?.numberOfChannels || 2;
   let graph;
-  try { graph = buildPipelineGraph(ctx, plan, { numChannels: src.buffer?.numberOfChannels || 2, caps: TARGET_CAPS.ambient }); }
+  try { graph = buildPipelineGraph(ctx, plan, { numChannels: channels, caps: TARGET_CAPS.ambient, shareReverb: share }); }
   catch (e) { adm.release(); throw e; }
-  const dispose = () => { try { graph.dispose(); } finally { adm.release(); } };
+  let sendHandle = null;
+  const dispose = () => { try { sendHandle?.dispose(); } finally { try { graph.dispose(); } finally { adm.release(); } } };
   if (graph.detuneSemitones) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) {} }
   if (graph.input) { src.connect(graph.input); graph.output.connect(gainNode); }
   else src.connect(gainNode);
+  if (graph.send) sendHandle = attachSend(ctx, gainNode, { send: graph.send, channels, destination: outputFor(ctx, 'ambient'), scope: 'main' });
+  else connectToOutput(gainNode, 'ambient');
   if (rec) rec.fxRuntime = graph.runtime;       // Handle für spätere Live-Updates (Phase 3; Verdrahtung in P7)
   if (src.addEventListener && src.buffer !== undefined) {
-    src.addEventListener('ended', () => setTimeout(dispose, Math.ceil(estimateTail(plan) * 1000) + 500));
+    // Sendfähig: der Nachhall liegt im Hub; die Voice braucht nur die Ketten-Restzeit (graph.tailSeconds()).
+    src.addEventListener('ended', () => setTimeout(dispose, Math.ceil(graph.tailSeconds() * 1000) + 500));
   }
   return dispose;
 }
@@ -266,7 +277,6 @@ async function _startLoopPlayback(trackId) {
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
   if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
-  gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -358,7 +368,6 @@ async function _playChainCycle(trackId) {
     gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
     if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
   }
-  gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -445,7 +454,6 @@ async function _playIntervalCycle(trackId) {
   const now      = ctx.currentTime;
   gainNode.gain.setValueAtTime(fadeIn > 0 ? 0 : target, now);
   if (fadeIn > 0) scheduleFadeCurve(gainNode, t.fadeInCurve || 'linear', 0, target, now, fadeIn);
-  gainNode.connect(ctx.destination);
 
   const src = ctx.createBufferSource();
   src.buffer = buf;

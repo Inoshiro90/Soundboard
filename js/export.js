@@ -15,6 +15,7 @@ import { resolvePlan, exportTailSeconds } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
 import { getOrDecodeBuffer } from './audioCache.js';
 import { actx } from './audio/context.js';
+import { outputFor } from './audio/engine/output.js';
 import { timelineMixdown } from './timeline.js';
 
 // ─── WAV ENCODING ─────────────────────────────────────────────
@@ -122,7 +123,7 @@ export async function renderSoundOffline(s, slotIdx) {
   // derselbe Baustein wie überall sonst (renderPipeline.js), inkl. Fades.
   const build = async lengthS => {
     const offCtx = new OfflineAudioContext(numCh, Math.max(1, Math.ceil(lengthS * sr)), sr);
-    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: offCtx.destination, sharedReverb: APP.globalSettings.reverbShare !== false });
+    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: outputFor(offCtx, 'export'), sharedReverb: APP.globalSettings.reverbShare !== false });
     return { offCtx, graph };
   };
   let r = await build(bufferDur / effectivePlaybackRate(s.pitch) + tail);

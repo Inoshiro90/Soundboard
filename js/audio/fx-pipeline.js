@@ -30,9 +30,8 @@
 import { uid } from '../utils.js';
 import { defaultEffects } from './effect-graph.js';
 import { ensurePitchWorkletFor } from './context.js';
-import { getIRDuration } from './ir-data.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, MODULES, REMOVED_KEYS } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
 import {
   fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
@@ -287,29 +286,41 @@ export function resolvePlan(effects) {
   };
 }
 
-/** Geschätzte Nachklingdauer (Sekunden) der Kette: Hall/IR-Längen und Delay-Abklingen je Schritt summiert. */
+/**
+ * Geschätzte Nachklingdauer (Sekunden) der Kette, SCHATTENBLIND: Hall/IR/Delay aller aktiven Module je Schritt, summiert.
+ * Die Werte kommen seit Phase 4 aus der Registry (`tail()` je Modul) — keine zweite Formel mehr. Überlagerte Module (z. B. Hall
+ * unter einem IR-Hall) zählen hier noch mit; für die tatsächliche Dauer siehe planTailSeconds().
+ */
 export function estimateTail(plan) {
   let sum = 0;
   for (const s of plan.steps) {
-    const p = s.params;
     let t = 0;
-    if (p.irReverb.enabled) t = Math.max(t, getIRDuration(p.irReverb.impulse));
-    if (p.reverb.enabled)   t = Math.max(t, p.reverb.duration ?? 2.2);
-    if (p.delay.enabled) {
-      const time = Math.max(0.01, p.delay.time ?? 0.22);
-      const fb = Math.max(0, Math.min(0.95, p.delay.feedback ?? 0.35));
-      const repeats = fb > 0 ? Math.min(60, Math.ceil(Math.log(0.001) / Math.log(fb))) : 1;
-      t = Math.max(t, Math.min(10, time * repeats));
-    }
+    for (const k of ['irReverb', 'reverb', 'delay']) if (s.params[k]?.enabled) t = Math.max(t, moduleTail(k, s.params[k]));
     sum += t;
   }
   return Math.min(30, sum);
 }
 
-/** Export-Tail: bisher fest 3,5 s sobald Effekte aktiv waren — jetzt mindestens das, bei langen Ketten mehr. */
+/**
+ * Nachklingdauer der TATSÄCHLICH klingenden Module (überlagerte zählen nicht) aus den Registry-`tail()`-Werten (Phase 4).
+ * REIN, ohne AudioContext. Gleicher Wert wie `PipelineRuntime.tailSeconds()` einer statisch gebauten Pipeline OHNE Send —
+ * bei sendfähigem Hall liegt der Nachhall im Hub und die Runtime meldet nur die Ketten-Restzeit; der Export braucht aber die
+ * volle Dauer inklusive Hall und nimmt deshalb diesen Wert.
+ */
+export function planTailSeconds(plan) {
+  let sum = 0;
+  for (const s of plan.steps) {
+    let t = 0;
+    for (const k of effectiveActiveKeys(s.params)) t = Math.max(t, moduleTail(k, s.params[k]));
+    sum += t;
+  }
+  return Math.min(30, sum);
+}
+
+/** Export-Tail: mindestens 3,5 s sobald Effekte aktiv waren, bei langen Ketten mehr (Registry-`tail()` der klingenden Module, Phase 4). */
 export function exportTailSeconds(plan) {
   if (!plan.steps.some(s => s.active)) return 0;
-  return Math.min(30, Math.max(3.5, estimateTail(plan) + 0.5));
+  return Math.min(30, Math.max(3.5, planTailSeconds(plan) + 0.5));
 }
 
 /** Heuristik für automatische Stufenzuordnung (User-Presets/ungelabelte Alt-Effekte). Gleichstand → Medium. */

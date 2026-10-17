@@ -10,6 +10,7 @@ import { bk } from '../utils.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph } from '../renderPipeline.js';
 import { actx } from './context.js';
+import { outputFor, connectToOutput } from './engine/output.js';   // Phase 4: einziger Ausgang
 import { resolvePlan, connectPipeline, TARGET_CAPS } from './fx-pipeline.js';
 import { asPipelineEffects } from '../fx-model.js';
 import { buildNoiseGenerator } from '../generators.js';
@@ -135,7 +136,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
   try {
     // mode:'preview' — dieselbe Pipeline wie Live/Export.
     const voiceRef = {};
-    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: ctx.destination, sharedReverb: APP.globalSettings.reverbShare !== false,
+    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: outputFor(ctx, 'preview'), sharedReverb: APP.globalSettings.reverbShare !== false,
       admit: makeAdmit({ kind: 'preview', id: s.id, loop: false, ref: voiceRef }), stagger });   // Phase 3a: gezählt, nie entzogen
     voiceRef.graph = graph;
   } catch (e) {
@@ -232,7 +233,7 @@ export async function previewNoiseGenerator(g) {
   try { conn = await connectPipeline(ctx, node, resolvePlan(asPipelineEffects(g.effects)), masterGain, { caps: TARGET_CAPS.noise, numChannels: 2 }); }
   catch (e) { console.error('[audio] Rauschgenerator-Pipeline-Fehler:', e); node.connect(masterGain); }
   if (myToken !== p.token) { try { conn?.dispose(); node.disconnect(); } catch (e) {} return; }
-  masterGain.connect(ctx.destination);
+  connectToOutput(masterGain, 'preview');
 
   p.loading = false; p.playing = true; p.kind = 'noise';
   p.src = node; p.masterGain = masterGain; p.dispose = conn ? conn.dispose : null; p.runtime = conn?.graph?.runtime ?? null;

@@ -27,7 +27,7 @@
 
 import { getIRBuffer, getGenericIR } from '../ir-data.js';
 import { buildTerminalPanner } from '../effect-graph.js';
-import { outputFor } from './output.vorlaeufig.js';
+import { outputFor } from './output.js';
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -97,7 +97,7 @@ export function hubCount(ctx) { return _registry.get(ctx)?.size || 0; }
  * @returns {{dispose:()=>void, hub:Hub}}
  */
 export function attachSend(ctx, from, { send, channels = 2, destination, scope = 'main' } = {}) {
-  destination = destination || outputFor(ctx);
+  destination = destination || outputFor(ctx, 'hub');
   const ir = send.getIR(ctx);
   let map = _registry.get(ctx); if (!map) { map = new Map(); _registry.set(ctx, map); }
   const key = [ctx.sampleRate, scope, _idOf(destination), Math.min(2, channels), send.irKey].join('|');
