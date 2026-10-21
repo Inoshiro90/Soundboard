@@ -9,6 +9,7 @@ import { APP, CP } from '../core/state.js';
 import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
+import { applyMasterVolume, applySafetyLimiter } from '../audio/engine/output.js';
 import { stopAll } from '../audio/playback.js';
 import { bindPreviewModalLifecycle } from '../audio/preview.js';
 import { defaultEffects } from '../audio/effect-graph.js';
@@ -165,6 +166,7 @@ export function registerTileEvents() {
   document.getElementById('masterVol')?.addEventListener('input', function() {
     const val = parseFloat(this.value);
     APP.globalSettings.masterVol = val;
+    applyMasterVolume(val);   // Phase 6: wirkt live auf laufende Sounds (Bus)
     const numEl = document.getElementById('masterVolNum');
     if (numEl) numEl.value = Math.round(val * 100);
   });
@@ -173,6 +175,7 @@ export function registerTileEvents() {
     this.value = pct;
     const val  = pct / 100;
     APP.globalSettings.masterVol = val;
+    applyMasterVolume(val);
     const slEl = document.getElementById('masterVol');
     if (slEl) slEl.value = val;
   });
@@ -284,6 +287,7 @@ export function registerTileEvents() {
   document.getElementById('setStopReplay')?.addEventListener('change', e => { APP.globalSettings.stopReplay = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setMultiClick')?.addEventListener('change', e => { APP.globalSettings.multiClick = e.target.checked; _syncPlaybackSettingsIndicator(); });
   document.getElementById('setReverbShare')?.addEventListener('change', e => { APP.globalSettings.reverbShare = e.target.checked; _syncPlaybackSettingsIndicator(); });   // Phase 3b: wirkt ab der nächsten Wiedergabe
+  document.getElementById('setSafetyLimiter')?.addEventListener('change', e => { APP.globalSettings.safetyLimiter = e.target.checked; applySafetyLimiter(e.target.checked); _syncPlaybackSettingsIndicator(); });   // Phase 6: wirkt sofort
   document.getElementById('setVoiceLimit')?.addEventListener('change', e => { APP.globalSettings.voiceLimit = e.target.value; _syncPlaybackSettingsIndicator(); });   // Phase 3a: wirkt ab der nächsten Wiedergabe
 
   // Lautstärke: Dialogbox — #masterVol/#masterVolNum.

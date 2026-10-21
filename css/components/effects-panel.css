@@ -94,12 +94,6 @@
   color: var(--text-secondary);
 }
 
-/* Panel body */
-#fxPanel {
-  padding: var(--space-3) var(--space-4);
-  transition: opacity 0.15s ease;
-}
-
 .fx-divider {
   height: 1px;
   background: var(--border-color);
@@ -696,4 +690,122 @@
   .fx-layer__actions { margin-left: auto; flex-wrap: wrap; }
   .fx-picker__row { flex-direction: column; }
   .fx-picker__tools { justify-content: flex-end; }
+}
+
+
+/* ── Phase 7: Vorschau-Leiste im Footer (Pegel, Loop, A/B) ── */
+.fx-preview-bar { align-items: center; }
+.fx-preview-meter { gap: 3px; height: 28px; padding-inline: 8px; }
+.fx-preview-meter .master-meter__bar { height: 22px; }
+.fx-preview-meter[hidden] { display: none; }
+.fx-preview-meter__text { margin-left: 6px; align-self: center; min-width: 11ch; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fx-preview-bar .btn[aria-pressed="true"] { background: var(--accent-soft, rgba(0, 117, 222, 0.12)); border-color: var(--accent, #0075de); }
+@media (max-width: 575.98px) { .fx-preview-meter__text { display: none; } }
+
+/* ═════════ Phase 8 · Generierte Effekt-Controls (js/ui/effects/) ═════════
+   Karte = .fx-group (Schalter-Kopf) + .fx-controls (Regler). Ein ausgeschaltetes Modul macht den Reglerbereich `inert`
+   (nicht bedienbar, nicht fokussierbar, für Screenreader ausgeblendet); abgeblendet wird er wie bisher mit opacity. */
+.fx-card .fx-check-label input[type="checkbox"] { width: 16px; height: 16px; }
+.fx-card__body { transition: opacity 0.12s ease; }
+.fx-card__body[inert] { opacity: 0.45; }
+
+.fx-param { margin-bottom: var(--space-1); }
+.fx-param__label {
+  display: block;
+  font-size: var(--text-badge);
+  color: var(--text-secondary);
+}
+
+/* Zahlfeld neben dem Regler: Treffer-Fläche ≥ var(--h-btn) (Touch), Einheit fest daneben. */
+.fx-num-wrap { display: inline-flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
+.fx-num {
+  width: 5.5rem;
+  min-height: var(--h-btn);
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: right;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-micro);
+}
+.fx-num:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.fx-unit { font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-muted); min-width: 2.2em; }
+
+@media (max-width: 480px) {
+  .fx-num { width: 4.5rem; }
+  .fx-unit { min-width: 0; }
+}
+
+/* Auswahlfeld einer generierten Karte (Aufzählung, z. B. Tremolo-Wellenform) */
+.fx-select { max-width: 160px; min-height: var(--h-btn); }
+
+/* Reset-Knopf im Kopf der EQ10-Karte (vorher als Inline-Style im HTML) */
+.fx-eq10-reset { font-size: 0.7rem; padding: 1px 6px; margin-left: auto; }
+
+/* Phase 8 · Struktur: „Nur aktive Module zeigen“, Hinweis „Überlagert“ */
+.fx-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.fx-toolbar__hint { font-size: var(--text-badge); color: var(--text-secondary); }
+.fx-card[hidden], .disclosure-section[hidden] { display: none !important; }
+.fx-card__note { margin: var(--space-1) 0 var(--space-2); padding: var(--space-1) var(--space-2); font-size: var(--text-badge); color: var(--text-primary);
+  background: var(--bg-surface); border-left: 3px solid var(--border-color); border-radius: var(--radius-micro); }
+.fx-card.is-shadowed .fx-group__head { opacity: 0.75; }
+
+/* ═════ Phase 8 · Mobil und Barrierefreiheit der generierten Controls ═════ */
+
+/* Nur für Screenreader (kein globales .visually-hidden im Projekt): Live-Region für Ansagen. */
+.fx-sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* Hinweis unter einem Regler, dessen Datenwert außerhalb des Reglerbereichs liegt (sichtbar, nicht nur als Tooltip). */
+.fx-param__hint { display: block; margin-top: var(--space-1); font-size: var(--text-badge); color: var(--text-secondary); }
+.fx-param__hint::before { content: "ⓘ "; }
+
+/* Tastaturfokus sichtbar (Kontrast ≥ 3:1 gegen den Hintergrund) */
+.fx-card .fx-slider:focus-visible,
+.fx-card .fx-select:focus-visible,
+.fx-card .fx-check-label input:focus-visible,
+.fx-toolbar .fx-check-label input:focus-visible,
+.fx-eq10-reset:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Touch (grober Zeiger): Trefferflächen ≥ 44 × 44 px. Nur hier — am Desktop bleibt die Dichte des Projekts (--h-btn, WCAG 2.5.8). */
+@media (pointer: coarse) {
+  :root { --fx-touch: max(var(--h-btn), 44px); }
+  .fx-card .fx-check-label,
+  .fx-toolbar .fx-check-label { min-height: var(--fx-touch); }
+  .fx-card .fx-check-label input[type="checkbox"],
+  .fx-toolbar .fx-check-label input[type="checkbox"] { width: 22px; height: 22px; }
+  .fx-card .fx-slider,
+  .fx-num,
+  .fx-select { min-height: var(--fx-touch); }
+  .fx-eq10-reset { min-height: var(--fx-touch); min-width: var(--fx-touch); }
+  /* EQ10: senkrechte Gain-/Q-Regler — Trefferdicke und Spaltenbreite auf 44 px */
+  :root { --eq10-hit-thick: 44px; --eq10-col-min-w: 44px; }
+}
+
+/* Schmale Viewports (360 px): nichts darf horizontal überlaufen */
+@media (max-width: 480px) {
+  .fx-card { min-width: 0; }
+  .fx-card .fx-controls { padding-left: var(--space-2); }
+  .fx-slider-row { gap: var(--space-1); }
+  .fx-slider-row .fx-slider { min-width: 0; }
+  .fx-select { max-width: 100%; width: 100%; }
+  .fx-card__note { overflow-wrap: anywhere; }
+}
+
+/* Reduzierte Bewegung respektieren */
+@media (prefers-reduced-motion: reduce) {
+  .fx-card__body { transition: none; }
+}
+
+/* Windows-Kontrastmodus: Hinweisrand und Fokus bleiben sichtbar */
+@media (forced-colors: active) {
+  .fx-card__note { border-left-color: CanvasText; }
+  .fx-card .fx-slider:focus-visible, .fx-card .fx-select:focus-visible { outline-color: Highlight; }
 }

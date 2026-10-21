@@ -4,6 +4,7 @@
 
 import { APP } from '../core/state.js';
 import { WORKLETS } from './engine/worklets.js';
+import { installBuses } from './engine/buses.js';
 
 // ─── AUDIO CONTEXT ───────────────────────────────────────────
 // ctx is NEVER created automatically on module load.
@@ -15,6 +16,9 @@ let _ctx = null;
 export function actx() {
   if (!_ctx) {
     _ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Phase 6: Master- und Preview-Bus des Live-Contexts (Offline-Contexts bekommen keinen).
+    try { installBuses(_ctx, { limiter: APP.globalSettings?.safetyLimiter !== false, masterVol: APP.globalSettings?.masterVol ?? 1 }); }
+    catch (e) { console.warn('[audio] Bus nicht installiert, Ausgang = destination:', e); }
   }
   // Resume if browser auto-suspended it
   if (_ctx.state === 'suspended') {

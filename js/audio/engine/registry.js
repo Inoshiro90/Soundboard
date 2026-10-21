@@ -16,8 +16,12 @@
  *   { def:null, impulse:true }              IR-Name (IR_IMPULSE_NAMES) oder null
  *   { def:[0×10], bands:true }              10 EQ-Bänder: Zahl (Gain) oder {freq, gain, Q}
  *
- * `ui.enabledId`: ID des Ein-/Aus-Schalters im (noch handgeschriebenen) Formular fragments/modals/sound-fx-pipeline.html.
- *   Entfällt mit der schema-generierten UI (Phase 8); bis dahin prüft ein Test, dass jedes Modul seinen Schalter hat.
+ * `ui` (Modul): `{ generated: true }` — das Formular erzeugt das Modul aus dieser Registry (ui/effects/, Phase 8); es gibt kein handgeschriebenes
+ *   Effekt-HTML mehr. (`enabledId` entfiel mit dem Abbau des alten Formulars; Suite 09 prüft, dass jedes Modul `generated` ist.)
+ * `ui` (Parameter, optional): `{ hidden?, min?, max?, step?, scale?:'lin'|'log', digits?, percent?, display?, signed?, unit?, options?, emptyLabel? }` (percent: Daten 0…1, Anzeige 0…100 %; display `{factor,unit}`: andere Anzeigeeinheit, z. B. s → ms; signed: „+“ bei positiven Werten; options: Beschriftungen einer Aufzählung) — Darstellung im Regler. Fehlt `ui`, wird der
+ *   Bereich aus `range` abgeleitet (ui/effects/control-math.js resolveParamUi). Der UI-Bereich darf ENGER sein als `range`
+ *   (Option b, Phase 8: bildet die Bereiche des alten Formulars ab; Datenwerte außerhalb bleiben erhalten). `hidden:true` =
+ *   kein Regler, der Wert wird beim Bearbeiten unverändert mitgeführt. Die Datenbereiche (`range`) bleiben die alleinige Grundlage der Importklemmung.
  * `stageHint`: Beitrag zum Stufenvorschlag (suggestStageForParams): { stage, weight } oder Funktion(params) → { stage, weight } | null.
  *   Module ohne Hinweis (Wah-Wah, Tremolo, Spatial) tragen nicht zum Vorschlag bei.
  * `layerOrder`: kanonische Position INNERHALB eines Layers (E8, identisch zu _collectSegments() in effect-graph.js;
@@ -47,31 +51,31 @@ export const CONVOLVER_BASE = 4;
 export const CONVOLVER_PER_SECOND = 44;
 export const convolverPoints = seconds => CONVOLVER_BASE + CONVOLVER_PER_SECOND * Math.max(0, Number(seconds) || 0);
 
-const filterQ = (def, range) => ({ def, range, label: 'Güte (Q)' });
+const filterQ = (def, range, ui) => ({ def, range, label: 'Güte (Q)', ...(ui ? { ui } : {}) });
 
 export const MODULES = [
-  { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxLpEnabled' }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz' }, Q: filterQ(0.7, [0.1, 20]) } },
-  { key: 'highpass', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxHpEnabled' }, family: 'filter', label: 'Hochpass', layerOrder: 10, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 20, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz' }, Q: filterQ(0.7, [0.1, 20]) } },
-  { key: 'notch', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxNotchEnabled' }, family: 'filter', label: 'Notch (Kerbfilter)', layerOrder: 30, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz' }, Q: filterQ(10, [0.5, 30]) } },
-  { key: 'wahwah', ui: { enabledId: 'fxWahwahEnabled' }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(4),
+  { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: c(1),
+    params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 100, max: 20000, step: 50, scale: 'log', digits: 0 } }, Q: filterQ(0.7, [0.1, 20], { hidden: true }) } },
+  { key: 'highpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Hochpass', layerOrder: 10, consumers: ALL_CONSUMERS, cost: c(1),
+    params: { frequency: { def: 20, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 20, max: 5000, step: 10, scale: 'log', digits: 0 } }, Q: filterQ(0.7, [0.1, 20], { hidden: true }) } },
+  { key: 'notch', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Notch (Kerbfilter)', layerOrder: 30, consumers: ALL_CONSUMERS, cost: c(1),
+    params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz', ui: { min: 20, max: 2000, step: 1, scale: 'log', digits: 0 } }, Q: filterQ(10, [0.5, 30], { min: 0.5, max: 30, step: 0.5, digits: 1 }) } },
+  { key: 'wahwah', ui: { generated: true }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(4),
     params: {
-      frequency: { def: 800, range: [100, 5000], unit: 'Hz', label: 'Mittenfrequenz' },
-      depth: { def: 0.7, range: [0, 1], label: 'Tiefe' },
-      rate: { def: 2, range: [0.1, 10], unit: 'Hz', label: 'Rate' },
-      resonance: { def: 5, range: [1, 20], label: 'Resonanz' }
+      frequency: { def: 800, range: [100, 5000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 100, max: 5000, step: 10, scale: 'log', digits: 0 } },
+      depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      rate: { def: 2, range: [0.1, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.1, max: 10, step: 0.1 } },
+      resonance: { def: 5, range: [1, 20], label: 'Resonanz', ui: { min: 1, max: 20, step: 0.5 } }
     } },
-  { key: 'reverb', stageHint: p => ((p?.duration ?? 0) >= 1.5 ? { stage: 'environment', weight: 2 } : null), ui: { enabledId: 'fxRevEnabled' }, family: 'space', label: 'Hall (algorithmisch)', layerOrder: 110, consumers: ALL_CONSUMERS,
+  { key: 'reverb', stageHint: p => ((p?.duration ?? 0) >= 1.5 ? { stage: 'environment', weight: 2 } : null), ui: { generated: true }, family: 'space', label: 'Hall (algorithmisch)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(p?.duration ?? 2.2), measured: true }), degrade: { irLength: true },
     tail: p => p?.duration ?? 2.2,
     params: {
-      amount: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' },
-      duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer' },
-      decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen' }
+      amount: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer', ui: { min: 0.1, max: 10, step: 0.1 } },
+      decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen', ui: { min: 0.1, max: 6, step: 0.1 } }
     } },
-  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { enabledId: 'fxDelEnabled' }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: c(4),
+  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { generated: true }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: c(4),
     tail: p => {
       const time = Math.max(0.01, p?.time ?? 0.22);
       const fb = Math.max(0, Math.min(0.95, p?.feedback ?? 0.35));
@@ -79,97 +83,99 @@ export const MODULES = [
       return Math.min(10, time * repeats);
     },
     params: {
-      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit' },
-      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung' },
-      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' }
+      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } }
     } },
-  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxChorusEnabled' }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: c(4),
+  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: c(4),
     params: {
-      baseDelay: { def: 15, range: [1, 40], unit: 'ms', label: 'Grundverzögerung' },
-      depth: { def: 8, range: [0, 20], unit: 'ms', label: 'Tiefe' },
-      rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate' },
-      mix: { def: 0.3, range: [0, 1], label: 'Mix' }
+      baseDelay: { def: 15, range: [1, 40], unit: 'ms', label: 'Grundverzögerung', ui: { min: 5, max: 40, step: 0.5 } },
+      depth: { def: 8, range: [0, 20], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 20, step: 0.5 } },
+      rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      mix: { def: 0.3, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } },
-  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { enabledId: 'fxFlangerEnabled' }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS, cost: c(7),
+  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS, cost: c(7),
     params: {
-      baseDelay: { def: 2, range: [0.5, 10], unit: 'ms', label: 'Grundverzögerung' },
-      depth: { def: 1.5, range: [0, 10], unit: 'ms', label: 'Tiefe' },
-      rate: { def: 0.2, range: [0.01, 10], unit: 'Hz', label: 'Rate' },
-      feedback: { def: 0.5, range: [0, 0.95], label: 'Rückkopplung' },
-      mix: { def: 0.5, range: [0, 1], label: 'Mix' }
+      baseDelay: { def: 2, range: [0.5, 10], unit: 'ms', label: 'Grundverzögerung', ui: { min: 0.5, max: 5, step: 0.1 } },
+      depth: { def: 1.5, range: [0, 10], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 10, step: 0.1 } },
+      rate: { def: 0.2, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      feedback: { def: 0.5, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } },
-  { key: 'tremolo', ui: { enabledId: 'fxTremoloEnabled' }, family: 'modulation', label: 'Tremolo', layerOrder: 130, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'tremolo', ui: { generated: true }, family: 'modulation', label: 'Tremolo', layerOrder: 130, consumers: ALL_CONSUMERS, cost: c(2),
     params: {
-      rate: { def: 5, range: [0.1, 20], unit: 'Hz', label: 'Rate' },
-      depth: { def: 0.5, range: [0, 1], label: 'Tiefe' },
-      waveform: { def: 'sine', enum: ['sine', 'triangle', 'square'], label: 'Wellenform' }
+      rate: { def: 5, range: [0.1, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.1, max: 20, step: 0.1 } },
+      depth: { def: 0.5, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      waveform: { def: 'sine', enum: ['sine', 'triangle', 'square'], label: 'Wellenform', ui: { options: { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck' } } }
     } },
-  { key: 'eq', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxEqEnabled' }, family: 'eq', label: '3-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(3),
+  { key: 'eq', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: '3-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(3),
     params: {
-      low: { def: 0, range: [-18, 18], unit: 'dB', label: 'Tiefen' },
-      mid: { def: 0, range: [-18, 18], unit: 'dB', label: 'Mitten' },
-      high: { def: 0, range: [-18, 18], unit: 'dB', label: 'Höhen' }
+      low: { def: 0, range: [-18, 18], unit: 'dB', label: 'Tiefen', ui: { min: -18, max: 18, step: 1, signed: true } },
+      mid: { def: 0, range: [-18, 18], unit: 'dB', label: 'Mitten', ui: { min: -18, max: 18, step: 1, signed: true } },
+      high: { def: 0, range: [-18, 18], unit: 'dB', label: 'Höhen', ui: { min: -18, max: 18, step: 1, signed: true } }
     } },
-  { key: 'eq10', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxEq10Enabled' }, family: 'eq', label: '10-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(12),
-    params: { bands: { def: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bands: true, label: 'Bänder' } } },
-  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxCompEnabled' }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(12.5),
+  { key: 'eq10', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: '10-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(12),
+    params: { bands: { def: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bands: true, label: 'Bänder', ui: { gain: { min: -18, max: 18, step: 1 }, q: { min: 0.3, max: 10, step: 0.1, def: 1.4 } } } } },
+  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(12.5),
     params: {
-      threshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Schwelle' },
-      knee: { def: 30, range: [0, 40], unit: 'dB', label: 'Knie' },
-      ratio: { def: 12, range: [1, 20], label: 'Verhältnis' },
-      attack: { def: 0.003, range: [0, 1], unit: 's', label: 'Attack' },
-      release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release' }
+      threshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Schwelle', ui: { min: -60, max: 0, step: 1 } },
+      knee: { def: 30, range: [0, 40], unit: 'dB', label: 'Knie', ui: { min: 0, max: 40, step: 1 } },
+      ratio: { def: 12, range: [1, 20], label: 'Verhältnis', ui: { min: 1, max: 20, step: 0.5, unit: ':1' } },
+      attack: { def: 0.003, range: [0, 1], unit: 's', label: 'Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
+      release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } }
     } },
-  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxLimEnabled' }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(16),
+  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(16),
     params: {
-      threshold: { def: -1, range: [-24, 0], unit: 'dB', label: 'Schwelle' },
-      knee: { def: 0, raw: true, unit: 'dB', label: 'Knie' },
-      ratio: { def: 20, raw: true, label: 'Verhältnis' },
-      attack: { def: 0.001, raw: true, unit: 's', label: 'Attack' },
-      release: { def: 0.08, raw: true, unit: 's', label: 'Release' }
+      threshold: { def: -1, range: [-24, 0], unit: 'dB', label: 'Schwelle', ui: { min: -20, max: 0, step: 0.5 } },
+      knee: { def: 0, raw: true, unit: 'dB', label: 'Knie', ui: { hidden: true } },
+      ratio: { def: 20, raw: true, label: 'Verhältnis', ui: { hidden: true } },
+      attack: { def: 0.001, raw: true, unit: 's', label: 'Attack', ui: { hidden: true } },
+      release: { def: 0.08, raw: true, unit: 's', label: 'Release', ui: { hidden: true } }
     } },
-  { key: 'distortion', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxDistEnabled' }, family: 'distortion', label: 'Verzerrung', layerOrder: 70, consumers: ALL_CONSUMERS,
+  { key: 'distortion', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'distortion', label: 'Verzerrung', layerOrder: 70, consumers: ALL_CONSUMERS,
     cost: p => ({ base: ({ none: 1, '2x': 5, '4x': 10 })[p?.oversample ?? '4x'] ?? 10, measured: true }), degrade: { oversample: true },
     // mode: softClip (Standard), hardClip oder bitcrush. Presets ohne „mode“-Feld fallen über den switch-default in
     // _buildDistortionCurve() auf softClip zurück — kein Migrationsschritt nötig.
     params: {
-      mode: { def: 'softClip', enum: ['softClip', 'hardClip', 'bitcrush'], label: 'Modus' },
-      amount: { def: 40, range: [0, 100], label: 'Stärke' },
-      oversample: { def: '4x', enum: ['none', '2x', '4x'], label: 'Oversampling' }
+      mode: { def: 'softClip', enum: ['softClip', 'hardClip', 'bitcrush'], label: 'Modus', ui: { options: { softClip: 'Weich (Sättigung)', hardClip: 'Hart (Clipping)', bitcrush: 'Bitcrush (Lo-Fi)' } } },
+      amount: { def: 40, range: [0, 100], label: 'Stärke', ui: { min: 0, max: 100, step: 1 } },
+      oversample: { def: '4x', enum: ['none', '2x', '4x'], label: 'Oversampling', ui: { options: { none: 'Kein', '2x': '2×', '4x': '4×' } } }
     } },
-  { key: 'ringmod', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxRingmodEnabled' }, family: 'distortion', label: 'Ringmodulation', layerOrder: 80, consumers: ALL_CONSUMERS, cost: c(2.5),
+  { key: 'ringmod', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'distortion', label: 'Ringmodulation', layerOrder: 80, consumers: ALL_CONSUMERS, cost: c(2.5),
     params: {
-      frequency: { def: 440, range: [20, 5000], unit: 'Hz', label: 'Trägerfrequenz' },
-      mix: { def: 1, range: [0, 1], label: 'Mix' }
+      frequency: { def: 440, range: [20, 5000], unit: 'Hz', label: 'Trägerfrequenz', ui: { min: 20, max: 5000, step: 1, scale: 'log', digits: 0 } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } },
-  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { enabledId: 'fxPitchEnabled' }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch'], cost: c(28),
-    params: { semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne' } } },
-  { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { enabledId: 'fxIrEnabled' }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
+  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch'], cost: c(28),
+    params: { semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne', ui: { min: -12, max: 12, step: 1, signed: true } } } },
+  { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { generated: true }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(getIRDuration(p?.impulse ?? null)), measured: true }), degrade: { irLength: true },
     tail: p => getIRDuration(p?.impulse ?? null),
     params: {
-      impulse: { def: null, impulse: true, label: 'Raum' },
-      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)' }
+      impulse: { def: null, impulse: true, label: 'Raum', ui: { emptyLabel: 'Standard', options: {
+        small_room: '📦 Kleiner Raum', hallway: '🏢 Flur', bathroom: '🚿 Badezimmer', tight_room: '🔲 Enges Zimmer', cave: '🏔️ Höhle',
+        tunnel: '🚇 Tunnel', cathedral: '⛪ Kathedrale', huge_hall: '🏛️ Riesiger Saal', plate: '🪩 Plate' } } },
+      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } },
-  { key: 'spatial', ui: { enabledId: 'fxSpatialEnabled' }, family: 'position', label: 'Räumliche Position (3D)', layerOrder: 150, consumers: ALL_CONSUMERS, cost: c(4), degrade: { hrtf: true },
+  { key: 'spatial', ui: { generated: true }, family: 'position', label: 'Räumliche Position (3D)', layerOrder: 150, consumers: ALL_CONSUMERS, cost: c(4), degrade: { hrtf: true },
     params: {
-      x: { def: 0, range: [-1000, 1000], label: 'X' },
-      y: { def: 0, range: [-1000, 1000], label: 'Y' },
-      z: { def: -1, range: [-1000, 1000], label: 'Z' },
-      rolloff: { def: 1, range: [0, 10], label: 'Rolloff' },
-      maxDistance: { def: 10000, range: [1, 100000], label: 'Max. Distanz' },
-      refDistance: { def: 1, range: [0, 1000], label: 'Referenzdistanz' },
-      coneInnerAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel innen' },
-      coneOuterAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel außen' },
-      coneOuterGain: { def: 0, range: [0, 1], label: 'Kegel-Restpegel' }
+      x: { def: 0, range: [-1000, 1000], label: 'X (links ↔ rechts)', ui: { min: -10, max: 10, step: 0.1 } },
+      y: { def: 0, range: [-1000, 1000], label: 'Y (unten ↔ oben)', ui: { min: -10, max: 10, step: 0.1 } },
+      z: { def: -1, range: [-1000, 1000], label: 'Z (vorn ↔ hinten)', ui: { min: -10, max: 10, step: 0.1 } },
+      rolloff: { def: 1, range: [0, 10], label: 'Rolloff', ui: { min: 0, max: 5, step: 0.1 } },
+      maxDistance: { def: 10000, range: [1, 100000], label: 'Max. Distanz', ui: { hidden: true } },
+      refDistance: { def: 1, range: [0, 1000], label: 'Referenzdistanz', ui: { hidden: true } },
+      coneInnerAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel innen', ui: { hidden: true } },
+      coneOuterAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel außen', ui: { hidden: true } },
+      coneOuterGain: { def: 0, range: [0, 1], label: 'Kegel-Restpegel', ui: { hidden: true } }
     } },
   // attack/release: Compressor-Näherung (siehe _collectSegments). Presets ohne diese Felder funktionieren unverändert,
   // da die Engine sie mit `?? 5`/`?? 150` defaultet. (B-03: ersetzt in Phase 11 durch ein echtes Gate.)
-  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { enabledId: 'fxNoiseGateEnabled' }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: c(17.5),
+  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: c(17.5),
     params: {
-      threshold: { def: -50, range: [-100, 0], unit: 'dB', label: 'Schwelle' },
-      attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack' },
-      release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release' }
+      threshold: { def: -50, range: [-100, 0], unit: 'dB', label: 'Schwelle', ui: { min: -80, max: -10, step: 1 } },
+      attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { hidden: true } },
+      release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { hidden: true } }
     } }
 ];
 

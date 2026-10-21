@@ -21,7 +21,7 @@
  * Kein innerHTML mit Nutzerdaten (Preset-/Layer-Namen können benutzerdefiniert sein): nur textContent und iconSvg().
  */
 
-import { _fxEditContext, loadLayerParamsToForm, readLayerParamsFromForm, isLayerFormDirty, resetLayerForm, wireLayerForm, updateEffectSectionVisibility } from './sound-modal.js';
+import { _fxEditContext, readEffectsFromUI, loadLayerParamsToForm, readLayerParamsFromForm, isLayerFormDirty, resetLayerForm, wireLayerForm, updateEffectSectionVisibility } from './sound-modal.js';
 import { getDraft, commitStage, initFxPipelineEditor, layerLabel, render as renderOverview } from '../ui/fx-pipeline-editor.js';
 import {
   STAGE_ORDER, PIPELINE_STAGES, findLayer, moveLayer, duplicateLayer, removeLayer, isLayerModified, fillLayerParams, sparsifyParams
@@ -32,6 +32,7 @@ import { createModalDraftGuard } from '../modalGuards.js';
 import { setupTouchRowReorder } from '../ui/row-reorder.js';
 import { iconSvg } from '../ui/icons.js';
 import { updateFxPresetActionButtons, presetActions } from '../events/register-preset-events.js';
+import { schedulePreviewUpdate } from '../audio/preview.js';
 
 const clone = x => JSON.parse(JSON.stringify(x));
 const $ = id => document.getElementById(id);
@@ -235,6 +236,24 @@ function _onPickerClick(e) {
 
 const _layerParamsNow = () => (isLayerFormDirty() ? readLayerParamsFromForm() : L.draft.params);
 
+/**
+ * Effektstand für die Vorschau (Phase 7). Basis ist der DRAFT (nicht die Stufen-Arbeitskopie: Stufen-Operationen wie
+ * Verschieben/Hinzufügen wirken erst bei „Übernehmen“). Ist das Layer-Modal offen, ersetzt das aktuelle Layer-Formular die
+ * Parameter dieses Layers, sofern der Layer im Draft schon existiert — so folgt die Vorschau den Reglern, ohne dass der Draft
+ * (oder gar der gespeicherte Sound) vor „Übernehmen“ verändert wird.
+ */
+export function currentPreviewEffects() {
+  const fx = readEffectsFromUI();                       // Kopie des Drafts inkl. Master-Schalter
+  if (L.draft) {
+    const f = findLayer(fx, L.id);
+    if (f) f.layer.params = sparsifyParams(_layerParamsNow());
+  }
+  return fx;
+}
+
+/** Vorschau (falls sie läuft) auf den aktuellen Effektstand bringen; mehrere Ereignisse pro Frame werden zusammengefasst. */
+export function pushPreviewUpdate() { schedulePreviewUpdate(currentPreviewEffects); }
+
 export function openLayerModal(layerId) {
   const f = M.eff ? findLayer(M.eff, layerId) : null;
   if (!f) return;
@@ -321,7 +340,7 @@ function _applyLayer() {
 export function initFxPipelineModals() {
   if (_wired) return; _wired = true;
 
-  initFxPipelineEditor({ openStage: openStageModal, changed: () => updateEffectSectionVisibility() });
+  initFxPipelineEditor({ openStage: openStageModal, changed: () => { updateEffectSectionVisibility(); pushPreviewUpdate(); } });   // Phase 7: Übernehmen/Stufe an-aus → Vorschau
 
   _stageGuard = createModalDraftGuard({
     modalId: 'fxStageModal', isDirty: _stageDirty,
@@ -377,8 +396,11 @@ export function initFxPipelineModals() {
 
   // Layer-Modal
   wireLayerForm(() => { if ($('fxLayerModal')?.classList.contains('show')) _renderLayerInfo(); });
+  // Phase 7 (B-05): Regler im Layer-Formular wirken sofort auf eine laufende Vorschau. Nur echte Nutzereingaben — das programmatische
+  // Befüllen (Preset anwenden, Zurücksetzen) löst bewusst kein Live-Update aus; die nächste Eingabe übernimmt den ganzen Formularstand.
+  for (const ev of ['input', 'change']) $('fxLayerForm')?.addEventListener(ev, e => { if (e.isTrusted || e.fxUser === true) pushPreviewUpdate(); });   // fxUser: Tastatur/Doppelklick der generierten Regler (ui/effects/controls.js)
   $('btnFxLayerApply')?.addEventListener('click', _applyLayer);
   $('btnFxLayerRestore')?.addEventListener('click', _restorePreset);
   $('btnFxReset')?.addEventListener('click', () => { resetLayerForm(); _renderLayerInfo(); });
-  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; updateFxPresetActionButtons(''); });
+  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; updateFxPresetActionButtons(''); pushPreviewUpdate(); });   // Abbrechen/Übernehmen: Vorschau zurück auf den Draft
 }

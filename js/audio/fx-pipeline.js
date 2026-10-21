@@ -408,9 +408,10 @@ export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_C
  * Hängt `src → Pipeline → dest` an (Ambient, Musik, Noise-Preview). Async, weil das Pitch-Worklet pro
  * Context geladen werden muss. `plan`/`graph` im Ergebnis für Tail/Dispose.
  */
-export async function connectPipeline(ctx, src, plan, dest, { caps = TARGET_CAPS.ambient, numChannels = 2 } = {}) {
+export async function connectPipeline(ctx, src, plan, dest, { caps = TARGET_CAPS.ambient, numChannels = 2, live = false } = {}) {
   await preparePipelineContext(ctx, plan, caps);
-  const graph = buildPipelineGraph(ctx, plan, { numChannels, caps });
+  // live (Phase 7): Ein-/Ausgangs-Gain + swapTo/update für die Live-Vorschau; Standard false = bit-gleich zu Phase 6.
+  const graph = buildPipelineGraph(ctx, plan, { numChannels, caps, live });
   if (graph.detuneSemitones && src.detune) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) { /* Worklet-Knoten */ } }
   if (graph.input) { src.connect(graph.input); graph.output.connect(dest); }
   else src.connect(dest);

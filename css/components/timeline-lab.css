@@ -33,6 +33,19 @@
   transition: height 0.05s linear;
   border-radius: 2px;
 }
+/* Phase 6: Clip-Anzeige als Text (nicht nur Farbe) */
+.master-meter { align-self: center; }
+.master-meter.is-clip .master-meter__fill { background: #c33; }
+.master-meter__clip {
+  align-self: center;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #c33;
+}
+.master-meter__clip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .master-meter__fill { transition: none; } }
 
 /* ── Timeline ─────────────────── */
 .view-timeline {

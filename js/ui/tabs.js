@@ -5,6 +5,7 @@
 import { APP, CItems } from '../core/state.js';
 import { iconHtmlOr } from '../utils.js';
 import { getAllPresets, PRESET_GROUPS } from '../presets.js';
+import { applyMasterVolume, applySafetyLimiter } from '../audio/engine/output.js';
 // Zirkulärer Import (grid.js importiert umgekehrt
 // updateCategories aus diesem Modul) — unkritisch, s. Kommentar in grid.js.
 import { renderGrid } from './grid.js';
@@ -149,6 +150,9 @@ export function applyProfileSettings() {
   if (mv) mv.value = APP.globalSettings.masterVol;
   const mvNum = document.getElementById('masterVolNum');
   if (mvNum) mvNum.value = Math.round(APP.globalSettings.masterVol * 100);
+  applyMasterVolume(APP.globalSettings.masterVol ?? 1);   // Phase 6: Profil-/Importwechsel wirkt auch auf den Live-Bus
+  applySafetyLimiter(APP.globalSettings.safetyLimiter !== false);
+  const sl = document.getElementById('setSafetyLimiter'); if (sl) sl.checked = APP.globalSettings.safetyLimiter !== false;
   const so = document.getElementById('setOverlap');    if (so) so.checked = APP.globalSettings.overlap;
   const sr = document.getElementById('setStopReplay'); if (sr) sr.checked = APP.globalSettings.stopReplay;
   const sm = document.getElementById('setMultiClick'); if (sm) sm.checked = APP.globalSettings.multiClick;
@@ -163,7 +167,7 @@ export function applyProfileSettings() {
   // Keep the "Wiedergabe" popover trigger's active-dot in sync whenever
   // settings are (re)applied — e.g. after import/reset, not just on toggle.
   const gs = APP.globalSettings;
-  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
+  const playbackIsDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && gs.safetyLimiter !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !playbackIsDefault);
 }
 

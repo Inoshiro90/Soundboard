@@ -51,6 +51,12 @@
               <input type="checkbox" id="setReverbShare" checked>
               Hall geteilt (spart Rechenlast)
             </label>
+            <!-- Phase 6 (AE-07): Safety-Limiter am Ausgang. An = Spitzen werden bei −0,3 dBFS begrenzt (Summenübersteuerung bei vielen
+                 gleichzeitigen Sounds). Aus = Ausgang ohne Begrenzung (das Gerät beschneidet Pegel über 0 dBFS hart). Wirkt sofort. -->
+            <label class="popover-check" title="Begrenzt Spitzen am Ausgang bei −0,3 dBFS, damit viele gleichzeitige laute Sounds nicht verzerrt übersteuern. Aus: keine Begrenzung.">
+              <input type="checkbox" id="setSafetyLimiter" checked>
+              Ausgangsbegrenzer (Übersteuerungsschutz)
+            </label>
             <!-- Phase 3a (AE-16): Stimmenlimit. Auto = Rechenbudget des Geräts; bei Überlast werden aufwendige Effekte zuerst vereinfacht,
                  danach die älteste Stimme ausgeblendet. Musik und Ambient werden nie entfernt. Zahl = feste Höchstzahl gleichzeitiger Sounds. -->
             <label class="popover-check popover-check--select" for="setVoiceLimit" title="Auto: das Gerät bestimmt, wie viele aufwendige Sounds gleichzeitig laufen; bei Überlast werden Effekte vereinfacht, dann die älteste Stimme ausgeblendet. Musik und Ambient bleiben immer.">

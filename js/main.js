@@ -2,7 +2,7 @@
  * main.js — App Entry Point
  *
  * AudioContext is never created on load.
- * _startMasterMeter() is deferred until first user interaction.
+ * startMasterMeter() (ui/meters.js) is deferred until first user interaction.
  */
 import { load }                        from './storage/persistence.js';
 import { registerEvents }              from './events/index.js';
@@ -21,6 +21,7 @@ import { hydrateIconSlots }            from './ui/icons.js';
 import { initModalStack }              from './ui/modal-stack.js';
 import { loadFragments }               from './fragmentLoader.js';
 import { toast }                       from './notifications.js';
+import { startMasterMeter }            from './ui/meters.js';
 
 // Modal-Fragmente: alle beim Start laden und abwarten
 const FRAGMENT_URLS = [
@@ -100,47 +101,13 @@ async function init() {
   const _onFirstInteraction = async () => {
     const ctx = actx(); // safe to create now
     await ensurePitchWorklet();
-    _startMasterMeter(ctx);
+    startMasterMeter(ctx);   // Phase 6: Pegel des Master-Busses (B-08)
   };
   document.body.addEventListener('click',       _onFirstInteraction, { once: true });
   document.body.addEventListener('keydown',     _onFirstInteraction, { once: true });
   document.body.addEventListener('touchstart',  _onFirstInteraction, { once: true });
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
-}
-
-function _startMasterMeter(ctx) {
-  // Connect a silent analyser to the destination — does NOT affect audio routing
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 256;
-  // Do NOT connect analyser.connect(ctx.destination) — that would double the signal.
-  // Instead we listen passively by creating a gain node that taps into destination.
-  // Since we cannot tap destination in WebAudio, we approximate with a separate analyser
-  // on a zero-gain node connected to destination (for meter visual only).
-  const tap  = ctx.createGain(); tap.gain.value = 0; // silent
-  tap.connect(ctx.destination);
-  analyser.connect(tap);
-  APP.masterBus._analyser = analyser;
-
-  const data = new Uint8Array(analyser.fftSize);
-  let _lastRaf = 0;
-  function tick(ts) {
-    // Throttle to ~30fps for performance
-    if (ts - _lastRaf < 33) { requestAnimationFrame(tick); return; }
-    _lastRaf = ts;
-    analyser.getByteTimeDomainData(data);
-    let peak = 0;
-    for (let i = 0; i < data.length; i++) { const v = Math.abs((data[i] / 128) - 1); if (v > peak) peak = v; }
-    APP.masterBus.peakL = peak; APP.masterBus.peakR = peak;
-    const pct = (peak * 100).toFixed(1);
-    const hue = 120 - peak * 120;
-    const mL  = document.getElementById('meterBarL');
-    const mR  = document.getElementById('meterBarR');
-    if (mL) { mL.style.height = pct + '%'; mL.style.background = `hsl(${hue},80%,45%)`; }
-    if (mR) { mR.style.height = pct + '%'; mR.style.background = `hsl(${hue},80%,45%)`; }
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
 }
 
 init();

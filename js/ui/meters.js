@@ -3,6 +3,9 @@
  */
 
 import { getPeak, getRms } from '../analysis.js';
+import { APP } from '../core/state.js';
+import { busesOf } from '../audio/engine/buses.js';
+import { createMeterState, dbToFraction, meterText } from '../audio/engine/meters.js';
 
 // ─── PEAK/RMS-METER ─────────────────────────────────────────
 // Läuft ausschließlich während einer aktiven Vorschau-Wiedergabe (siehe
@@ -91,3 +94,91 @@ function _renderPeakRmsMeter(peakDb, rmsDb, peakHoldDb) {
   }
 }
 
+
+// ─── MASTER-METER (Phase 6) ──────────────────────────────────
+// Stereo-Peak des Master-Busses (vor dem Begrenzer), ≈ 30 fps. DOM: #masterMeter mit #meterBarL/#meterBarR (Füllbalken),
+// #meterClip (Textanzeige „Clip“, nicht nur Farbe). Rechenlogik: audio/engine/meters.js. Ohne Bus (kein Live-Context) passiert nichts.
+
+let _masterRaf = null;
+
+/** Startet das Master-Meter für den Live-Context `ctx` (idempotent). */
+export function startMasterMeter(ctx) {
+  const bus = busesOf(ctx)?.master;
+  if (!bus || _masterRaf != null) return;
+  const state = createMeterState();
+  const bufL = new Float32Array(bus.analyserL.fftSize), bufR = new Float32Array(bus.analyserR.fftSize);
+  const root = document.getElementById('masterMeter');
+  const barL = document.getElementById('meterBarL'), barR = document.getElementById('meterBarR');
+  const clipEl = document.getElementById('meterClip');
+  let last = 0, lastText = '';
+  const tick = ts => {
+    _masterRaf = requestAnimationFrame(tick);
+    if (ts - last < 33) return;   // ≈ 30 fps
+    last = ts;
+    const { peakL, peakR } = bus.readPeaks(bufL, bufR);
+    const m = state.update(peakL, peakR, ts);
+    APP.masterBus.peakL = peakL; APP.masterBus.peakR = peakR; APP.masterBus.clip = m.clip;
+    if (barL) barL.style.height = (dbToFraction(m.dbL) * 100).toFixed(1) + '%';
+    if (barR) barR.style.height = (dbToFraction(m.dbR) * 100).toFixed(1) + '%';
+    if (clipEl) clipEl.hidden = !m.clip;
+    if (root) {
+      root.classList.toggle('is-clip', m.clip);
+      const txt = meterText(m);   // Textalternative nur bei Änderung des gerundeten Texts schreiben (Screenreader-Ruhe)
+      if (txt !== lastText) { lastText = txt; root.title = txt; }
+    }
+  };
+  _masterRaf = requestAnimationFrame(tick);
+}
+
+/** Stoppt das Master-Meter. */
+export function stopMasterMeter() { if (_masterRaf != null) { cancelAnimationFrame(_masterRaf); _masterRaf = null; } }
+
+
+// ─── VORSCHAU-METER (Phase 7) ─────────────────────────────────
+// Stereo-Peak des Preview-Busses (eigener Abgriff, beeinflusst den Master-Bus nie — Invariante 5), ≈ 30 fps, nur solange die
+// Vorschau läuft. DOM: #previewMeter mit #previewMeterBarL/R, Text #previewMeterText („L −6,0 dB · R −6,0 dB“, bei Clip mit „Clip“,
+// nicht nur Farbe). Der Text wird nur bei Änderung des gerundeten Werts geschrieben (Screenreader-Ruhe).
+
+let _previewRaf = null;
+const _PREVIEW_METER_SUFFIXES = ['', 'Layer'];   // gleiche Anzeige im Effekt-Dialog und im Layer-Modal (IDs previewMeter[Layer], …BarL/R, …Text)
+const _pm = (sfx) => ({
+  root: document.getElementById('previewMeter' + sfx), barL: document.getElementById('previewMeterBarL' + sfx),
+  barR: document.getElementById('previewMeterBarR' + sfx), txt: document.getElementById('previewMeterText' + sfx)
+});
+
+/** Startet die Vorschau-Pegelanzeige für den Live-Context `ctx` (idempotent). */
+export function startPreviewMeter(ctx) {
+  const bus = busesOf(ctx)?.preview;
+  if (!bus || _previewRaf != null) return;
+  const state = createMeterState();
+  const bufL = new Float32Array(bus.analyserL.fftSize), bufR = new Float32Array(bus.analyserR.fftSize);
+  const sets = _PREVIEW_METER_SUFFIXES.map(_pm);
+  for (const m of sets) if (m.root) m.root.hidden = false;
+  let last = 0, lastText = '';
+  const tick = ts => {
+    _previewRaf = requestAnimationFrame(tick);
+    if (ts - last < 33) return;
+    last = ts;
+    const { peakL, peakR } = bus.readPeaks(bufL, bufR);
+    const st = state.update(peakL, peakR, ts);
+    const txt = meterText(st), changed = txt !== lastText; lastText = txt;
+    for (const m of sets) {
+      if (m.barL) m.barL.style.height = (dbToFraction(st.dbL) * 100).toFixed(1) + '%';
+      if (m.barR) m.barR.style.height = (dbToFraction(st.dbR) * 100).toFixed(1) + '%';
+      if (m.root) m.root.classList.toggle('is-clip', st.clip);
+      if (changed) { if (m.txt) m.txt.textContent = txt; if (m.root) m.root.setAttribute('aria-label', 'Vorschau-Pegel ' + txt); }   // Text nur bei Änderung (Screenreader-Ruhe)
+    }
+  };
+  _previewRaf = requestAnimationFrame(tick);
+}
+
+/** Stoppt die Vorschau-Pegelanzeige und blendet sie aus. */
+export function stopPreviewMeter() {
+  if (_previewRaf != null) { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(_previewRaf); _previewRaf = null; }
+  for (const m of _PREVIEW_METER_SUFFIXES.map(_pm)) {
+    if (m.root) { m.root.hidden = true; m.root.classList.remove('is-clip'); }
+    if (m.barL) m.barL.style.height = '0%';
+    if (m.barR) m.barR.style.height = '0%';
+    if (m.txt) m.txt.textContent = '';
+  }
+}

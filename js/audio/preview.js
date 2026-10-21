@@ -11,6 +11,7 @@ import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSoundGraph } from '../renderPipeline.js';
 import { actx } from './context.js';
 import { outputFor, connectToOutput } from './engine/output.js';   // Phase 4: einziger Ausgang
+import { startPreviewMeter, stopPreviewMeter } from '../ui/meters.js';   // Phase 7: Peak-Anzeige der Vorschau
 import { resolvePlan, connectPipeline, TARGET_CAPS } from './fx-pipeline.js';
 import { asPipelineEffects } from '../fx-model.js';
 import { buildNoiseGenerator } from '../generators.js';
@@ -44,33 +45,89 @@ function _stopPreviewSourceOnly() {
 }
 
 /**
- * Zentrale, einzige Cleanup-Stelle für die Effekt-Editor-Preview
- *. Wird aufgerufen bei: Stop-Klick, natürlichem Ende,
- * Start einer neuen Preview (ersetzt die alte), Modal-Schließen,
- * Speichern und Abbrechen.
+ * Zentrale, einzige Cleanup-Stelle für die Effekt-Editor-Preview (PreviewSession, Phase 7).
+ * Wird aufgerufen bei: Stop-Klick, Ende des Nachklangs, Start einer neuen Preview (ersetzt die alte),
+ * Modal-Schließen, Speichern und Abbrechen. Sofort und ohne Auslauf — der Nachklang nach dem natürlichen
+ * Ende (siehe `_onSourceEnded`) wird dabei bewusst abgebrochen.
+ *
+ * Phase 7 (B-06 strukturell): Die Quelle wird als Buffer-Referenz übergeben, es gibt keine Alias-Einträge
+ * (`_fxpreview_*`/`_ambpreview_*`) mehr in `APP.audioBuffers`.
  */
-const PREVIEW_ALIAS_PREFIXES = ['_fxpreview_', '_ambpreview_'];
-
-/**
- * Entfernt alle Preview-Aliase aus dem Buffer-Cache (`_fxpreview_<id>_<slot>` / `_ambpreview_<id>_<slot>`).
- * Die Event-Handler registrieren diese Schlüssel vor jeder Vorschau (gleicher AudioBuffer wie `_ed_N`/Original);
- * ohne Aufräumen wuchs der Cache je Sound/Entwurf und lieferte später veraltete Buffer (B-06).
- */
-export function releasePreviewAliases() {
-  for (const k of Object.keys(APP.audioBuffers)) {
-    if (PREVIEW_ALIAS_PREFIXES.some(pre => k.startsWith(pre))) delete APP.audioBuffers[k];
-  }
-}
-
-export function stopEffectPreview({ keepAliases = false } = {}) {
+export function stopEffectPreview() {
   const p = APP.audioPreview;
   p.token++; // entwertet jede noch wartende startEffectPreview()-Anfrage (Decode/Graph-Aufbau)
+  if (p.endTimer) { clearTimeout(p.endTimer); p.endTimer = null; }
+  stopPreviewMeter();
   _stopPreviewSourceOnly();
-  p.playing = false; p.loading = false;
+  p.playing = false; p.loading = false; p.ending = false; p.bypass = false;
   if (p.dispose) { try { p.dispose(); } catch (e) {} p.dispose = null; }   // LFOs/Träger/Worklets der Effektkette freigeben
   p.src = null; p.masterGain = null; p.runtime = null;
   p.soundId = null; p.slotIdx = null; p.kind = null;
-  if (!keepAliases) releasePreviewAliases();   // beim Neustart (startEffectPreview) bleiben die gerade vorgewärmten Aliase erhalten
+  _updatePreviewButton();
+}
+
+/**
+ * Live-Update der laufenden Vorschau (Phase 7, B-05): `effects` = aktueller Dialogzustand (readEffectsFromUI()).
+ * Parameter wirken sofort (setTargetAtTime), eine Strukturänderung (Modul an/aus, Layer) wird per swapTo überblendet.
+ * Rückgabe: Promise (resolved, wenn angewendet) oder null, wenn keine live-fähige Vorschau läuft.
+ * Kosten der Voice werden bei Updates nicht nachgemeldet (wie bei der Musik).
+ */
+export function updatePreviewEffects(effects) {
+  const p = APP.audioPreview;
+  const rt = p.runtime;
+  if (!p.playing || !rt || !rt.live || rt.disposed) return null;
+  let plan;
+  try { plan = resolvePlan(asPipelineEffects(effects)); } catch (e) { console.warn('[preview] Plan ungültig:', e); return null; }
+  return Promise.resolve(rt.update(plan)).catch(e => console.warn('[preview] Live-Update fehlgeschlagen:', e));
+}
+
+let _rafPending = false, _getFx = null;
+/**
+ * Fasst Änderungsereignisse (z. B. Regler-`input`, 60+/s) pro Animationsframe zusammen und wendet dann EINEN Live-Update an.
+ * `getEffects` liefert den aktuellen Effektstand erst beim Anwenden (immer der neueste). Ohne laufende Vorschau: nichts zu tun.
+ */
+export function schedulePreviewUpdate(getEffects) {
+  if (!APP.audioPreview.playing) return;
+  _getFx = getEffects;
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    const f = _getFx; _getFx = null;
+    if (f && APP.audioPreview.playing) updatePreviewEffects(f());
+  });
+}
+
+/** Loop-Schalter der Vorschau (gilt ab dem nächsten Start; im Dialog als Hinweis am Button). */
+export function setPreviewLoop(on) {
+  APP.audioPreview.loop = !!on;
+  _updatePreviewButton();
+}
+
+/** A/B: Effekte klickfrei umgehen (true) bzw. wieder einschalten (false). Nur bei laufender Vorschau; Rückgabe = Erfolg. */
+export function setPreviewBypass(on) {
+  const p = APP.audioPreview;
+  if (!p.playing || !p.runtime || !p.runtime.live) return false;
+  if (!p.runtime.setPipelineBypass(!!on)) return false;
+  p.bypass = !!on;
+  _updatePreviewButton();
+  return true;
+}
+
+/**
+ * Natürliches Ende der Quelle: Die Session bleibt für den Nachklang (`runtime.tailSeconds()`) bestehen und
+ * räumt danach auf. Ohne nennenswerten Nachklang sofort (wie bisher). Ein Stop-Klick beendet sie jederzeit sofort.
+ */
+function _onSourceEnded(src) {
+  const p = APP.audioPreview;
+  // onended kann auch von einer bereits ERSETZTEN Quelle nachträglich feuern — nur reagieren, wenn es noch DIESE ist.
+  if (p.src !== src) return;
+  let tail = 0;
+  try { tail = p.runtime?.tailSeconds?.() ?? 0; } catch (e) { tail = 0; }
+  if (!(tail > 0.05)) { stopEffectPreview(); return; }
+  const myToken = p.token;
+  p.ending = true;
+  p.endTimer = setTimeout(() => { if (APP.audioPreview.token === myToken) stopEffectPreview(); }, Math.min(30, tail) * 1000 + 100);
   _updatePreviewButton();
 }
 
@@ -99,23 +156,22 @@ export function bindPreviewModalLifecycle(modalEl) {
 
 async function startEffectPreview(s, slotIdx, opts = {}) {
   const p = APP.audioPreview;
-  stopEffectPreview({ keepAliases: true }); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden (Aliase des neuen Starts bleiben)
+  stopEffectPreview(); // Eine evtl. laufende/ladende Preview immer zuerst sauber beenden
   const myToken = p.token; // stopEffectPreview() hat token bereits erhöht — dieser Aufruf "besitzt" ihn jetzt
 
   const slot = s.slots?.[slotIdx];
-  if (!slot?.data) { toast('Slot ' + (slotIdx + 1) + ' leer'); releasePreviewAliases(); return; }
+  if (!slot?.data) { toast('Slot ' + (slotIdx + 1) + ' leer'); return; }
 
   p.loading = true; _updatePreviewButton();
   actx(); // stellt AudioContext innerhalb der User-Geste sicher
   const ctx = actx();
 
-  // Bestehenden Cache verwenden, nicht unnötig neu dekodieren.
-  let buf = APP.audioBuffers[bk(s.id, slotIdx)];
+  // Quelle als Buffer-Referenz (Phase 7): der Aufrufer löst den Entwurfs-/Cache-Buffer auf (`opts.buffer`), es wird nichts
+  // unter einer Preview-ID im Buffer-Cache abgelegt. Fallbacks: `opts.loadBuffer` (Entwurf: Audio liegt nur als IDB-Verweis
+  // vor), sonst regulärer Decode. Läuft im selben Token-Schutz.
+  let buf = opts.buffer || null;
   if (!buf) {
     try {
-      // opts.loadBuffer: Aufrufer-spezifischer Lader (Editor-Entwurf: Buffer unter `_ed_N`, Audio
-      // liegt nur als IDB-Verweis vor). Ohne ihn fände getOrDecodeBuffer() unter der Preview-ID
-      // keinen IDB-Eintrag. Läuft im selben Token-Schutz wie der reguläre Decode.
       buf = opts.loadBuffer
         ? await opts.loadBuffer(slotIdx)
         : await getOrDecodeBuffer(s.id, slotIdx, slot.data, ctx);
@@ -128,16 +184,17 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
 
   if (!buf) {
     toast('Audio konnte nicht geladen werden', 'err');
-    p.loading = false; releasePreviewAliases(); _updatePreviewButton();
+    p.loading = false; _updatePreviewButton();
     return;
   }
 
   let graph;
   try {
-    // mode:'preview' — dieselbe Pipeline wie Live/Export.
+    // mode:'preview' — dieselbe Pipeline wie Live/Export. Phase 7: live:true (update/swapTo/A-B). Live-Runtime und geteilter Hall
+    // schließen sich aus (runtime.js) → Hall pro Stimme (klanglich exakt); keine Degradation, damit Updates denselben Plan wie der Start nutzen.
     const voiceRef = {};
-    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: outputFor(ctx, 'preview'), sharedReverb: APP.globalSettings.reverbShare !== false,
-      admit: makeAdmit({ kind: 'preview', id: s.id, loop: false, ref: voiceRef }), stagger });   // Phase 3a: gezählt, nie entzogen
+    graph = await renderSoundGraph(ctx, buf, slot, s, { mode: 'preview', destination: outputFor(ctx, 'preview'), live: true, loopPreview: !!p.loop,
+      admit: makeAdmit({ kind: 'preview', id: s.id, loop: !!p.loop, ref: voiceRef, share: false, noDegrade: true }), stagger });   // Phase 3a: gezählt, nie entzogen
     voiceRef.graph = graph;
   } catch (e) {
     console.error('[audio] Preview-Graph-Fehler:', e);
@@ -153,7 +210,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
 
   if (!graph) {
     toast('Vorschau-Fehler', 'err');
-    p.loading = false; releasePreviewAliases(); _updatePreviewButton();
+    p.loading = false; _updatePreviewButton();
     return;
   }
 
@@ -162,12 +219,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
   p.src = src; p.masterGain = masterGain; p.dispose = graph.dispose; p.runtime = graph.runtime;
   p.soundId = s.id; p.slotIdx = slotIdx; p.kind = 'buffer';
 
-  src.onended = () => {
-    // onended kann auch von einer bereits ERSETZTEN
-    // Quelle nachträglich feuern — nur reagieren, wenn es noch DIESE ist.
-    if (APP.audioPreview.src !== src) return;
-    stopEffectPreview();
-  };
+  src.onended = () => _onSourceEnded(src);
 
   try {
     graph.start(0);
@@ -179,6 +231,7 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
     return;
   }
   _updatePreviewButton();
+  startPreviewMeter(ctx);
 
   void dur; // (aktuell ungenutzt — Preview braucht keine Fortschrittsanzeige)
 }
@@ -230,7 +283,7 @@ export async function previewNoiseGenerator(g) {
   masterGain.gain.value = Number.isFinite(g.vol) ? g.vol : 0.7;
   // Gleiche Pipeline wie überall: Quelle → Medium → Umgebung → Hörer (Benutzerreihenfolge), dann masterGain.
   let conn = null;
-  try { conn = await connectPipeline(ctx, node, resolvePlan(asPipelineEffects(g.effects)), masterGain, { caps: TARGET_CAPS.noise, numChannels: 2 }); }
+  try { conn = await connectPipeline(ctx, node, resolvePlan(asPipelineEffects(g.effects)), masterGain, { caps: TARGET_CAPS.noise, numChannels: 2, live: true }); }
   catch (e) { console.error('[audio] Rauschgenerator-Pipeline-Fehler:', e); node.connect(masterGain); }
   if (myToken !== p.token) { try { conn?.dispose(); node.disconnect(); } catch (e) {} return; }
   connectToOutput(masterGain, 'preview');
@@ -239,6 +292,7 @@ export async function previewNoiseGenerator(g) {
   p.src = node; p.masterGain = masterGain; p.dispose = conn ? conn.dispose : null; p.runtime = conn?.graph?.runtime ?? null;
   p.soundId = '_noisepreview'; p.slotIdx = 0;
   _updatePreviewButton();
+  startPreviewMeter(ctx);
 
 }
 
@@ -258,7 +312,7 @@ function _updatePreviewButton() {
   const p = APP.audioPreview;
   const active = p.loading || p.playing;
   const label  = active ? 'Vorschau stoppen' : 'Vorschau abspielen';
-  ['btnPreviewSound', 'btnPreviewFx'].forEach(id => {
+  ['btnPreviewSound', 'btnPreviewFx', 'btnPreviewFxLayer'].forEach(id => {
     const btn = document.getElementById(id);
     if (!btn) return;
     const icon = btn.querySelector('.ui-icon');
@@ -275,5 +329,14 @@ function _updatePreviewButton() {
     const txt = btn.querySelector('.btn__label');
     if (txt) txt.textContent = active ? 'Stoppen' : 'Vorschau';
   });
+  // Phase 7: Loop (gilt ab dem nächsten Start) und A/B (nur bei laufender Vorschau, Effekte klickfrei umgehen).
+  for (const id of ['btnPreviewLoop', 'btnPreviewLoopLayer']) document.getElementById(id)?.setAttribute('aria-pressed', String(!!p.loop));
+  for (const id of ['btnPreviewAB', 'btnPreviewABLayer']) {
+    const abBtn = document.getElementById(id);
+    if (!abBtn) continue;
+    abBtn.disabled = !p.playing;
+    abBtn.setAttribute('aria-pressed', String(!!p.bypass));
+    abBtn.classList.toggle('is-active', !!p.bypass);
+    abBtn.title = p.bypass ? 'A/B: Effekte sind umgangen (Original) – erneut klicken für Effekte' : 'A/B: Effekte kurz umgehen und das Original hören';
+  }
 }
-

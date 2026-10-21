@@ -273,6 +273,14 @@
           <span class="board-toolbar__label">Lautstärke</span>
         </button>
 
+        <!-- Phase 6: Master-Pegel (Peak L/R vor dem Begrenzer). „Clip“ erscheint als Text, wenn der Pegel das Ceiling
+             (−0,3 dBFS) erreicht; der Wert steht zusätzlich im title/aria-label (ui/meters.js → startMasterMeter). -->
+        <div class="master-meter" id="masterMeter" role="img" aria-label="Master-Pegel links und rechts" title="Master-Pegel">
+          <span class="master-meter__bar"><span class="master-meter__fill" id="meterBarL"></span></span>
+          <span class="master-meter__bar"><span class="master-meter__fill" id="meterBarR"></span></span>
+          <span class="master-meter__clip" id="meterClip" hidden>Clip</span>
+        </div>
+
         <!-- Audio-Effekte des AKTIVEN Sound-Profils (#profModal). -->
         <button class="btn board-toolbar__btn" id="btnOpenSoundFxToolbar" disabled data-await-fragments
           title="Audio-Effekte des aktiven Profils" aria-label="Audio-Effekte öffnen">

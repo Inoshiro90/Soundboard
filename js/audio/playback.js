@@ -16,7 +16,7 @@ import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
 // erst zur Laufzeit (nicht beim Modul-Ladevorgang) aufgerufen werden.
 import { duckAmbient } from '../ambient/ambient-playback.js';
 import { actx, hasAudioContext } from './context.js';
-import { outputFor, connectToOutput } from './engine/output.js';   // Phase 4: einziger Ausgang
+import { outputFor, connectToOutput, applyMasterVolume } from './engine/output.js';   // Phase 4: einziger Ausgang
 import { makeAdmit, stagger, initVoiceBudget } from './engine/budget.js';   // Phase 3a: Voice-Budget
 
 // ─── DECODE ───────────────────────────────────────────────
@@ -312,6 +312,7 @@ export async function runMacro(m, callStack = []) {
               }
             } else if (action === 'volume') {
               APP.globalSettings.masterVol = Math.max(0, Math.min(1, step.volumeVal ?? APP.globalSettings.masterVol));
+              applyMasterVolume(APP.globalSettings.masterVol);   // Phase 6: live auf dem Bus
               const el = document.getElementById('masterVol'); if (el) el.value = APP.globalSettings.masterVol;
             } else if (action === 'fadeout') {
               const t = resolveItemById(step.targetId);
@@ -341,6 +342,7 @@ export async function runMacro(m, callStack = []) {
           }
         } else if (action === 'volume') {
           APP.globalSettings.masterVol = Math.max(0, Math.min(1, step.volumeVal ?? APP.globalSettings.masterVol));
+          applyMasterVolume(APP.globalSettings.masterVol);   // Phase 6: live auf dem Bus
           const el = document.getElementById('masterVol'); if (el) el.value = APP.globalSettings.masterVol;
         } else if (action === 'fadeout') {
           const t = resolveItemById(step.targetId);

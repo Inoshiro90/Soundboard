@@ -10,6 +10,7 @@ export const APP = {
     overlap: true, stopReplay: false, multiClick: true, masterVol: 1.0,
     // Phase 3b (AE-17): true = „Hall: Geteilt“ (ein Convolver je Impulsantwort), false = „Pro Stimme (exakt)“ (bisheriger Pfad).
     reverbShare: true,
+    safetyLimiter: true,   // Phase 6: Safety-Limiter (−0,3 dBFS) auf Master- und Preview-Bus; false = Bus ohne Begrenzung
     voiceLimit: 'auto',   // Phase 3a: Stimmenlimit — 'auto' (Budget + Degradation) | 'off' | feste Höchstzahl als Text
     // Auto Duck: globale (nicht pro-Sound/-Szene) Absenkung der
     // Ambient-Ebene, solange mindestens ein Soundboard-Sound aktiv ist.
@@ -35,8 +36,12 @@ export const APP = {
     playing: false, loading: false,
     soundId: null, slotIdx: null,
     src: null, masterGain: null,
-    runtime: null,            // PipelineRuntime der laufenden Vorschau (Phase 3; Live-Update-Verdrahtung folgt in P7)
+    runtime: null,            // PipelineRuntime (live:true) der laufenden Vorschau — Live-Update, A/B (Phase 7)
     kind: null,          // 'buffer' | 'noise' | null — bestimmt, wie die Quelle beendet wird
+    loop: false,         // Phase 7: Vorschau loopt (wirkt ab dem nächsten Start)
+    bypass: false,       // Phase 7: A/B — Effekte umgangen
+    ending: false,       // Phase 7: Quelle zu Ende, Nachklang läuft noch (endTimer)
+    endTimer: null,
     token: 0
   },
   irCache:      {},
@@ -57,7 +62,7 @@ export const APP = {
   },
   appMode:      'soundboard',  // 'soundboard' | 'timeline' | 'lab'
   labSound:     null,          // sound currently in Audio Lab
-  masterBus:    { limiterEnabled: true, threshold: -1, peakL: 0, peakR: 0, rafId: null },
+  masterBus:    { peakL: 0, peakR: 0, clip: false },   // Phase 6: letzte Meter-Werte (Anzeige); Begrenzer-Schalter = globalSettings.safetyLimiter
   noiseProfile: null,          // Float32Array spectral floor for noise reduction
   // Sound-Effekte vs. Ambient-Szenen vs. Musikspuren — drei Ansichten,
   // per Mode-Toggle umschaltbar (siehe ambient/ambient-render.js: setViewMode()).

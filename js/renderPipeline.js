@@ -19,6 +19,7 @@
 import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
 import { attachSend } from './audio/engine/reverb-hub.js';
+import { busesOf } from './audio/engine/buses.js';
 
 /**
  * Plant eine einzelne Fade-Rampe mit wählbarer Kurvenform auf einem Gain-Node.
@@ -183,6 +184,7 @@ export function slotBufferSpan(slot, buffer) {
  * @param {boolean} [opts.allowLoop=true] - false erzwingt Einmal-Wiedergabe selbst
  *   bei s.loop (z.B. sequenzielle Makro-Wiedergabe)
  * @param {{duration:number, curve:string}} [opts.crossfadeIn] - s. _applyPlaybackFades()
+ * @param {boolean} [opts.loopPreview=false] - Phase 7: Vorschau loopt, wenn auch `s.loop` gesetzt ist (nur mode 'preview').
  * @param {boolean} [opts.live=false] - Runtime mit Ein-/Ausgangs-Gain (swapTo möglich; Preview/Musik). Standard: bit-gleich zu Phase 2.
  * @param {boolean} [opts.bypassable=false] - Bypass-Hülle je Modul (runtime.setModuleBypass).
  * @param {Function} [opts.admit]   - Phase 3a: `plan => { plan, release, heavy, degraded, points }` (Voice-Budget, nur Live/Preview)
@@ -196,7 +198,7 @@ export function slotBufferSpan(slot, buffer) {
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null, loopPreview = false } = opts;
   const isLive    = mode === 'live';
 
   // Zeitbasis (B-10): `bufferDur` = Quellmaterial in PUFFERzeit (so erwartet es start(when, offset, duration));
@@ -211,7 +213,8 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // zusätzlich Aufrufern wie playSoundAndWait() (sequenzielle Makro-
   // Wiedergabe), Loop-Sounds bewusst NICHT zu loopen — sonst würde
   // `onended` nie feuern und die await-Kette der Makro-Sequenz hinge fest.
-  src.loop = isLive && allowLoop && !!s.loop;
+  // Phase 7: Die Effekt-Vorschau darf auf Wunsch loopen (`opts.loopPreview`, Schalter „Loop“); der Export nie.
+  src.loop = (isLive || (mode === 'preview' && loopPreview)) && allowLoop && !!s.loop;
 
   // Pipeline: EIN Plan (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → EINE serielle
   // Knotenkette. Live, Preview und Export laufen durch dieselbe Funktion; es gibt keine Optimierung, die Layer
@@ -246,7 +249,9 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // Preview/Export spielen bei vollem s.vol ohne globalen Master-Regler).
   // Bleibt bewusst UNBERÜHRT von der Fade-Automation, damit z.B. ein Makro-Fadeout (der live auf
   // diesen Node zugreift) nicht mit einer laufenden Rampe kollidiert.
-  const baseGain = (s.vol ?? 1) * (isLive ? masterVol : 1);
+  // Phase 6: Mit Live-Bus wirkt die Master-Lautstärke live auf dem Bus (soundIn) und wird NICHT mehr eingebrannt (B-25);
+  // ohne Bus (Offline-Contexts in Tests) bleibt das bisherige Verhalten.
+  const baseGain = (s.vol ?? 1) * (isLive && !busesOf(ctx) ? masterVol : 1);
   const masterGain = ctx.createGain(); masterGain.gain.value = baseGain;
 
   let node = src;

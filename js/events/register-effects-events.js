@@ -8,7 +8,7 @@ import { APP, CItems } from '../core/state.js';
 import { uid, bk } from '../utils.js';
 import { toast } from '../notifications.js';
 import { stopItem } from '../audio/playback.js';
-import { previewSound, previewNoiseGenerator, stopEffectPreview } from '../audio/preview.js';
+import { previewSound, previewNoiseGenerator, stopEffectPreview, setPreviewLoop, setPreviewBypass, schedulePreviewUpdate } from '../audio/preview.js';
 import '../presets/effect-presets-data.js';
 import { invalidateBuffer } from '../audioCache.js';
 import { renderGrid } from '../ui/grid.js';
@@ -33,7 +33,7 @@ import {
   _setAmbientVolumeMode, _correctAmbientVolumeInputs, _readAmbientVolumeFromUI, _preloadEditBuffers
 } from '../dialogs/sound-modal.js';
 import { _releaseSoundDraftGuard } from './utils-modal.js';
-import { initFxPipelineModals } from '../dialogs/fx-pipeline-modals.js';
+import { initFxPipelineModals, currentPreviewEffects } from '../dialogs/fx-pipeline-modals.js';
 
 export function registerEffectsEvents() {
   initFxPipelineModals();   // Pipeline: Übersicht (Ebene 1) + Stufen-/Preset-/Layer-Modals (Ebene 2–3)
@@ -43,13 +43,7 @@ export function registerEffectsEvents() {
   // Master enable toggle
   document.getElementById('fxEnabled')?.addEventListener('change', () => {
     updateEffectSectionVisibility();
-  });
-
-  // Sub-section enable toggles
-  ['fxLpEnabled', 'fxHpEnabled', 'fxRevEnabled', 'fxDelEnabled'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => {
-      updateEffectSectionVisibility();
-    });
+    schedulePreviewUpdate(currentPreviewEffects);   // Phase 7: Master-Schalter wirkt sofort auf eine laufende Vorschau
   });
 
   // Audio-Effekte: eigene Dialogbox statt Accordion im Hauptformular
@@ -141,188 +135,19 @@ export function registerEffectsEvents() {
     document.getElementById(id)?.addEventListener('change', () => { _correctAmbientVolumeInputs(); _markActivePlaybackSummary(); });
   });
 
-  // Lowpass slider
-  document.getElementById('fxLpFreq')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxLpFreqLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
+  // Lowpass/Highpass/Notch: generierte Controls (ui/effects/, Phase 8) — Beschriftung und Schalter verwaltet der Editor.
 
-  // Highpass slider
-  document.getElementById('fxHpFreq')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxHpFreqLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
+  // Wahwah: generierte Controls (ui/effects/, Phase 8).
 
-  // Notch
-  document.getElementById('fxNotchEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxNotchFreq')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxNotchFreqLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
-  document.getElementById('fxNotchQ')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxNotchQLbl');
-    if (lbl) lbl.textContent = 'Q ' + this.value;
-  });
+  // Reverb, Delay: generierte Controls (ui/effects/, Phase 8).
 
-  // Wahwah
-  document.getElementById('fxWahwahEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxWahwahFrequency')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxWahwahFrequencyLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
-  document.getElementById('fxWahwahDepth')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxWahwahDepthLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-  document.getElementById('fxWahwahRate')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxWahwahRateLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' Hz';
-  });
-  document.getElementById('fxWahwahResonance')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxWahwahResonanceLbl');
-    if (lbl) lbl.textContent = 'Q' + parseFloat(this.value).toFixed(1);
-  });
+  // 3-Band-EQ, Compressor, Limiter: generierte Controls (ui/effects/, Phase 8).
 
-  // Reverb sliders
-  document.getElementById('fxRevAmount')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxRevAmountLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-  document.getElementById('fxRevDuration')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxRevDurationLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + 's';
-  });
-  document.getElementById('fxRevDecay')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxRevDecayLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1);
-  });
+  // Distortion: generierte Controls (ui/effects/, Phase 8).
 
-  // Delay sliders
-  document.getElementById('fxDelTime')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxDelTimeLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + 's';
-  });
-  document.getElementById('fxDelFeedback')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxDelFeedbackLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-  document.getElementById('fxDelWet')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxDelWetLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
+  // Ring Modulation: generierte Controls (ui/effects/, Phase 8).
 
-  // EQ
-  document.getElementById('fxEqEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  const eqSliders = [
-    ['fxEqLow',  'fxEqLowLbl'],
-    ['fxEqMid',  'fxEqMidLbl'],
-    ['fxEqHigh', 'fxEqHighLbl'],
-  ];
-  eqSliders.forEach(([sid, lid]) => {
-    document.getElementById(sid)?.addEventListener('input', function() {
-      const v   = parseFloat(this.value);
-      const lbl = document.getElementById(lid);
-      if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(0) + ' dB';
-    });
-  });
-
-  // Compressor
-  document.getElementById('fxCompEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxCompThreshold')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxCompThresholdLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(0) + ' dB';
-  });
-  document.getElementById('fxCompKnee')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxCompKneeLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(0);
-  });
-  document.getElementById('fxCompRatio')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxCompRatioLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(0) + ':1';
-  });
-  document.getElementById('fxCompAttack')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxCompAttackLbl');
-    if (lbl) lbl.textContent = (parseFloat(this.value) * 1000).toFixed(1) + ' ms';
-  });
-  document.getElementById('fxCompRelease')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxCompReleaseLbl');
-    if (lbl) lbl.textContent = (parseFloat(this.value) * 1000).toFixed(0) + ' ms';
-  });
-
-  // Limiter
-  document.getElementById('fxLimEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxLimThreshold')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxLimThresholdLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' dB';
-  });
-
-  // Distortion
-  document.getElementById('fxDistEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxDistMode')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxDistAmount')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxDistAmountLbl');
-    if (lbl) lbl.textContent = Math.round(this.value);
-  });
-
-  // Ring Modulation
-  document.getElementById('fxRingmodEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxRingmodFrequency')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxRingmodFrequencyLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' Hz';
-  });
-
-  // Tremolo
-  document.getElementById('fxTremoloEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxTremoloRate')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxTremoloRateLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' Hz';
-  });
-  document.getElementById('fxTremoloDepth')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxTremoloDepthLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-
-  // Chorus
-  document.getElementById('fxChorusEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxChorusBaseDelay')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxChorusBaseDelayLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' ms';
-  });
-  document.getElementById('fxChorusDepth')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxChorusDepthLbl');
-    if (lbl) lbl.textContent = Math.round(this.value) + ' ms';
-  });
-  document.getElementById('fxChorusRate')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxChorusRateLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + ' Hz';
-  });
-  document.getElementById('fxChorusMix')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxChorusMixLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-
-  // Flanger
-  document.getElementById('fxFlangerEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxFlangerBaseDelay')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxFlangerBaseDelayLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' ms';
-  });
-  document.getElementById('fxFlangerDepth')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxFlangerDepthLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1) + ' ms';
-  });
-  document.getElementById('fxFlangerRate')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxFlangerRateLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(2) + ' Hz';
-  });
-  document.getElementById('fxFlangerFeedback')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxFlangerFeedbackLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
-  document.getElementById('fxFlangerMix')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxFlangerMixLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
+  // Tremolo/Chorus/Flanger: generierte Controls (ui/effects/, Phase 8).
 
   // WAV Export Button
   document.getElementById('btnExportWav')?.addEventListener('click', () => {
@@ -336,72 +161,20 @@ export function registerEffectsEvents() {
     import('../export.js').then(m => m.exportSoundWav(s));   // ein einziger Exportpfad (B-12)
   });
 
-  // Pitch Shift
-  document.getElementById('fxPitchEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxPitchSemitones')?.addEventListener('input', function() {
-    const v = parseInt(this.value) || 0;
-    const lbl = document.getElementById('fxPitchSemitonesLbl');
-    if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v;
-  });
+  // Pitch Shift: generierte Controls (ui/effects/, Phase 8).
 
-  // EQ10 sliders (10 bands)
-  document.getElementById('fxEq10Enabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  for (let i = 0; i < 10; i++) {
-    document.getElementById('fxEq10_' + i)?.addEventListener('input', function() {
-      const v = parseFloat(this.value);
-      const lbl = document.getElementById('fxEq10Lbl_' + i);
-      if (lbl) lbl.textContent = (v >= 0 ? '+' : '') + v.toFixed(0);
-      // A11y: Wert inkl. Einheit für Screenreader nachziehen (s. writeEffectsToUI).
-      this.setAttribute('aria-valuetext', (v >= 0 ? '+' : '') + v.toFixed(0) + ' dB');
-    });
-    // Q-Regler pro Band
-    document.getElementById('fxEq10Q_' + i)?.addEventListener('input', function() {
-      const v = parseFloat(this.value);
-      const lbl = document.getElementById('fxEq10QLbl_' + i);
-      if (lbl) lbl.textContent = 'Q' + v.toFixed(1);
-      this.setAttribute('aria-valuetext', 'Q ' + v.toFixed(1));
-    });
-  }
-  document.getElementById('btnEq10Reset')?.addEventListener('click', () => {
-    for (let i = 0; i < 10; i++) {
-      const sl = document.getElementById('fxEq10_' + i);
-      if (sl) { sl.value = 0; sl.setAttribute('aria-valuetext', '+0 dB'); }
-      const lb = document.getElementById('fxEq10Lbl_' + i); if (lb) lb.textContent = '+0';
-      // Q-Werte auf Standard (1.4) zurücksetzen
-      const qsl = document.getElementById('fxEq10Q_' + i);
-      if (qsl) { qsl.value = 1.4; qsl.setAttribute('aria-valuetext', 'Q 1.4'); }
-      const qlb = document.getElementById('fxEq10QLbl_' + i); if (qlb) qlb.textContent = 'Q1.4';
-    }
-  });
+  // 10-Band-EQ: generiertes Spezialcontrol (ui/effects/eq10-bands.js, Phase 8) — Regler, Beschriftungen und Reset verwaltet es selbst.
 
-  // IR Reverb
-  document.getElementById('fxIrEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxIrWet')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxIrWetLbl');
-    if (lbl) lbl.textContent = Math.round(this.value * 100) + '%';
-  });
+  // IR-Reverb: generierte Controls (ui/effects/, Phase 8).
 
   // Full export (with audio)
   document.getElementById('btnExportFull')?.addEventListener('click', () => {
     import('../storage/import-export.js').then(m => m.exportDataWithAudio());
   });
 
-  // Spatial 3D controls
-  document.getElementById('fxSpatialEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  [['fxSpatialX','fxSpatialXLbl'], ['fxSpatialY','fxSpatialYLbl'],
-   ['fxSpatialZ','fxSpatialZLbl'], ['fxSpatialRolloff','fxSpatialRolloffLbl']].forEach(([sid, lid]) => {
-    document.getElementById(sid)?.addEventListener('input', function() {
-      const lbl = document.getElementById(lid); if (lbl) lbl.textContent = parseFloat(this.value).toFixed(1);
-    });
-  });
+  // Spatial 3D: generierte Controls (ui/effects/, Phase 8).
 
-  // Noise Gate
-  document.getElementById('fxNoiseGateEnabled')?.addEventListener('change', () => updateEffectSectionVisibility());
-  document.getElementById('fxNoiseGateThreshold')?.addEventListener('input', function() {
-    const lbl = document.getElementById('fxNoiseGateThresholdLbl');
-    if (lbl) lbl.textContent = parseFloat(this.value).toFixed(0) + ' dB';
-  });
-
+  // Noise Gate: generierte Controls (ui/effects/, Phase 8).
   // Undo / Redo buttons
   document.getElementById('btnUndo')?.addEventListener('click', () => import('../history.js').then(m => m.undo()));
   document.getElementById('btnRedo')?.addEventListener('click', () => import('../history.js').then(m => m.redo()));
@@ -626,35 +399,25 @@ export function registerEffectsEvents() {
     // so preview uses the FULL effect chain (same engine as playback)
     const vol   = parseFloat(document.getElementById('eVol')?.value)   || 1;
     const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
-    const effects  = readEffectsFromUI();
+    const effects  = currentPreviewEffects();   // Draft; bei offenem Layer-Modal mit dem aktuellen Layer-Formular (Phase 7)
     const playback = readPlaybackFromUI();
 
-    // Eigene, von der echten Sound-ID losgelöste Preview-ID
-    // statt APP.editId zu übernehmen — verhindert, dass die Preview unter
-    // demselben activeAudio/Buffer-Cache-Schlüssel wie der ECHTE,
-    // gespeicherte Sound landet (der würde sonst z.B. beim Editieren eines
-    // bereits gespeicherten Sounds dessen Kachel als "spielend" markieren).
+    // Eigene, von der echten Sound-ID losgelöste Preview-ID statt APP.editId zu übernehmen — verhindert, dass die Preview unter
+    // demselben activeAudio-Schlüssel wie der ECHTE, gespeicherte Sound landet (der würde sonst z.B. dessen Kachel als „spielend“
+    // markieren). Phase 7: Die Preview-ID ist nur ein Name; es werden keine Buffer-Cache-Einträge mehr unter ihr angelegt.
     const tempSound = {
       id:      '_fxpreview_' + (APP.editId || APP._pendingSoundId || 'draft'),
       name:    document.getElementById('eName')?.value || 'Preview',
       slots:   APP.editSlots,
-      vol, pitch, loop: false, fade: false, random: false, curSlot: 0, effects, playback
+      vol, pitch, loop: !!APP.audioPreview.loop, fade: false, random: false, curSlot: 0, effects, playback
     };
 
-    // Buffer-Cache für die Preview-ID vorwärmen (nicht unnötig neu dekodieren).
-    // Priorität: ein in dieser Sitzung bereits geladener/ersetzter Buffer (_ed_N) vor
-    // einem unveränderten, bereits unter der ECHTEN Sound-ID gecachten Buffer.
-    APP.editSlots.forEach((sl, i) => {
-      const edBuf = APP.audioBuffers[`_ed_${i}`];
-      if (edBuf) { APP.audioBuffers[bk(tempSound.id, i)] = edBuf; return; }
-      if (APP.editId) {
-        const existing = APP.audioBuffers[bk(APP.editId, i)];
-        if (existing) APP.audioBuffers[bk(tempSound.id, i)] = existing;
-      }
-    });
+    // Quelle als Buffer-Referenz: ein in dieser Sitzung geladener/ersetzter Buffer (_ed_N) vor einem unveränderten, unter der
+    // ECHTEN Sound-ID gecachten Buffer. Fehlt beides, lädt `_loadEditBuffer` nach (innerhalb des Token-Schutzes).
+    const buffer = APP.audioBuffers[`_ed_${slotIdx}`] || (APP.editId ? APP.audioBuffers[bk(APP.editId, slotIdx)] : null) || null;
 
     try {
-      await previewSound(tempSound, slotIdx, { loadBuffer: _loadEditBuffer });
+      await previewSound(tempSound, slotIdx, { buffer, loadBuffer: _loadEditBuffer });
     } catch(e) {
       console.error('Preview error:', e);
       toast('Vorschau-Fehler: ' + e.message, 'err');
@@ -694,7 +457,7 @@ export function registerEffectsEvents() {
     const vol = vc.mode === VOLUME_MODE_VARYING
       ? pickRandomVolume(vc.min, vc.max)
       : Math.max(0, Math.min(1, num('eVol', 0.7)));
-    const effects = readEffectsFromUI();
+    const effects = currentPreviewEffects();
 
     // Rauschgenerator-Tracks haben keine Dateien — eigener Quellpfad im selben Lifecycle.
     const track = findAmbientTrack(_fxEditContext.id);
@@ -715,7 +478,7 @@ export function registerEffectsEvents() {
     const tempSound = {
       id:      '_ambpreview_' + _fxEditContext.id,
       name:    g('eName')?.value || 'Preview',
-      slots, vol, pitch: 1, loop: false, fade: false, random: false, curSlot: 0, effects,
+      slots, vol, pitch: 1, loop: !!APP.audioPreview.loop, fade: false, random: false, curSlot: 0, effects,
       playback: {
         fadeIn:    { enabled: fadeIn  > 0, duration: fadeIn,  curve: g('ambFadeInCurve')?.value  || 'linear' },
         fadeOut:   { enabled: fadeOut > 0, duration: fadeOut, curve: g('ambFadeOutCurve')?.value || 'linear' },
@@ -723,14 +486,10 @@ export function registerEffectsEvents() {
       }
     };
 
-    // Buffer-Cache der Preview-ID mit dem Entwurfs-Buffer (`_ed_N`) vorwärmen, falls schon geladen.
-    slots.forEach((sl, i) => {
-      const edBuf = APP.audioBuffers[`_ed_${i}`];
-      if (edBuf) APP.audioBuffers[bk(tempSound.id, i)] = edBuf;
-    });
+    const buffer = APP.audioBuffers[`_ed_${slotIdx}`] || null;   // Entwurfs-Buffer als Referenz (kein Alias im Cache)
 
     try {
-      await previewSound(tempSound, slotIdx, { loadBuffer: _loadEditBuffer });
+      await previewSound(tempSound, slotIdx, { buffer, loadBuffer: _loadEditBuffer });
     } catch (e) {
       console.error('Preview error:', e);
       toast('Vorschau-Fehler: ' + e.message, 'err');
@@ -738,6 +497,10 @@ export function registerEffectsEvents() {
   }
   document.getElementById('btnPreviewSound')?.addEventListener('click', _handlePreviewClick);
   document.getElementById('btnPreviewFx')?.addEventListener('click', _handlePreviewClick);
+  // Phase 7: Vorschau auch im Layer-Modal (dort wird geregelt), Loop (ab dem nächsten Start) und A/B (Effekte klickfrei umgehen).
+  document.getElementById('btnPreviewFxLayer')?.addEventListener('click', _handlePreviewClick);
+  for (const id of ['btnPreviewLoop', 'btnPreviewLoopLayer']) document.getElementById(id)?.addEventListener('click', () => setPreviewLoop(!APP.audioPreview.loop));
+  for (const id of ['btnPreviewAB', 'btnPreviewABLayer']) document.getElementById(id)?.addEventListener('click', () => setPreviewBypass(!APP.audioPreview.bypass));
 
 
 }

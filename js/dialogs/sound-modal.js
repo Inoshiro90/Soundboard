@@ -10,9 +10,10 @@ import { APP, CItems } from '../core/state.js';
 import { uid, isCustomIcon } from '../utils.js';
 import { actx } from '../audio/context.js';
 import { stopEffectPreview } from '../audio/preview.js';
-import { defaultEffects, defaultPlayback, EQ10_FREQS } from '../audio/effect-graph.js';
+import { defaultEffects, defaultPlayback } from '../audio/effect-graph.js';
 import '../storage/persistence.js';
 import { STAGE_ORDER, PIPELINE_STAGES, defaultPipelineEffects, fillLayerParams, sparsifyParams } from '../audio/fx-pipeline.js';
+import { createEffectEditor } from '../ui/effects/effect-editor.js';
 import { ensureEffectsV2 } from '../fx-model.js';
 import { getDraft, setDraft, render as renderPipelineEditor } from '../ui/fx-pipeline-editor.js';
 import { idbGet, idbSet, idbDelete, isIdbRef, audioKey } from '../db.js';
@@ -28,144 +29,19 @@ import { _setModalContext, _armSoundDraftGuard } from '../events/utils-modal.js'
 
 // ─── EFFECTS UI HELPERS ──────────────────────────────────────
 
+// Registry-generierte Module (Phase 8, Strangler): Zustand und Karten im Editor, hier nur Lesen/Schreiben der Werte.
+const _fxEditor = createEffectEditor();
+/** Editor der generierten Effektmodule (für Tests und Verdrahtung). */
+export function getFxEditor() { return _fxEditor; }
+
 /**
  * Reads all current effect control values from the DOM and returns an
  * effects object ready to be stored on s.effects.
  */
 function _readFlatFromUI() {
-  const g    = id => document.getElementById(id);
-  const num  = (id, fallback) => { const v = parseFloat(g(id)?.value); return isNaN(v) ? fallback : v; };
-  const chk  = id => !!(g(id)?.checked);
-  const sel  = id => g(id)?.value ?? '';
-
   return {
-    enabled:  chk('fxEnabled'),
-    lowpass: {
-      enabled:   chk('fxLpEnabled'),
-      frequency: num('fxLpFreq', 20000),
-      Q:         0.7
-    },
-    highpass: {
-      enabled:   chk('fxHpEnabled'),
-      frequency: num('fxHpFreq', 20),
-      Q:         0.7
-    },
-    notch: {
-      enabled:   chk('fxNotchEnabled'),
-      frequency: num('fxNotchFreq', 50),
-      Q:         num('fxNotchQ', 10)
-    },
-    wahwah: {
-      enabled:   chk('fxWahwahEnabled'),
-      frequency: num('fxWahwahFrequency', 800),
-      depth:     num('fxWahwahDepth', 0.7),
-      rate:      num('fxWahwahRate', 2),
-      resonance: num('fxWahwahResonance', 5)
-    },
-    reverb: {
-      enabled:  chk('fxRevEnabled'),
-      amount:   num('fxRevAmount', 0.35),
-      duration: num('fxRevDuration', 2.2),
-      decay:    num('fxRevDecay', 2.0)
-    },
-    delay: {
-      enabled:  chk('fxDelEnabled'),
-      time:     num('fxDelTime', 0.22),
-      feedback: num('fxDelFeedback', 0.35),
-      wet:      num('fxDelWet', 0.35)
-    },
-    eq: {
-      enabled: chk('fxEqEnabled'),
-      low:     num('fxEqLow',  0),
-      mid:     num('fxEqMid',  0),
-      high:    num('fxEqHigh', 0)
-    },
-    compressor: {
-      enabled:   chk('fxCompEnabled'),
-      threshold: num('fxCompThreshold', -24),
-      knee:      num('fxCompKnee',       30),
-      ratio:     num('fxCompRatio',      12),
-      attack:    num('fxCompAttack',     0.003),
-      release:   num('fxCompRelease',    0.25)
-    },
-    limiter: {
-      enabled:   chk('fxLimEnabled'),
-      threshold: num('fxLimThreshold', -1),
-      knee:      0,
-      ratio:     20,
-      attack:    0.001,
-      release:   0.08
-    },
-    distortion: {
-      enabled:   chk('fxDistEnabled'),
-      mode:      sel('fxDistMode') || 'softClip',
-      amount:    num('fxDistAmount', 40),
-      oversample: sel('fxDistOversample') || '4x'
-    },
-    ringmod: {
-      enabled:   chk('fxRingmodEnabled'),
-      frequency: num('fxRingmodFrequency', 440),
-      mix:       num('fxRingmodMix', 1)
-    },
-    tremolo: {
-      enabled:  chk('fxTremoloEnabled'),
-      rate:     num('fxTremoloRate', 5),
-      depth:    num('fxTremoloDepth', 0.5),
-      waveform: sel('fxTremoloWaveform') || 'sine'
-    },
-    chorus: {
-      enabled:   chk('fxChorusEnabled'),
-      baseDelay: num('fxChorusBaseDelay', 15),
-      depth:     num('fxChorusDepth', 8),
-      rate:      num('fxChorusRate', 0.8),
-      mix:       num('fxChorusMix', 0.3)
-    },
-    flanger: {
-      enabled:   chk('fxFlangerEnabled'),
-      baseDelay: num('fxFlangerBaseDelay', 2),
-      depth:     num('fxFlangerDepth', 1.5),
-      rate:      num('fxFlangerRate', 0.2),
-      feedback:  num('fxFlangerFeedback', 0.5),
-      mix:       num('fxFlangerMix', 0.5)
-    },
-    pitchShift: {
-      enabled:  chk('fxPitchEnabled'),
-      semitones: num('fxPitchSemitones', 0)
-    },
-    eq10: {
-      enabled: chk('fxEq10Enabled'),
-      // Objekt-Format {freq, gain, Q} statt reiner Gain-Zahl —
-      // EQ10_FREQS liefert die (unveränderlichen) Standard-Mittenfrequenzen,
-      // Q ist pro Band editierbar (Standard 1.4).
-      bands: EQ10_FREQS.map((freq, i) => ({
-        freq,
-        gain: num('fxEq10_' + i, 0),
-        Q:    num('fxEq10Q_' + i, 1.4)
-      }))
-    },
-    irReverb: {
-      enabled: chk('fxIrEnabled'),
-      impulse: g('fxIrImpulse')?.value || null,
-      wet:     num('fxIrWet', 0.35)
-    },
-    spatial: {
-      enabled:        chk('fxSpatialEnabled'),
-      x:              num('fxSpatialX',    0),
-      y:              num('fxSpatialY',    0),
-      z:              num('fxSpatialZ',   -1),
-      rolloff:        num('fxSpatialRolloff', 1),
-      // Es gibt (bewusst) kein Control für maxDistance; der geladene Wert wird am Container mitgeführt und beim
-      // Auslesen zurückgegeben — vorher überschrieb das Auslesen jeden Preset-/Importwert mit 10000 (B-09).
-      maxDistance:    (() => { const v = parseFloat(g('fxSpatialControls')?.dataset?.maxDistance); return Number.isFinite(v) ? v : 10000; })(),
-      refDistance:    1,
-      coneInnerAngle: 360,
-      coneOuterAngle: 360,
-      coneOuterGain:  0
-    },
-    noiseGate: {
-      enabled:   chk('fxNoiseGateEnabled'),
-      threshold: num('fxNoiseGateThreshold', -50)
-    }
+    enabled: !!document.getElementById('fxEnabled')?.checked,
+    ..._fxEditor.getValues(),                       // alle Effektmodule (Registry ui.generated)
   };
 }
 
@@ -174,123 +50,10 @@ function _readFlatFromUI() {
  */
 function _writeFlatToUI(fx) {
   if (!fx) fx = defaultEffects();
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-  const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
-  const lbl = (id, val, unit) => { const el = document.getElementById(id); if (el) el.textContent = val + (unit || ''); };
+  const master = document.getElementById('fxEnabled'); if (master) master.checked = !!fx.enabled;
 
-  chk('fxEnabled', fx.enabled);
-
-  chk('fxLpEnabled', fx.lowpass?.enabled);
-  set('fxLpFreq',    fx.lowpass?.frequency ?? 20000);
-  lbl('fxLpFreqLbl', Math.round(fx.lowpass?.frequency ?? 20000), ' Hz');
-
-  chk('fxHpEnabled', fx.highpass?.enabled);
-  set('fxHpFreq',    fx.highpass?.frequency ?? 20);
-  lbl('fxHpFreqLbl', Math.round(fx.highpass?.frequency ?? 20), ' Hz');
-
-  chk('fxNotchEnabled', fx.notch?.enabled);
-  set('fxNotchFreq',    fx.notch?.frequency ?? 50); lbl('fxNotchFreqLbl', Math.round(fx.notch?.frequency ?? 50), ' Hz');
-  set('fxNotchQ',       fx.notch?.Q ?? 10);         lbl('fxNotchQLbl', 'Q ' + (fx.notch?.Q ?? 10));
-
-  chk('fxWahwahEnabled', fx.wahwah?.enabled);
-  set('fxWahwahFrequency', fx.wahwah?.frequency ?? 800); lbl('fxWahwahFrequencyLbl', Math.round(fx.wahwah?.frequency ?? 800), ' Hz');
-  set('fxWahwahDepth',     fx.wahwah?.depth     ?? 0.7); lbl('fxWahwahDepthLbl', Math.round((fx.wahwah?.depth ?? 0.7) * 100), '%');
-  set('fxWahwahRate',      fx.wahwah?.rate      ?? 2);   lbl('fxWahwahRateLbl', (fx.wahwah?.rate ?? 2).toFixed(1), ' Hz');
-  set('fxWahwahResonance', fx.wahwah?.resonance ?? 5);   lbl('fxWahwahResonanceLbl', 'Q' + (fx.wahwah?.resonance ?? 5).toFixed(1));
-
-  chk('fxRevEnabled',  fx.reverb?.enabled);
-  set('fxRevAmount',   fx.reverb?.amount   ?? 0.35);
-  lbl('fxRevAmountLbl', Math.round((fx.reverb?.amount ?? 0.35) * 100), '%');
-  set('fxRevDuration', fx.reverb?.duration ?? 2.2);
-  lbl('fxRevDurationLbl', (fx.reverb?.duration ?? 2.2).toFixed(1), 's');
-  set('fxRevDecay',    fx.reverb?.decay    ?? 2.0);
-  lbl('fxRevDecayLbl', (fx.reverb?.decay ?? 2.0).toFixed(1));
-
-  chk('fxDelEnabled',  fx.delay?.enabled);
-  set('fxDelTime',     fx.delay?.time     ?? 0.22);
-  lbl('fxDelTimeLbl',  (fx.delay?.time ?? 0.22).toFixed(2), 's');
-  set('fxDelFeedback', fx.delay?.feedback ?? 0.35);
-  lbl('fxDelFeedbackLbl', Math.round((fx.delay?.feedback ?? 0.35) * 100), '%');
-  set('fxDelWet',      fx.delay?.wet      ?? 0.35);
-  lbl('fxDelWetLbl',   Math.round((fx.delay?.wet ?? 0.35) * 100), '%');
-
-  chk('fxEqEnabled', fx.eq?.enabled);
-  set('fxEqLow',  fx.eq?.low  ?? 0); lbl('fxEqLowLbl',  (fx.eq?.low  ?? 0) >= 0 ? '+' + (fx.eq?.low ?? 0)  : (fx.eq?.low  ?? 0), ' dB');
-  set('fxEqMid',  fx.eq?.mid  ?? 0); lbl('fxEqMidLbl',  (fx.eq?.mid  ?? 0) >= 0 ? '+' + (fx.eq?.mid ?? 0)  : (fx.eq?.mid  ?? 0), ' dB');
-  set('fxEqHigh', fx.eq?.high ?? 0); lbl('fxEqHighLbl', (fx.eq?.high ?? 0) >= 0 ? '+' + (fx.eq?.high ?? 0) : (fx.eq?.high ?? 0), ' dB');
-
-  chk('fxCompEnabled',  fx.compressor?.enabled);
-  set('fxCompThreshold', fx.compressor?.threshold ?? -24); lbl('fxCompThresholdLbl', (fx.compressor?.threshold ?? -24), ' dB');
-  set('fxCompKnee',      fx.compressor?.knee      ?? 30);  lbl('fxCompKneeLbl',      (fx.compressor?.knee      ?? 30));
-  set('fxCompRatio',     fx.compressor?.ratio     ?? 12);  lbl('fxCompRatioLbl',     (fx.compressor?.ratio     ?? 12) + ':1');
-  set('fxCompAttack',    fx.compressor?.attack    ?? 0.003); lbl('fxCompAttackLbl',  ((fx.compressor?.attack ?? 0.003) * 1000).toFixed(1), ' ms');
-  set('fxCompRelease',   fx.compressor?.release   ?? 0.25); lbl('fxCompReleaseLbl',  ((fx.compressor?.release ?? 0.25) * 1000).toFixed(0), ' ms');
-
-  chk('fxLimEnabled',   fx.limiter?.enabled);
-  set('fxLimThreshold', fx.limiter?.threshold ?? -1); lbl('fxLimThresholdLbl', (fx.limiter?.threshold ?? -1), ' dB');
-
-  chk('fxDistEnabled', fx.distortion?.enabled);
-  set('fxDistMode',    fx.distortion?.mode ?? 'softClip');
-  set('fxDistAmount',  fx.distortion?.amount ?? 40); lbl('fxDistAmountLbl', Math.round(fx.distortion?.amount ?? 40));
-  set('fxDistOversample', fx.distortion?.oversample ?? '4x');
-
-  chk('fxRingmodEnabled', fx.ringmod?.enabled);
-  set('fxRingmodFrequency', fx.ringmod?.frequency ?? 440); lbl('fxRingmodFrequencyLbl', Math.round(fx.ringmod?.frequency ?? 440), ' Hz');
-  set('fxRingmodMix',       fx.ringmod?.mix       ?? 1);   
-
-  chk('fxTremoloEnabled', fx.tremolo?.enabled);
-  set('fxTremoloRate',  fx.tremolo?.rate  ?? 5);   lbl('fxTremoloRateLbl', (fx.tremolo?.rate ?? 5).toFixed(1), ' Hz');
-  set('fxTremoloDepth', fx.tremolo?.depth ?? 0.5); lbl('fxTremoloDepthLbl', Math.round((fx.tremolo?.depth ?? 0.5) * 100), '%');
-  set('fxTremoloWaveform', fx.tremolo?.waveform ?? 'sine');
-
-  chk('fxChorusEnabled', fx.chorus?.enabled);
-  set('fxChorusBaseDelay', fx.chorus?.baseDelay ?? 15); lbl('fxChorusBaseDelayLbl', (fx.chorus?.baseDelay ?? 15), ' ms');
-  set('fxChorusDepth',     fx.chorus?.depth     ?? 8);  lbl('fxChorusDepthLbl',     (fx.chorus?.depth ?? 8), ' ms');
-  set('fxChorusRate',      fx.chorus?.rate      ?? 0.8);lbl('fxChorusRateLbl',      (fx.chorus?.rate ?? 0.8).toFixed(2), ' Hz');
-  set('fxChorusMix',       fx.chorus?.mix       ?? 0.3);lbl('fxChorusMixLbl',       Math.round((fx.chorus?.mix ?? 0.3) * 100), '%');
-
-  chk('fxFlangerEnabled', fx.flanger?.enabled);
-  set('fxFlangerBaseDelay', fx.flanger?.baseDelay ?? 2);   lbl('fxFlangerBaseDelayLbl', (fx.flanger?.baseDelay ?? 2).toFixed(1), ' ms');
-  set('fxFlangerDepth',     fx.flanger?.depth     ?? 1.5); lbl('fxFlangerDepthLbl',     (fx.flanger?.depth ?? 1.5).toFixed(1), ' ms');
-  set('fxFlangerRate',      fx.flanger?.rate      ?? 0.2); lbl('fxFlangerRateLbl',      (fx.flanger?.rate ?? 0.2).toFixed(2), ' Hz');
-  set('fxFlangerFeedback',  fx.flanger?.feedback  ?? 0.5); lbl('fxFlangerFeedbackLbl',  Math.round((fx.flanger?.feedback ?? 0.5) * 100), '%');
-  set('fxFlangerMix',       fx.flanger?.mix       ?? 0.5); lbl('fxFlangerMixLbl',       Math.round((fx.flanger?.mix ?? 0.5) * 100), '%');
-
-  chk('fxPitchEnabled', fx.pitchShift?.enabled);
-  set('fxPitchSemitones', fx.pitchShift?.semitones ?? 0);
-  lbl('fxPitchSemitonesLbl', (fx.pitchShift?.semitones ?? 0) >= 0 ? '+' + (fx.pitchShift?.semitones ?? 0) : (fx.pitchShift?.semitones ?? 0));
-
-  chk('fxEq10Enabled', fx.eq10?.enabled);
-  const bands = fx.eq10?.bands || new Array(10).fill(0);
-  bands.forEach((b, i) => {
-    // b kann das alte Format (reine Zahl) oder das neue
-    // ({freq, gain, Q}) sein — beim Anzeigen beide unterstützen.
-    const isObj = typeof b === 'object' && b !== null;
-    const gain  = isObj ? (b.gain ?? 0) : (b ?? 0);
-    const q     = isObj && b.Q ? b.Q : 1.4;
-    set('fxEq10_' + i, gain);  lbl('fxEq10Lbl_' + i, (gain >= 0 ? '+' : '') + gain.toFixed(0));
-    set('fxEq10Q_' + i, q);    lbl('fxEq10QLbl_' + i, 'Q' + q.toFixed(1));
-    // A11y: aria-valuetext ergänzt den nativen (einheitenlosen) Wert um
-    // "dB"/"Q", damit Screenreader z.B. "0 dB" statt nur "0" ansagen.
-    // Native aria-valuenow/-min/-max bleiben unangetastet.
-    document.getElementById('fxEq10_' + i)?.setAttribute('aria-valuetext', (gain >= 0 ? '+' : '') + gain.toFixed(0) + ' dB');
-    document.getElementById('fxEq10Q_' + i)?.setAttribute('aria-valuetext', 'Q ' + q.toFixed(1));
-  });
-
-  chk('fxIrEnabled',  fx.irReverb?.enabled);
-  set('fxIrImpulse',  fx.irReverb?.impulse || '');
-  set('fxIrWet',      fx.irReverb?.wet      ?? 0.35);  lbl('fxIrWetLbl', Math.round((fx.irReverb?.wet ?? 0.35) * 100), '%');
-
-  chk('fxSpatialEnabled', fx.spatial?.enabled);
-  set('fxSpatialX', fx.spatial?.x ?? 0); lbl('fxSpatialXLbl', (fx.spatial?.x ?? 0).toFixed(1));
-  set('fxSpatialY', fx.spatial?.y ?? 0); lbl('fxSpatialYLbl', (fx.spatial?.y ?? 0).toFixed(1));
-  set('fxSpatialZ', fx.spatial?.z ?? -1); lbl('fxSpatialZLbl', (fx.spatial?.z ?? -1).toFixed(1));
-  set('fxSpatialRolloff', fx.spatial?.rolloff ?? 1); lbl('fxSpatialRolloffLbl', (fx.spatial?.rolloff ?? 1).toFixed(1));
-  { const sc = document.getElementById('fxSpatialControls'); if (sc) sc.dataset.maxDistance = String(fx.spatial?.maxDistance ?? 10000); }
-
-  chk('fxNoiseGateEnabled', fx.noiseGate?.enabled);
-  set('fxNoiseGateThreshold', fx.noiseGate?.threshold ?? -50);
-  lbl('fxNoiseGateThresholdLbl', (fx.noiseGate?.threshold ?? -50) + ' dB');
+  // Alle Effektmodule sind registry-generiert: Zustand im Editor, Karten werden mit aktualisiert.
+  _fxEditor.setValues(fx);
 
   // updateEffectSectionVisibility() also refreshes the active-fx badges/
   // summary (see below) — one call covers both concerns.
@@ -351,6 +114,12 @@ export function wireLayerForm(onDirty) {
   const mark = () => { _layerFormDirty = true; onDirty?.(); };
   form?.addEventListener('input', mark);
   form?.addEventListener('change', mark);
+  if (form) {
+    _fxEditor.mount(form);                          // generierte Karten in die `[data-fx-host]`-Container bauen (einmalig)
+    _fxEditor.mountToolbar(document.querySelector('[data-fx-toolbar]'));   // „Nur aktive Module zeigen“ (außerhalb des Formulars: keine Effektänderung)
+    // Schalter UND Auswahlfelder (z. B. Distortion-Modus) einer generierten Karte → Sektions-Punkt/Überblick nachziehen.
+    form.addEventListener('change', e => { if (e.target?.closest?.('[data-fx-module]')) updateEffectSectionVisibility(); });
+  }
 }
 
 // ─── "WIEDERGABE & VERHALTEN" UI HELPERS ─────────────────────
@@ -580,23 +349,10 @@ export function _readAmbientVolumeFromUI() {
 /** Welche Effekt-Gruppen (Sektions-IDs des FX-Dialogs) in `fx` aktive Module enthalten. Einzige Quelle
  *  für Sektions-Punkte, Sound-Karten-Überblick UND den Überblick der Musik-Karte. */
 function _activeEffectSections(fx) {
-  // `fx` = Formularstand des GEWÄHLTEN Layers (flach). 
-  return {
-    'smFxFilters':  fx.lowpass?.enabled || fx.highpass?.enabled || fx.notch?.enabled,
-    'smFxEQ':       fx.eq?.enabled || fx.eq10?.enabled,
-    'smFxDyn':      fx.compressor?.enabled || fx.limiter?.enabled,
-    'smFxDist':     fx.distortion?.enabled || fx.ringmod?.enabled,
-    'smFxMod':      fx.tremolo?.enabled || fx.chorus?.enabled || fx.flanger?.enabled || fx.wahwah?.enabled,
-    'smFxReverb':   fx.reverb?.enabled || fx.irReverb?.enabled,
-    'smFxDelay':    fx.delay?.enabled,
-    'smFxSpatial':  fx.spatial?.enabled,
-    'smFxAdvanced': fx.pitchShift?.enabled || fx.noiseGate?.enabled,
-  };
+  // `fx` = Formularstand des GEWÄHLTEN Layers (flach). Die Zuordnung Modul → Sektion ergibt sich aus der Lage der Hosts im
+  // Formular-HTML (effect-editor.js); es gibt keine zweite, handgepflegte Liste mehr.
+  return _fxEditor.activeSections(fx);
 }
-const _EFFECT_GROUP_LABELS = {
-  smFxFilters: 'Filter', smFxEQ: 'EQ', smFxDyn: 'Dynamik', smFxDist: 'Distortion', smFxMod: 'Modulation',
-  smFxReverb: 'Reverb', smFxDelay: 'Delay', smFxSpatial: 'Spatial', smFxAdvanced: 'Erweitert',
-};
 /** Überblick einer Pipeline für Karten/Chips: aktive Stufen mit Layer-Anzahl in Verarbeitungsreihenfolge. */
 export function getActiveEffectGroupLabels(fx) {
   if (!fx || fx.v !== 2) return [];
@@ -636,43 +392,14 @@ export function _markActiveAccordionSections(fx) {
  */
 export function _syncPlaybackSettingsIndicator() {
   const gs = APP.globalSettings;
-  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
+  const isDefault = gs.overlap !== false && gs.stopReplay !== true && gs.multiClick !== false && gs.reverbShare !== false && gs.safetyLimiter !== false && (gs.voiceLimit ?? 'auto') === 'auto' && !gs.autoDuck?.enabled;
   document.getElementById('btnPlaybackSettingsToggle')?.classList.toggle('has-active-setting', !isDefault);
 }
 
 
 export function updateEffectSectionVisibility() {
-  const masterOn = !!(document.getElementById('fxEnabled')?.checked);
-  const panel    = document.getElementById('fxPanel');
-  if (panel) panel.style.opacity = masterOn ? '1' : '0.45';
-  if (panel) panel.style.pointerEvents = masterOn ? '' : 'none';
-
-  const pairs = [
-    ['fxLpEnabled',   'fxLpControls'],
-    ['fxHpEnabled',   'fxHpControls'],
-    ['fxNotchEnabled', 'fxNotchControls'],
-    ['fxWahwahEnabled', 'fxWahwahControls'],
-    ['fxRevEnabled',  'fxRevControls'],
-    ['fxDelEnabled',  'fxDelControls'],
-    ['fxEqEnabled',   'fxEqControls'],
-    ['fxCompEnabled', 'fxCompControls'],
-    ['fxLimEnabled',  'fxLimControls'],
-    ['fxDistEnabled', 'fxDistControls'],
-    ['fxRingmodEnabled', 'fxRingmodControls'],
-    ['fxTremoloEnabled', 'fxTremoloControls'],
-    ['fxChorusEnabled',  'fxChorusControls'],
-    ['fxFlangerEnabled', 'fxFlangerControls'],
-    ['fxPitchEnabled',    'fxPitchControls'],
-    ['fxEq10Enabled',     'fxEq10Controls'],
-    ['fxIrEnabled',       'fxIrControls'],
-    ['fxSpatialEnabled',   'fxSpatialControls'],
-    ['fxNoiseGateEnabled', 'fxNoiseGateControls'],
-  ];
-  pairs.forEach(([cbId, panelId]) => {
-    const on = !!(document.getElementById(cbId)?.checked);
-    const el = document.getElementById(panelId);
-    if (el) { el.style.opacity = on ? '1' : '0.45'; el.style.pointerEvents = on ? '' : 'none'; }
-  });
+  // Das Formular bleibt bei ausgeschaltetem Master-Schalter (#fxEnabled) bedienbar: Effekte lassen sich vorbereiten, ohne dass sie laufen.
+  // (Das frühere Abblenden/Sperren von #fxPanel wirkte nur auf einen leeren, unsichtbaren Platzhalter und ist entfernt, Phase 8.)
 
   // Aktive-Effekte-Badges/-Übersicht live nachziehen (nicht erst beim
   // nächsten Öffnen des Modals) — siehe _markActiveAccordionSections().
