@@ -52,14 +52,29 @@ export const CONVOLVER_PER_SECOND = 44;
 export const convolverPoints = seconds => CONVOLVER_BASE + CONVOLVER_PER_SECOND * Math.max(0, Number(seconds) || 0);
 
 const filterQ = (def, range, ui) => ({ def, range, label: 'Güte (Q)', ...(ui ? { ui } : {}) });
+/** Tief-/Hochpass: Q ist hier die Resonanz in dB (BiquadFilterNode-Semantik für lowpass/highpass), nicht die lineare Güte. */
+const filterQdB = (def, range, ui) => ({ def, range, unit: 'dB', label: 'Resonanz', ...(ui ? { ui } : {}) });
+/** P10: Flankensteilheit (Zahl als Text, weil das Auswahlfeld Strings liefert) und Mix – Defaults = Altverhalten (eine Stufe, kein Dry-Pfad). */
+const SLOPE_OPTIONS = { '12': '12 dB/Okt.', '24': '24 dB/Okt.', '48': '48 dB/Okt.' };
+const slopeParam = () => ({ def: '12', enum: ['12', '24', '48'], label: 'Flankensteilheit', ui: { options: SLOPE_OPTIONS } });
+const mixParam = () => ({ def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } });
+/** Biquad-Stufen je Flankensteilheit (Kosten-Näherung: 1 Punkt je Stufe; Dry-Pfad und Gains vernachlässigt). */
+export const slopeStages = p => ({ '48': 4, '24': 2 })[String(p?.slope ?? '12')] ?? 1;
+const stageCost = p => ({ base: slopeStages(p), measured: true });
+/** Bandpass (10b): Flankensteilheit je Seite 6/12/24 dB/Okt. = 1/2/4 gleiche Biquads (Q wird so skaliert, dass die −3-dB-Bandbreite gleich bleibt). */
+const BANDPASS_SLOPE_OPTIONS = { '6': '6 dB/Okt. je Flanke', '12': '12 dB/Okt. je Flanke', '24': '24 dB/Okt. je Flanke' };
+const bandpassSlopeParam = () => ({ def: '6', enum: ['6', '12', '24'], label: 'Flankensteilheit', ui: { options: BANDPASS_SLOPE_OPTIONS } });
+export const bandpassStages = p => ({ '24': 4, '12': 2 })[String(p?.slope ?? '6')] ?? 1;
+const bandpassCost = p => ({ base: bandpassStages(p), measured: true });
 
 export const MODULES = [
-  { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 100, max: 20000, step: 50, scale: 'log', digits: 0 } }, Q: filterQ(0.7, [0.1, 20], { hidden: true }) } },
-  { key: 'highpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Hochpass', layerOrder: 10, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 20, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 20, max: 5000, step: 10, scale: 'log', digits: 0 } }, Q: filterQ(0.7, [0.1, 20], { hidden: true }) } },
+  { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
+    params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 100, max: 20000, step: 50, scale: 'log', digits: 0 } }, Q: filterQdB(0.7, [0.1, 20], { min: 0.1, max: 10, step: 0.1, digits: 1 }), slope: slopeParam(), mix: mixParam() } },
+  { key: 'highpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Hochpass', layerOrder: 10, consumers: ALL_CONSUMERS, cost: stageCost,
+    params: { frequency: { def: 20, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 20, max: 5000, step: 10, scale: 'log', digits: 0 } }, Q: filterQdB(0.7, [0.1, 20], { min: 0.1, max: 10, step: 0.1, digits: 1 }), slope: slopeParam(), mix: mixParam() } },
   { key: 'notch', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Notch (Kerbfilter)', layerOrder: 30, consumers: ALL_CONSUMERS, cost: c(1),
-    params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz', ui: { min: 20, max: 2000, step: 1, scale: 'log', digits: 0 } }, Q: filterQ(10, [0.5, 30], { min: 0.5, max: 30, step: 0.5, digits: 1 }) } },
+    params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz', ui: { min: 20, max: 2000, step: 1, scale: 'log', digits: 0 } }, Q: filterQ(10, [0.5, 30], { min: 0.5, max: 30, step: 0.5, digits: 1 }),
+      depth: { def: 1, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } } } },
   { key: 'wahwah', ui: { generated: true }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(4),
     params: {
       frequency: { def: 800, range: [100, 5000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 100, max: 5000, step: 10, scale: 'log', digits: 0 } },
@@ -176,7 +191,10 @@ export const MODULES = [
       threshold: { def: -50, range: [-100, 0], unit: 'dB', label: 'Schwelle', ui: { min: -80, max: -10, step: 1 } },
       attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { hidden: true } },
       release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { hidden: true } }
-    } }
+    } },
+  // ── P10 (Schritt 10b): neue Module stehen am ENDE der Liste (Reihenfolge in defaultEffects()); die Position im Layer bestimmt layerOrder ──
+  { key: 'bandpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Bandpass', layerOrder: 35, consumers: ALL_CONSUMERS, cost: bandpassCost,
+    params: { frequency: { def: 1000, range: [20, 20000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 50, max: 15000, step: 10, scale: 'log', digits: 0 } }, Q: filterQ(1, [0.1, 30], { min: 0.3, max: 20, step: 0.1, digits: 1 }), slope: bandpassSlopeParam(), mix: mixParam() } }
 ];
 
 /**

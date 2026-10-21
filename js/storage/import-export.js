@@ -8,6 +8,7 @@ import { uid }                             from '../utils.js';
 import { toast }                            from '../notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL, isIdbRef } from '../db.js';
 import { getPresetById, validatePresetShape, importSinglePresetData, importPresetCollectionData, migratePresetCategories, presetEffectsForExport, presetFieldsForExport } from '../presets.js';
+import { CURRENT_REV } from '../audio/engine/registry.js';
 import { mkProfile, mkAmbientProfile, mkMusicProfile } from './factories.js';
 import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
 import { migrateEffects, migratePlaybackSettings, migrateProfileColors, runIdbMigrationIfNeeded } from './migration.js';
@@ -230,12 +231,18 @@ export async function exportAmbientTrack(trackId) {
 
 // Preset-Export v2: `stage` (Rolle in der Pipeline) + `group` (Anzeigegruppe). `category` bleibt als Alias der
 // Gruppe erhalten, damit ältere App-Versionen die Datei weiterhin lesen können (dort gilt sie als Kategorie).
+export function presetExportShape(p) { return _presetExportShape(p); }   // Phase 9: für Tests (reine Datenform, kein Download)
 function _presetExportShape(p) {
   const group = p.group || p.category;
   // Unbekannte Module/Felder (Beutel `x`, AE-18) werden wieder in die Datei geschrieben, damit nichts verloren geht;
   // Zusatzfelder (z. B. Makros einer neueren Version) stehen auf oberster Ebene, wie sie importiert wurden.
   const shape = { ...presetFieldsForExport(p), id: p.id, name: p.name, stage: p.stage, group, category: group, description: p.description || '', effects: presetEffectsForExport(p) };
   if (p.stageAuto) shape.stageAuto = true;
+  // Phase 9: Tags, Makros, requires (nur wenn vorhanden) und der Engine-Stempel; ein vorhandener Stempel einer neueren Version bleibt.
+  if (p.tags?.length) shape.tags = JSON.parse(JSON.stringify(p.tags));
+  if (p.macros?.length) shape.macros = JSON.parse(JSON.stringify(p.macros));
+  if (p.requires?.length) shape.requires = JSON.parse(JSON.stringify(p.requires));
+  if (shape.engine === undefined) shape.engine = { v: 2, rev: CURRENT_REV };
   return shape;
 }
 

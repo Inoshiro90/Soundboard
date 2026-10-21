@@ -33,6 +33,7 @@ import { setupTouchRowReorder } from '../ui/row-reorder.js';
 import { iconSvg } from '../ui/icons.js';
 import { updateFxPresetActionButtons, presetActions } from '../events/register-preset-events.js';
 import { schedulePreviewUpdate } from '../audio/preview.js';
+import { createMacroBar } from '../ui/effects/macro-bar.js';
 
 const clone = x => JSON.parse(JSON.stringify(x));
 const $ = id => document.getElementById(id);
@@ -42,7 +43,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const M = { stage: null, eff: null, baseline: '', dragId: null };
 /** Layer-Modal: bearbeiteter Layer (Kopie) + Änderungsmerker. */
 const L = { id: null, stage: null, draft: null, touched: false };
-let _wired = false, _stageGuard = null, _layerGuard = null;
+let _wired = false, _stageGuard = null, _layerGuard = null, _macroBar = null;
 
 // ─── KONTEXT ─────────────────────────────────────────────────
 
@@ -200,7 +201,9 @@ function _renderPicker() {
       const pick = el('button', 'fx-picker__item'); pick.type = 'button'; pick.dataset.act = 'pick';
       pick.appendChild(el('span', 'fx-picker__name', p.name));
       if (p.stageAuto) { const t = el('span', 'fx-layer__tag fx-layer__tag--warn', 'Stufe prüfen'); t.title = 'Die Stufe wurde automatisch zugeordnet — bitte prüfen'; pick.appendChild(t); }
+      if (p.missing?.length) { const t = el('span', 'fx-layer__tag fx-layer__tag--warn', 'benötigt neuere Version'); t.title = `Unbekannte Module: ${p.missing.join(', ')} — bleiben erhalten, klingen aber erst in einer neueren Version.`; pick.appendChild(t); }
       if (p.description) pick.appendChild(el('span', 'fx-picker__desc u-text-muted', p.description));
+      if (p.tags?.length) pick.appendChild(el('span', 'fx-picker__desc u-text-muted', 'Tags: ' + p.tags.join(' · ')));
       pick.setAttribute('aria-label', `${p.name} zur Stufe ${meta.label} hinzufügen`);
       const tools = el('span', 'fx-picker__tools');
       if (isUserPreset(p.id)) tools.appendChild(_pickerAction('pencil', `Preset-Details bearbeiten: ${p.name}`, 'edit'));
@@ -263,6 +266,7 @@ export function openLayerModal(layerId) {
   $('fxLayerContext').textContent = `${contextLabel(f.stage)} · Layer ${f.index + 1} von ${count}: ${layerLabel(L.draft)}`;
   loadLayerParamsToForm(L.draft.params);
   _renderLayerInfo();
+  _renderMacros();
   _layerGuard?.arm();
   _show('fxLayerModal');
 }
@@ -286,6 +290,29 @@ function _renderLayerInfo() {
     : 'Layer mit eigenen Einstellungen, kein Preset. Über „Als eigenes Preset speichern“ lässt er sich wiederverwenden.';
   $('btnFxLayerRestore').hidden = !preset || !modified;
   updateFxPresetActionButtons(preset ? preset.id : '');
+  const miss = preset?.missing || [], missEl = $('fxLayerPresetMissing');
+  if (missEl) {
+    missEl.hidden = !miss.length;
+    missEl.textContent = miss.length ? `Benötigt neuere Version: Dieses Preset nutzt Module, die diese Version nicht kennt (${miss.join(', ')}). Sie bleiben erhalten, klingen aber erst in einer neueren Version.` : '';
+  }
+  _macroBar?.sync(fillLayerParams(_layerParamsNow()));
+}
+
+/** Makro-Leiste des Presets dieses Layers neu aufbauen (Öffnen, Preset wiederherstellen/übernehmen). */
+function _renderMacros() {
+  if (!_macroBar) return;
+  const preset = L.draft?.presetId ? getPresetById(L.draft.presetId) : null;
+  _macroBar.render(preset?.macros || [], fillLayerParams(_layerParamsNow()));
+}
+
+/** Ein Makro hat neue Parameter berechnet: wie „Preset wiederherstellen“ ins Formular schreiben, Vorschau anstoßen. */
+function _applyMacroParams(params) {
+  if (!L.draft) return;
+  L.draft.params = sparsifyParams(params);
+  loadLayerParamsToForm(L.draft.params);
+  L.touched = true;
+  _renderLayerInfo();
+  pushPreviewUpdate();
 }
 
 /** Aktuelle Einstellungen des Layers im Modal (vollständig) — für „Als eigenes Preset speichern“. */
@@ -303,6 +330,7 @@ export function adoptPresetInLayerModal(presetId) {
   if (p.stageAuto) L.draft.stageAuto = true; else delete L.draft.stageAuto;
   L.touched = true;
   _renderLayerInfo();
+  _renderMacros();
   return true;
 }
 
@@ -321,6 +349,7 @@ function _restorePreset() {
   loadLayerParamsToForm(L.draft.params);
   L.touched = true;
   _renderLayerInfo();
+  _renderMacros();
 }
 
 function _applyLayer() {
@@ -395,6 +424,7 @@ export function initFxPipelineModals() {
   $('fxPresetPickerList')?.addEventListener('click', _onPickerClick);
 
   // Layer-Modal
+  if ($('fxLayerMacros')) _macroBar = createMacroBar({ host: $('fxLayerMacros'), getParams: () => fillLayerParams(_layerParamsNow()), onApply: _applyMacroParams });
   wireLayerForm(() => { if ($('fxLayerModal')?.classList.contains('show')) _renderLayerInfo(); });
   // Phase 7 (B-05): Regler im Layer-Formular wirken sofort auf eine laufende Vorschau. Nur echte Nutzereingaben — das programmatische
   // Befüllen (Preset anwenden, Zurücksetzen) löst bewusst kein Live-Update aus; die nächste Eingabe übernimmt den ganzen Formularstand.
@@ -402,5 +432,5 @@ export function initFxPipelineModals() {
   $('btnFxLayerApply')?.addEventListener('click', _applyLayer);
   $('btnFxLayerRestore')?.addEventListener('click', _restorePreset);
   $('btnFxReset')?.addEventListener('click', () => { resetLayerForm(); _renderLayerInfo(); });
-  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; updateFxPresetActionButtons(''); pushPreviewUpdate(); });   // Abbrechen/Übernehmen: Vorschau zurück auf den Draft
+  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; _macroBar?.clear(); updateFxPresetActionButtons(''); pushPreviewUpdate(); });   // Abbrechen/Übernehmen: Vorschau zurück auf den Draft
 }

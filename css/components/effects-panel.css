@@ -809,3 +809,22 @@
   .fx-card__note { border-left-color: CanvasText; }
   .fx-card .fx-slider:focus-visible, .fx-card .fx-select:focus-visible { outline-color: Highlight; }
 }
+
+/* Phase 9 — Makro-Regler des Presets im Layer-Modal (js/ui/effects/macro-bar.js) */
+.fx-layer__missing { display: block; border-radius: var(--radius-sm, 6px); padding: var(--space-1) var(--space-2); margin: var(--space-2) 0 0; white-space: normal; }
+.fx-macros { margin-top: var(--space-3); border-top: var(--border-whisper); padding-top: var(--space-2); }
+.fx-macros__head { margin: 0 0 var(--space-1); font-size: var(--text-badge); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.fx-macros__hint { margin: 0 0 var(--space-2); }
+.fx-macros__list { display: flex; flex-direction: column; gap: var(--space-1); }
+.fx-macro { display: grid; grid-template-columns: minmax(6rem, 9rem) 1fr 3.5rem; align-items: center; gap: var(--space-1) var(--space-2); min-height: 44px; }
+.fx-macro__label { margin: 0; font-weight: 500; }
+.fx-macro__range { width: 100%; min-height: 44px; margin: 0; accent-color: var(--color-accent); touch-action: pan-y; }
+.fx-macro__range:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: var(--radius-sm, 6px); }
+.fx-macro__range:disabled { opacity: 0.45; }
+.fx-macro__value { text-align: right; font-variant-numeric: tabular-nums; }
+.fx-macro__note { grid-column: 1 / -1; margin-top: calc(-1 * var(--space-1)); }
+.fx-macro__note:empty { display: none; }
+@media (max-width: 480px) {
+  .fx-macro { grid-template-columns: 1fr 3.5rem; }
+  .fx-macro__label { grid-column: 1 / -1; }
+}

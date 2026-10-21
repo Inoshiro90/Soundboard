@@ -96,6 +96,9 @@
               <span class="fx-layer__tag" id="fxLayerPresetTag" hidden></span>
             </div>
             <p class="u-text-muted u-text-badge" id="fxLayerPresetNote"></p>
+            <p class="fx-layer__tag fx-layer__tag--warn fx-layer__missing" id="fxLayerPresetMissing" role="status" hidden></p>
+            <!-- Phase 9: Makro-Regler des Presets (js/ui/effects/macro-bar.js); verborgen, wenn das Preset keine hat -->
+            <div class="fx-macros" id="fxLayerMacros" hidden></div>
             <div class="fx-layer-preset__actions">
               <button type="button" class="btn btn--sm" id="btnFxPresetSaveAs" title="Einstellungen dieses Layers als neues eigenes Preset speichern"><span data-icon-slot="save"></span> Als eigenes Preset speichern</button>
               <button type="button" class="btn btn--sm" id="btnFxPresetEdit" title="Name, Stufe, Gruppe und Beschreibung des eigenen Presets ändern" hidden><span data-icon-slot="pencil"></span> Preset-Details</button>
@@ -124,7 +127,7 @@
             </button>
             <div class="disclosure-section__panel" id="smFxFilters" hidden>
               <!-- Phase 8: Karten für Tiefpass, Hochpass und Notch erzeugt js/ui/effects/ aus der Registry (kein handgeschriebenes Effekt-HTML). -->
-              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="lowpass,highpass,notch"></div>
+              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="lowpass,highpass,notch,bandpass"></div>
             </div>
           </div>
 

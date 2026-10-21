@@ -167,22 +167,62 @@ function _buildDistortion(ctx, p) {
   return _inst('distortion', { input: s, output: s }, p, { apply: () => {}, sig: q => `${q.mode}|${q.amount ?? 40}|${q.oversample}` });
 }
 
-function _buildBiquadModule(ctx, p, key, type, { fMin, fMax, fDef, qMin, qMax, qDef }) {
-  const n = ctx.createBiquadFilter(); n.type = type;
+/**
+ * Butterworth-Güten (linear) je Stufenzahl (Flankensteilheit 12/24/48 dB/Okt. = 1/2/4 Biquads), aufsteigend: Q_k = 1 / (2·sin((2k−1)·π / 2N)),
+ * N = 2·Stufen. Die LETZTE Stufe ist die „resonante“; nur sie trägt den Nutzer-Q (P10, Entscheidung a).
+ */
+const _BW_Q = { 2: [0.5412, 1.3066], 4: [0.5098, 0.6013, 0.8999, 2.5629] };
+const _toDb = q => 20 * Math.log10(q);
+const _stagesOf = slope => ({ '48': 4, '24': 2 })[String(slope ?? '12')] ?? 1;
+const _bpStagesOf = slope => ({ '24': 4, '12': 2 })[String(slope ?? '6')] ?? 1;   // Bandpass: 6/12/24 dB/Okt. je Flanke
+
+/**
+ * Filter-Modul aus 1/2/4 gleichartigen Biquads (+ optional parallelem Dry-Pfad für `mix`). Ist `slope` 12 (oder fehlt) und `mix` ≥ 1
+ * (oder fehlt), entsteht EXAKT der bisherige Graph (ein Biquad, Q direkt) — Altverhalten, Goldens unverändert.
+ * Q: bei 12 dB/Okt. unverändert (lowpass/highpass: Resonanz in dB). Bei 24/48 dB/Okt. bekommen die übrigen Stufen Butterworth-Güten (in dB),
+ * die letzte Stufe Butterworth + (Q − Standard-Q): Standard-Q ergibt also eine Butterworth-Kette, Mehr-Q hebt nur die Resonanz an.
+ * Strukturell (neu bauen, `update()` liefert false): Stufenzahl und ob ein Dry-Pfad nötig ist (mix < 1).
+ */
+function _buildBiquadModule(ctx, p, key, type, { fMin, fMax, fDef, qMin, qMax, qDef }, { slopeable = true, mixKey = 'mix', bandpass = false } = {}) {
+  const stagesOf = q => (!slopeable ? 1 : bandpass ? _bpStagesOf(q.slope) : _stagesOf(q.slope));
+  const stages = stagesOf(p);
+  const mixOf = q => { const v = q[mixKey]; return Number.isFinite(v) ? _cl(0, 1, v) : 1; };
+  const needDry = mixOf(p) < 1;
+  const nodes = [];
+  for (let i = 0; i < stages; i++) { const n = ctx.createBiquadFilter(); n.type = type; nodes.push(n); }
+  for (let i = 0; i < stages - 1; i++) nodes[i].connect(nodes[i + 1]);
+  const bw = bandpass ? null : (_BW_Q[stages] || null);
+  // Bandpass: k gleiche Stufen verengen die −3-dB-Bandbreite; Q je Stufe = Q · √(2^(1/k) − 1) (kleiner als Q, jede Stufe also breiter)
+  // hält sie auf dem eingestellten Q: (1 + Q'²u²)^k = 2 bei Q·u = 1.
+  const bpQ = stages > 1 ? Math.sqrt(2 ** (1 / stages) - 1) : 1;
+  let inp = nodes[0], out = nodes[stages - 1], dry = null, wet = null;
+  if (needDry) {
+    inp = ctx.createGain(); out = ctx.createGain(); dry = ctx.createGain(); wet = ctx.createGain();
+    inp.connect(nodes[0]); nodes[stages - 1].connect(wet); wet.connect(out);
+    inp.connect(dry); dry.connect(out);
+  }
   const apply = (q, sm) => {
     const set = _setter(ctx, sm);
-    set(n.frequency, Math.max(fMin, Math.min(fMax, q.frequency ?? fDef)));
-    set(n.Q, Math.max(qMin, Math.min(qMax, q.Q ?? qDef)));
+    const f = Math.max(fMin, Math.min(fMax, q.frequency ?? fDef));
+    const qu = Math.max(qMin, Math.min(qMax, q.Q ?? qDef));
+    for (let i = 0; i < stages; i++) {
+      set(nodes[i].frequency, f);
+      if (stages === 1) set(nodes[i].Q, qu);
+      else if (bandpass) set(nodes[i].Q, qu * bpQ);
+      else if (i < stages - 1) set(nodes[i].Q, _toDb(bw[i]));
+      else set(nodes[i].Q, _toDb(bw[i]) + (qu - qDef));
+    }
+    if (needDry) { const m = mixOf(q); set(wet.gain, m); set(dry.gain, 1 - m); }
   };
   apply(p, false);
-  return _inst(key, { input: n, output: n }, p, { apply });
+  const sig = q => `${stagesOf(q)}|${needDry || mixOf(q) < 1 ? 1 : 0}`;   // einmal mit Dry-Pfad gebaut ⇒ mix darf live auf 1 laufen
+  return _inst(key, { input: inp, output: out }, p, { apply, sig });
 }
-
 /** Schmalbandige Frequenzunterdrückung, primär gegen Netzbrummen (50/60Hz). */
 function _buildNotch(ctx, p) {
-  return _buildBiquadModule(ctx, p, 'notch', 'notch', { fMin: 20, fMax: 20000, fDef: 50, qMin: 0.5, qMax: 30, qDef: 10 });
+  // `depth` (0…1): Dry parallel (1 − depth) → Kerbtiefe im Zentrum = 1 − depth; depth 1 = Altverhalten (reiner Notch, kein Dry-Pfad).
+  return _buildBiquadModule(ctx, p, 'notch', 'notch', { fMin: 20, fMax: 20000, fDef: 50, qMin: 0.5, qMax: 30, qDef: 10 }, { slopeable: false, mixKey: 'depth' });
 }
-
 /**
  * Klassische Lautstärke-Modulation. Gain = dcOffset + LFO*lfoGain,
  * pendelt zwischen [1-depth, 1] (depth=0 → konstant 1, kein Effekt;
@@ -501,6 +541,8 @@ function _collectSegments(ctx, effects, tr, omit) {
   if (effects.lowpass?.enabled)
     segs.push(_buildBiquadModule(ctx, effects.lowpass, 'lowpass', 'lowpass', { fMin: 100, fMax: 20000, fDef: 20000, qMin: 0.1, qMax: 10, qDef: 0.7 }));
   if (effects.notch?.enabled)      segs.push(_buildNotch(ctx, effects.notch));
+  if (effects.bandpass?.enabled)
+    segs.push(_buildBiquadModule(ctx, effects.bandpass, 'bandpass', 'bandpass', { fMin: 20, fMax: 20000, fDef: 1000, qMin: 0.1, qMax: 30, qDef: 1 }, { bandpass: true }));
   if (effects.wahwah?.enabled)     segs.push(_buildWahwah(ctx, effects.wahwah, tr));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));

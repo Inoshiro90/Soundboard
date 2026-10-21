@@ -25,6 +25,7 @@ import {
 export let _fxPresetMetaMode   = 'create'; // 'create' | 'edit'
 export let _fxPresetMetaEditId = null;
 let _metaIncludeLayerValues = false;       // speichert das Meta-Modal zusätzlich die Werte des Layers im Layer-Modal?
+let _metaCarryMacros = null;               // Phase 9: Makros des Quell-Presets, die „Als eigenes Preset speichern“ übernimmt
 
 /**
  * Blendet Bearbeiten/Duplizieren/Löschen/Export im Layer-Modal je nach Preset des bearbeiteten Layers ein/aus
@@ -45,6 +46,7 @@ export function _openFxPresetMetaModal(mode, prefill, { includeLayerValues = fal
   _fxPresetMetaMode   = mode;
   _fxPresetMetaEditId = mode === 'edit' ? prefill.id : null;
   _metaIncludeLayerValues = includeLayerValues;
+  _metaCarryMacros = (mode === 'create' && Array.isArray(prefill?.macros) && prefill.macros.length) ? prefill.macros : null;
   const titleEl = document.getElementById('fxPresetMetaModalTitle');
   if (titleEl) titleEl.textContent = mode === 'edit' ? 'Preset-Details bearbeiten' : 'Als eigenes Preset speichern';
   const scope = document.getElementById('fxPresetMetaScope');
@@ -63,6 +65,8 @@ export function _openFxPresetMetaModal(mode, prefill, { includeLayerValues = fal
   if (stageEl) stageEl.value = STAGE_ORDER.includes(prefill?.stage) ? prefill.stage : (currentLayerStage() || 'medium');
   if (stageHint) stageHint.hidden = !prefill?.stageAuto;
   if (descEl) descEl.value = prefill?.description || '';
+  const tagsEl = document.getElementById('fxPresetTagsInput');
+  if (tagsEl) tagsEl.value = Array.isArray(prefill?.tags) ? prefill.tags.join(', ') : '';
   const modalEl = document.getElementById('fxPresetMetaModal');
   // Fokus erst NACH dem Einblenden setzen (shown.bs.modal): Bootstraps Fokusfalle fokussiert am Ende
   // der Einblend-Animation das Modal selbst und überschriebe einen früheren (Timeout-)Fokus.
@@ -114,7 +118,7 @@ export function registerPresetEvents() {
   document.getElementById('btnFxPresetSaveAs')?.addEventListener('click', () => {
     const cur = currentLayerPresetId() ? getPresetById(currentLayerPresetId()) : null;
     _openFxPresetMetaModal('create',
-      cur ? { name: cur.name + ' (Kopie)', group: cur.group, stage: cur.stage, description: cur.description } : null,
+      cur ? { name: cur.name + ' (Kopie)', group: cur.group, stage: cur.stage, description: cur.description, tags: cur.tags, macros: cur.macros } : null,
       { includeLayerValues: true });
   });
   document.getElementById('btnFxPresetEdit')?.addEventListener('click', () => presetActions.edit(currentLayerPresetId(), { includeLayerValues: true }));
@@ -127,13 +131,14 @@ export function registerPresetEvents() {
     const group       = document.getElementById('fxPresetCategoryInput')?.value || 'supernatural';
     const stage       = document.getElementById('fxPresetStageInput')?.value || currentLayerStage() || 'medium';
     const description = document.getElementById('fxPresetDescInput')?.value || '';
+    const tags        = document.getElementById('fxPresetTagsInput')?.value || '';   // Phase 9: Text, Normalisierung in presets.js
     const withValues  = _metaIncludeLayerValues && isLayerModalOpen();
     const effects     = withValues ? _currentEffectsForPreset() : undefined;
     let result;
     if (_fxPresetMetaMode === 'edit' && _fxPresetMetaEditId) {
-      result = updateUserPreset(_fxPresetMetaEditId, { name, group, stage, description, effects });
+      result = updateUserPreset(_fxPresetMetaEditId, { name, group, stage, description, effects, tags });
     } else {
-      result = createUserPreset({ name, group, stage, description, effects: effects || {} });
+      result = createUserPreset({ name, group, stage, description, effects: effects || {}, tags, macros: _metaCarryMacros || undefined });
     }
     if (!result) { toast('Preset konnte nicht gespeichert werden', 'err'); return; }
     _saveRaw();

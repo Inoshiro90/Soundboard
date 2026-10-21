@@ -15,6 +15,8 @@
 
 import { APP } from './core/state.js';
 import { MODULE_KEYS } from './audio/engine/registry.js';
+import { normalizeMacros } from './audio/engine/macros.js';
+import { builtinMacrosFor } from './presets/preset-macros.js';
 import {
   fillLayerParams, normalizeEffectsObject as _normalizeEffectsObject, normalizeEffectsObjectX, addToBag, cleanX, inheritX, isUnsafeKey
 } from './audio/engine/schema.js';
@@ -169,12 +171,14 @@ export function getPresetById(id) {
   if (!id) return null;
   if (Object.prototype.hasOwnProperty.call(EFFECT_PRESETS, id)) {
     const meta = BUILTIN_PRESET_META[id] || { name: id, stage: 'medium', group: DEFAULT_GROUP, description: '' };
-    return { id, builtin: true, name: meta.name, stage: meta.stage, group: meta.group, stageAuto: false, description: meta.description || '', effects: EFFECT_PRESETS[id] };
+    return { id, builtin: true, name: meta.name, stage: meta.stage, group: meta.group, stageAuto: false, description: meta.description || '', effects: EFFECT_PRESETS[id], tags: [], macros: builtinMacrosFor(id), requires: [], missing: [] };
   }
   const up = _ensureUserPresetsArray().find(p => p.id === id);
   if (up) {
     const st = _userPresetStage(up);
-    return { id: up.id, builtin: false, name: up.name, stage: st.stage, group: up.group || up.category || DEFAULT_GROUP, stageAuto: st.auto, description: up.description || '', effects: up.effects, ...(up.x ? { x: up.x } : {}) };
+    const desc = { id: up.id, builtin: false, name: up.name, stage: st.stage, group: up.group || up.category || DEFAULT_GROUP, stageAuto: st.auto, description: up.description || '', effects: up.effects, tags: up.tags || [], macros: up.macros || [], requires: up.requires || [], ...(up.x ? { x: up.x } : {}) };
+    desc.missing = presetMissingModules(desc);
+    return desc;
   }
   return null;
 }
@@ -224,7 +228,54 @@ function _sanitizeMeta({ name, group, category, stage, description }) {
 
 // Bekannte Felder einer Preset-Datei/eines User-Presets; alles andere (z. B. Makros, `engine` einer neueren Version)
 // wird im Beutel `x.fields` erhalten und beim Export wieder ausgegeben.
-const _KNOWN_PRESET_FIELDS = new Set(['kind', 'id', 'name', 'group', 'category', 'stage', 'stageAuto', 'description', 'effects', 'version', 'createdAt', 'updatedAt', 'x']);
+// Phase 9: `tags`, `macros`, `requires` sind bekannte Felder. `engine` (Stempel der schreibenden App-Version) bleibt bewusst ein
+// unbekanntes Feld: ein von einer neueren Version stammender Stempel wird erhalten; der Export setzt ihn nur, wenn er fehlt.
+const _KNOWN_PRESET_FIELDS = new Set(['kind', 'id', 'name', 'group', 'category', 'stage', 'stageAuto', 'description', 'effects', 'version', 'createdAt', 'updatedAt', 'x', 'tags', 'macros', 'requires']);
+
+// ─── TAGS · MAKROS · REQUIRES (Phase 9) ───────────────────────
+export const MAX_TAGS = 8, MAX_TAG_LEN = 24, MAX_REQUIRES = 40;
+
+/** Tags bereinigen: nur Strings, getrimmt, ohne Steuerzeichen, eindeutig (ohne Groß-/Kleinschreibung), begrenzt. */
+export function normalizeTags(raw) {
+  const src = typeof raw === 'string' ? raw.split(',') : (Array.isArray(raw) ? raw : []);
+  const out = [], seen = new Set();
+  for (const t of src) {
+    if (typeof t !== 'string') continue;
+    const v = t.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TAG_LEN);
+    const k = v.toLowerCase();
+    if (!v || seen.has(k)) continue;
+    seen.add(k); out.push(v);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
+}
+
+/** `requires`: Modulschlüssel, die ein Preset braucht. Nur Strings, eindeutig, begrenzt. */
+export function normalizeRequires(raw) {
+  const out = [];
+  for (const r of (Array.isArray(raw) ? raw : [])) {
+    if (typeof r === 'string' && /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(r) && !out.includes(r)) out.push(r);
+    if (out.length >= MAX_REQUIRES) break;
+  }
+  return out;
+}
+
+/**
+ * Module, die dieses Preset braucht, die diese App-Version aber nicht kennt: `requires`-Einträge ohne Registry-Modul
+ * plus unbekannte Module im Beutel (`x.modules`). Solche Presets bleiben vollständig erhalten (AE-18) und werden nur markiert.
+ */
+export function presetMissingModules(p) {
+  const known = new Set(MODULE_KEYS);
+  const miss = new Set((p?.requires || []).filter(k => !known.has(k)));
+  for (const k of Object.keys(p?.x?.modules || {})) if (k !== '__skipped' && !known.has(k)) miss.add(k);
+  return [...miss];
+}
+
+/** Makro-/Tag-/requires-Felder eines Roh-Presets → { tags, macros, requires, rejected } (rejected: strukturell ungültige Makros). */
+function _extraMeta(raw) {
+  const { macros, rejected } = normalizeMacros(raw?.macros);
+  return { tags: normalizeTags(raw?.tags), macros, requires: normalizeRequires(raw?.requires), rejected };
+}
 
 /** Beutel eines Presets aus (a) unbekannten Teilen der Effekte, (b) einem bestehenden Beutel, (c) unbekannten Preset-Feldern. */
 function _presetBag({ ex, xIn, fields }) {
@@ -262,7 +313,7 @@ export function presetFieldsForExport(p) {
  *  Built-in-ID (EFFECT_PRESETS-Schlüssel aus presets/effect-presets-data.js) kollidieren.
  *  `stage` ist Pflicht-Metadatum (Rolle in der Pipeline); fehlt sie, wird sie aus den Parametern vorgeschlagen und
  *  das Preset mit stageAuto:true markiert („Stufe prüfen“). */
-export function createUserPreset({ name, group, category, stage, description, effects, x, fields }) {
+export function createUserPreset({ name, group, category, stage, description, effects, x, fields, tags, macros, requires }) {
   const meta = _sanitizeMeta({ name, group, category, stage, description });
   const { effects: normEffects, x: ex } = normalizeEffectsObjectX(effects);
   const auto = !meta.stage;
@@ -276,13 +327,18 @@ export function createUserPreset({ name, group, category, stage, description, ef
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
-  const bag = _presetBag({ ex, xIn: x, fields });
+  // Phase 9: Tags, Makros, requires. Strukturell ungültige Makros gehen nicht verloren: sie liegen unter x.fields.macrosRejected.
+  const meta9 = _extraMeta({ tags, macros, requires });
+  if (meta9.tags.length) preset.tags = meta9.tags;
+  if (meta9.macros.length) preset.macros = meta9.macros;
+  if (meta9.requires.length) preset.requires = meta9.requires;
+  const bag = _presetBag({ ex, xIn: x, fields: meta9.rejected.length ? { ...fields, macrosRejected: [...(Array.isArray(fields?.macrosRejected) ? fields.macrosRejected : []), ...meta9.rejected] } : fields });
   if (bag) preset.x = bag;
   _ensureUserPresetsArray().push(preset);
   return preset;
 }
 
-export function updateUserPreset(id, { name, group, category, stage, description, effects } = {}) {
+export function updateUserPreset(id, { name, group, category, stage, description, effects, tags } = {}) {
   const p = _ensureUserPresetsArray().find(x => x.id === id);
   if (!p) return null;
   const cur = getPresetById(id);
@@ -293,6 +349,7 @@ export function updateUserPreset(id, { name, group, category, stage, description
   // Eine ausdrücklich gesetzte Stufe ist bestätigt; ohne Angabe bleibt der Prüf-Hinweis bestehen.
   p.stageAuto = stage ? false : cur.stageAuto;
   p.version = 2;
+  if (tags !== undefined) { const nt = normalizeTags(tags); if (nt.length) p.tags = nt; else delete p.tags; }
   if (effects) {
     const { effects: ne, x: ex } = normalizeEffectsObjectX(effects);
     p.effects = ne;
@@ -323,7 +380,8 @@ export function duplicatePreset(sourceId, overrideName) {
     stage: src.stage,
     description: src.description,
     effects: src.effects,
-    x: src.x
+    x: src.x,
+    tags: src.tags, macros: src.macros, requires: src.requires
   });
 }
 
@@ -357,7 +415,33 @@ export function migrateUserPresetStages() {
       changed = true;
     }
     if (p.version !== 2) { p.version = 2; changed = true; }
+    if (_liftPhase9Fields(p)) changed = true;
   }
+  return changed;
+}
+
+/**
+ * Phase 9: Presets, die vor P9 importiert wurden, tragen `tags`/`macros`/`requires` im Beutel `x.fields` (unbekannte Felder,
+ * AE-18). Hier werden sie in die bekannten Felder gehoben (idempotent; ein schon vorhandenes bekanntes Feld gewinnt, der
+ * Beutel-Eintrag bleibt dann unverändert stehen). Ungültige Makros wandern nach x.fields.macrosRejected.
+ */
+function _liftPhase9Fields(p) {
+  const fields = p.x?.fields;
+  if (!fields || typeof fields !== 'object') return false;
+  let changed = false;
+  if ('tags' in fields && p.tags === undefined) {
+    const t = normalizeTags(fields.tags); delete fields.tags; if (t.length) p.tags = t; changed = true;
+  }
+  if ('requires' in fields && p.requires === undefined) {
+    const r = normalizeRequires(fields.requires); delete fields.requires; if (r.length) p.requires = r; changed = true;
+  }
+  if ('macros' in fields && p.macros === undefined) {
+    const { macros, rejected } = normalizeMacros(fields.macros); delete fields.macros;
+    if (macros.length) p.macros = macros;
+    if (rejected.length) fields.macrosRejected = [...(Array.isArray(fields.macrosRejected) ? fields.macrosRejected : []), ...rejected];
+    changed = true;
+  }
+  if (changed && !Object.keys(fields).length) { delete p.x.fields; if (!Object.keys(p.x).length) delete p.x; }
   return changed;
 }
 /** @deprecated frühere Bezeichnung */
@@ -392,7 +476,8 @@ export function importSinglePresetData(raw) {
     description: raw?.description,
     effects: raw?.effects,
     x: raw?.x,
-    fields: _unknownPresetFields(raw)
+    fields: _unknownPresetFields(raw),
+    tags: raw?.tags, macros: raw?.macros, requires: raw?.requires
   });
   p.stageAuto = !!auto;
   return p;
