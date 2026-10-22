@@ -6,6 +6,7 @@
  */
 import { el, createNumberControl, createSelectControl } from './controls.js';
 import { createBandsControl } from './eq10-bands.js';
+import { createParamEqControl } from './param-eq.js';
 import { IR_IMPULSE_NAMES } from '../../audio/engine/registry.js';
 
 /**
@@ -29,6 +30,11 @@ export function createModuleCard(def, api) {
   const controls = [];
   for (const [param, spec] of Object.entries(def.params)) {
     if (spec.ui?.hidden) continue;
+    if (spec.bandList) {                                               // Parametrischer EQ (P10d): Bandtabelle
+      const c = createParamEqControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, getBands: () => api.get(param), setBands: v => api.set(param, v) });
+      controls.push(c); body.appendChild(c.root); head.appendChild(c.headExtra);
+      continue;
+    }
     if (spec.bands) {                                                  // 10-Band-EQ: eigenes Control mit Reset im Kopf
       const c = createBandsControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, spec, getBands: () => api.get(param), setBands: v => api.set(param, v) });
       controls.push(c); body.appendChild(c.root); head.appendChild(c.headExtra);

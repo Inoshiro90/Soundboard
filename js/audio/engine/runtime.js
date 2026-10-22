@@ -136,6 +136,8 @@ export class PipelineRuntime {
     this.plan = plan;
     this.sig = planSignature(plan);
     this._retiring = new Set();
+    // Diagnose (P10, M-7): Dauer der Austausche im echten Betrieb — wird im Overlay `?debug=audio` angezeigt; keine Wirkung auf den Klang.
+    this.swapStats = { swaps: 0, coalesced: 0, buildMs: 0, totalMs: 0, maxTotalMs: 0 };
     this._swapChain = Promise.resolve();
     this._pending = null;
     this._swapping = false;
@@ -201,6 +203,7 @@ export class PipelineRuntime {
   swapTo(plan, { fade = this.xfade } = {}) {
     if (!this.live) return Promise.reject(new Error('PipelineRuntime.swapTo: nur im Live-Modus (live:true)'));
     if (this.disposed) return Promise.resolve('disposed');
+    if (this._pending) this.swapStats.coalesced++;     // ein noch wartender Plan wird vom neueren ersetzt
     this._pending = { plan, fade };
     if (!this._swapping) {
       this._swapping = true;
@@ -222,7 +225,7 @@ export class PipelineRuntime {
   }
 
   async _swapNow(plan, fade) {
-    const ctx = this.ctx, old = this.cur;
+    const ctx = this.ctx, old = this.cur, tSwap = (typeof performance !== 'undefined') ? performance.now() : 0;
     const nu = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable });
     nu.fade = ctx.createGain(); nu.fade.gain.value = 0;
     if (nu.input) this.entry.connect(nu.input); else this.entry.connect(nu.fade);
@@ -233,8 +236,14 @@ export class PipelineRuntime {
     _ramp(old.fade.gain, _down, t0, d, 0);
     this.cur = nu; this.plan = plan; this.sig = planSignature(plan);
     this._retiring.add(old);
+    const st = this.swapStats, tBuilt = (typeof performance !== 'undefined') ? performance.now() : 0;
     await _waitAudioTime(ctx, t0 + d + 0.02, () => this.disposed, (d + 1) * 1000);
     this._retiring.delete(old);
+    if (tSwap) {
+      const tEnd = performance.now();
+      st.swaps++; st.buildMs = tBuilt - tSwap; st.totalMs = tEnd - tSwap; st.maxTotalMs = Math.max(st.maxTotalMs, st.totalMs);
+      if (typeof window !== 'undefined') window.__swapStats = st;
+    }
     try { old.dispose(); old.fade.disconnect(); } catch (e) { /* ignorieren */ }
   }
 

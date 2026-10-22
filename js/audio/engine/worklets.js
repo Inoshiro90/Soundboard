@@ -49,5 +49,9 @@ export function workletsOfModule(key) {
 export function workletsForPlan(plan, caps) {
   const ids = new Set();
   if (plan?.hasPitch && caps?.pitch === 'worklet') for (const id of workletsOfModule('pitchShift')) ids.add(id);
+  // P10c: Hüllkurvenfolger, wenn Wah-Wah/Auto-Filter aktiv von der Hüllkurve gesteuert werden.
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
+    for (const id of workletsOfModule('autoFilter')) ids.add(id);
+  }
   return [...ids];
 }

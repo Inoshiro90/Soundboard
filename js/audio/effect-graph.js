@@ -6,7 +6,8 @@
 
 import { _pitchWorkletReadyContexts } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
-import { defaultModules } from './engine/registry.js';
+import { defaultModules, peqActiveBands } from './engine/registry.js';
+import { makeEnvelopeFollower } from './engine/modsources.js';
 
 // ─── DEFAULT EFFECTS ─────────────────────────────────────────
 
@@ -309,26 +310,117 @@ function _buildFlanger(ctx, p, tr) { return _buildModulatedDelay(ctx, p, { key: 
  * Basisfrequenz einen vergleichbar hörbaren Sweep-Bereich ergibt (ein fixer Hz-Wert
  * würde bei niedrigem baseFreq unverhältnismäßig groß wirken).
  */
+/**
+ * Hüllkurven-Steuerung (P10c): Eingangssignal → Envelope-Follower (Worklet) → Empfindlichkeit → Begrenzung auf 0…1 → Tiefe → Zielparameter.
+ * Liefert null, wenn das Worklet im Context nicht geladen ist (Aufrufer fällt auf den LFO zurück, Hinweis über das Ereignis `sb:fx-fallback`).
+ */
+function _buildEnvelopeControl(ctx, tr, from, depthGain, label) {
+  const env = makeEnvelopeFollower(ctx, { attack: 0.005, release: 0.15, mode: 'peak' });
+  if (!env) {
+    console.warn(`[audio] ${label}: Hüllkurve nicht verfügbar (Worklet fehlt) — LFO-Ersatz`);
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sb:fx-fallback', { detail: { module: label, reason: 'envfollower' } })); } catch (e) { /* ohne Fenster */ }
+    return null;
+  }
+  const scale = ctx.createGain();
+  const limit = ctx.createWaveShaper(); limit.curve = new Float32Array([0, 0, 1]);   // y = max(0, min(1, x)) für x ∈ [−1, 1]; Hüllkurve ist ≥ 0
+  from.connect(env.input); env.output.connect(scale); scale.connect(limit); limit.connect(depthGain);
+  if (tr) tr.push({ stop() { env.dispose(); try { scale.disconnect(); limit.disconnect(); } catch (e) { /* bereits getrennt */ } } });
+  return { scale };
+}
+/** Empfindlichkeit 0…1 → Verstärkung der Hüllkurve (0,5 … 8). */
+const _sensGain = s => 0.5 + Math.max(0, Math.min(1, s ?? 0.5)) * 7.5;
+
+/**
+ * Parametrischer EQ (10d): je aktives Band (höchstens 8, ausgeschaltete entfallen) ein Biquad in Serie. Gain wirkt bei Glocke/Shelves,
+ * Q bei Glocke/Bandpass/Notch (linear) und bei Low-/High-Cut (Resonanz; für BiquadFilterNode in dB umgerechnet), Shelves ignorieren Q.
+ * Strukturell (neu bauen): Anzahl und Typen der aktiven Bänder. Frequenz, Gain und Q laufen live. Ohne aktive Bänder: Durchgang.
+ */
+const _PEQ_BIQUAD = { bell: 'peaking', lowShelf: 'lowshelf', highShelf: 'highshelf', lowCut: 'highpass', highCut: 'lowpass', bandPass: 'bandpass', notch: 'notch' };
+function _buildParamEq(ctx, p) {
+  const list = peqActiveBands(p);
+  const nodes = list.map(b => { const n = ctx.createBiquadFilter(); n.type = _PEQ_BIQUAD[b.type] || 'peaking'; return n; });
+  for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+  const pass = nodes.length ? null : ctx.createGain();
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm), act = peqActiveBands(q);
+    act.forEach((b, i) => {
+      const n = nodes[i]; if (!n) return;
+      set(n.frequency, Math.max(20, Math.min(20000, b.freq ?? 1000)));
+      if (b.type === 'bell' || b.type === 'lowShelf' || b.type === 'highShelf') set(n.gain, Math.max(-24, Math.min(24, b.gain ?? 0)));
+      const qLin = Math.max(0.1, Math.min(18, b.Q ?? 1));
+      if (b.type === 'lowCut' || b.type === 'highCut') set(n.Q, 20 * Math.log10(qLin));
+      else if (b.type !== 'lowShelf' && b.type !== 'highShelf') set(n.Q, qLin);
+    });
+  };
+  apply(p, false);
+  return _inst('paramEq', { input: pass || nodes[0], output: pass || nodes[nodes.length - 1] }, p, { apply, sig: q => peqActiveBands(q).map(b => b.type).join(',') });
+}
+
 function _buildWahwah(ctx, p, tr) {
+  const wantEnv = p.source === 'envelope';
   const filter = ctx.createBiquadFilter();
   filter.type = 'bandpass';
-  const lfo = ctx.createOscillator(); lfo.type = 'sine';
-  const lfoGain = ctx.createGain();
+  const lfoGain = ctx.createGain();     // Tiefe in Hz (für LFO ±, für Hüllkurve 0 … +)
+  let lfo = null, envCtl = null, inp = filter;
+  if (wantEnv) {
+    inp = ctx.createGain(); inp.connect(filter);
+    envCtl = _buildEnvelopeControl(ctx, tr, inp, lfoGain, 'Wah-Wah');
+    if (envCtl) lfoGain.connect(filter.frequency);
+  }
+  if (!envCtl) {   // Standard (und Ersatz ohne Worklet): LFO — Graph wie vor 10c
+    lfo = ctx.createOscillator(); lfo.type = 'sine';
+    lfo.connect(lfoGain).connect(filter.frequency);
+    lfo.start();
+    if (tr) tr.push(lfo);
+  }
   const apply = (q, sm) => {
     const set = _setter(ctx, sm);
     const baseFreq = Math.max(100, Math.min(5000, q.frequency ?? 800));
     const depthHz  = Math.max(0, Math.min(1, q.depth ?? 0.7)) * baseFreq * 3;
     set(filter.frequency, baseFreq);
     set(filter.Q, Math.max(1, Math.min(20, q.resonance ?? 5)));
-    set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
+    if (lfo) set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
     set(lfoGain.gain, depthHz);
+    if (envCtl) set(envCtl.scale.gain, _sensGain(q.sensitivity));
   };
   apply(p, false);
-  lfo.connect(lfoGain).connect(filter.frequency);
-  lfo.start();
-  if (tr) tr.push(lfo);
+  const seg = _inst('wahwah', { input: inp, output: filter }, p, { apply, sig: q => (q.source === 'envelope' ? 'env' : 'lfo') });
+  if (wantEnv && !envCtl) seg.fallback = 'lfo';
+  return seg;
+}
 
-  return _inst('wahwah', { input: filter, output: filter }, p, { apply });
+/**
+ * Auto-Filter (P10c): Biquad (Tief-/Band-/Hochpass), Grundfrequenz moduliert über `detune` (Cent → exponentiell wie das Gehör):
+ * LFO: ± Tiefe·2400 Cent; Hüllkurve: 0 … +Tiefe·4800 Cent (laut = Filter öffnet sich). Resonanz = lineare Güte Q
+ * (bei Tief-/Hochpass in dB umgerechnet, weil BiquadFilterNode dort dB erwartet).
+ */
+function _buildAutoFilter(ctx, p, tr) {
+  const wantEnv = p.source === 'envelope';
+  const filter = ctx.createBiquadFilter();
+  const depthGain = ctx.createGain();
+  let lfo = null, envCtl = null, inp = filter;
+  if (wantEnv) {
+    inp = ctx.createGain(); inp.connect(filter);
+    envCtl = _buildEnvelopeControl(ctx, tr, inp, depthGain, 'Auto-Filter');
+  }
+  if (!envCtl) { lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.connect(depthGain); lfo.start(); if (tr) tr.push(lfo); }
+  depthGain.connect(filter.detune);
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm);
+    const type = ['lowpass', 'bandpass', 'highpass'].includes(q.filterType) ? q.filterType : 'lowpass';
+    if (filter.type !== type) filter.type = type;
+    const qLin = Math.max(0.5, Math.min(20, q.resonance ?? 3));
+    set(filter.frequency, Math.max(50, Math.min(10000, q.frequency ?? 600)));
+    set(filter.Q, type === 'bandpass' ? qLin : 20 * Math.log10(qLin));
+    const depth = Math.max(0, Math.min(1, q.depth ?? 0.7));
+    set(depthGain.gain, depth * (envCtl ? 4800 : 2400));
+    if (lfo) set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
+    if (envCtl) set(envCtl.scale.gain, _sensGain(q.sensitivity));
+  };
+  apply(p, false);
+  const seg = _inst('autoFilter', { input: inp, output: filter }, p, { apply, sig: q => (q.source === 'envelope' ? 'env' : 'lfo') });
+  if (wantEnv && !envCtl) seg.fallback = 'lfo';
+  return seg;
 }
 
 /**
@@ -544,8 +636,10 @@ function _collectSegments(ctx, effects, tr, omit) {
   if (effects.bandpass?.enabled)
     segs.push(_buildBiquadModule(ctx, effects.bandpass, 'bandpass', 'bandpass', { fMin: 20, fMax: 20000, fDef: 1000, qMin: 0.1, qMax: 30, qDef: 1 }, { bandpass: true }));
   if (effects.wahwah?.enabled)     segs.push(_buildWahwah(ctx, effects.wahwah, tr));
+  if (effects.autoFilter?.enabled) segs.push(_buildAutoFilter(ctx, effects.autoFilter, tr));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));
+  if (effects.paramEq?.enabled)    segs.push(_buildParamEq(ctx, effects.paramEq));
 
   if (effects.limiter?.enabled)    segs.push(_buildCompressor(ctx, effects.limiter, 'limiter'));
   else if (effects.compressor?.enabled) segs.push(_buildCompressor(ctx, effects.compressor, 'compressor'));

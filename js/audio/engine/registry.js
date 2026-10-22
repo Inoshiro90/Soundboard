@@ -67,6 +67,32 @@ const bandpassSlopeParam = () => ({ def: '6', enum: ['6', '12', '24'], label: 'F
 export const bandpassStages = p => ({ '24': 4, '12': 2 })[String(p?.slope ?? '6')] ?? 1;
 const bandpassCost = p => ({ base: bandpassStages(p), measured: true });
 
+/** Parametrischer EQ (10d): Bandtypen, Grenzen und Standardbänder — eine Wahrheit für Schema, Engine und UI. */
+export const PEQ_TYPES = ['bell', 'lowShelf', 'highShelf', 'lowCut', 'highCut', 'bandPass', 'notch'];
+export const PEQ_TYPE_LABELS = { bell: 'Glocke', lowShelf: 'Low-Shelf', highShelf: 'High-Shelf', lowCut: 'Low-Cut (Hochpass)', highCut: 'High-Cut (Tiefpass)', bandPass: 'Bandpass', notch: 'Notch' };
+export const PEQ_MAX_BUILD = 8;       // so viele Bänder baut die Engine
+export const PEQ_MAX_KEEP = 16;       // so viele bleiben in den Daten erhalten (AE-18: nichts verwerfen), Bänder ab dem 9. werden nicht gebaut
+export const PEQ_RANGES = { freq: [20, 20000], gain: [-24, 24], Q: [0.1, 18] };
+/** Welche Felder ein Typ benutzt (Shelves ignorieren Q, Cut/BandPass/Notch ignorieren Gain). */
+export const peqGainUsed = type => type === 'bell' || type === 'lowShelf' || type === 'highShelf';
+export const peqQUsed = type => type !== 'lowShelf' && type !== 'highShelf';
+export const PEQ_DEFAULT_BANDS = [
+  { on: true, type: 'lowShelf', freq: 100, gain: 0, Q: 0.7 },
+  { on: true, type: 'bell', freq: 400, gain: 0, Q: 1 },
+  { on: true, type: 'bell', freq: 2500, gain: 0, Q: 1 },
+  { on: true, type: 'highShelf', freq: 8000, gain: 0, Q: 0.7 }
+];
+/** Aktive (gebaute) Bänder: höchstens PEQ_MAX_BUILD, ausgeschaltete zählen nicht. */
+export const peqActiveBands = p => (Array.isArray(p?.bands) ? p.bands : []).slice(0, PEQ_MAX_BUILD).filter(b => b && b.on !== false);
+const peqCost = p => ({ base: Math.max(1, peqActiveBands(p).length), measured: true });   // 1 Biquad je Band (gemessener Einheitswert)
+/** Steuerquelle der Wah-/Auto-Filter-Module (P10c): LFO (Rate) oder Hüllkurve des Moduleingangs (Worklet `envfollower`; ohne Worklet läuft der LFO). */
+const CONTROL_SOURCE_OPTIONS = { lfo: 'LFO (Rate)', envelope: 'Hüllkurve (Lautstärke)' };
+const controlSourceParam = def => ({ def, enum: ['lfo', 'envelope'], label: 'Steuerung', ui: { options: CONTROL_SOURCE_OPTIONS } });
+const sensitivityParam = () => ({ def: 0.5, range: [0, 1], label: 'Empfindlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } });
+/** Kosten: Basis (gemessen) + Hüllkurven-Worklet (Schätzwert 3 Punkte, „leichtes Worklet“, bis zur Messung nicht gemessen). */
+export const ENVELOPE_WORKLET_POINTS = 3;
+const envCost = base => p => (p?.source === 'envelope' ? { base: base + ENVELOPE_WORKLET_POINTS, measured: false, estimate: 'envfollower' } : { base, measured: true });
+
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
     params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 100, max: 20000, step: 50, scale: 'log', digits: 0 } }, Q: filterQdB(0.7, [0.1, 20], { min: 0.1, max: 10, step: 0.1, digits: 1 }), slope: slopeParam(), mix: mixParam() } },
@@ -75,12 +101,14 @@ export const MODULES = [
   { key: 'notch', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Notch (Kerbfilter)', layerOrder: 30, consumers: ALL_CONSUMERS, cost: c(1),
     params: { frequency: { def: 50, range: [20, 20000], unit: 'Hz', label: 'Frequenz', ui: { min: 20, max: 2000, step: 1, scale: 'log', digits: 0 } }, Q: filterQ(10, [0.5, 30], { min: 0.5, max: 30, step: 0.5, digits: 1 }),
       depth: { def: 1, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } } } },
-  { key: 'wahwah', ui: { generated: true }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: c(4),
+  { key: 'wahwah', ui: { generated: true }, family: 'filter', label: 'Wah-Wah', layerOrder: 40, consumers: ALL_CONSUMERS, cost: envCost(4), workletModules: ['envfollower'] /* nur bei source = 'envelope' (worklets.js) */,
     params: {
       frequency: { def: 800, range: [100, 5000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 100, max: 5000, step: 10, scale: 'log', digits: 0 } },
       depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       rate: { def: 2, range: [0.1, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.1, max: 10, step: 0.1 } },
-      resonance: { def: 5, range: [1, 20], label: 'Resonanz', ui: { min: 1, max: 20, step: 0.5 } }
+      resonance: { def: 5, range: [1, 20], label: 'Resonanz', ui: { min: 1, max: 20, step: 0.5 } },
+      source: controlSourceParam('lfo'),
+      sensitivity: sensitivityParam()
     } },
   { key: 'reverb', stageHint: p => ((p?.duration ?? 0) >= 1.5 ? { stage: 'environment', weight: 2 } : null), ui: { generated: true }, family: 'space', label: 'Hall (algorithmisch)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(p?.duration ?? 2.2), measured: true }), degrade: { irLength: true },
@@ -194,7 +222,21 @@ export const MODULES = [
     } },
   // ── P10 (Schritt 10b): neue Module stehen am ENDE der Liste (Reihenfolge in defaultEffects()); die Position im Layer bestimmt layerOrder ──
   { key: 'bandpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Bandpass', layerOrder: 35, consumers: ALL_CONSUMERS, cost: bandpassCost,
-    params: { frequency: { def: 1000, range: [20, 20000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 50, max: 15000, step: 10, scale: 'log', digits: 0 } }, Q: filterQ(1, [0.1, 30], { min: 0.3, max: 20, step: 0.1, digits: 1 }), slope: bandpassSlopeParam(), mix: mixParam() } }
+    params: { frequency: { def: 1000, range: [20, 20000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 50, max: 15000, step: 10, scale: 'log', digits: 0 } }, Q: filterQ(1, [0.1, 30], { min: 0.3, max: 20, step: 0.1, digits: 1 }), slope: bandpassSlopeParam(), mix: mixParam() } },
+  // Auto-Filter (10c): Filter, dessen Grenzfrequenz von LFO oder Hüllkurve des Eingangs gesteuert wird (Modulation in Cent, also musikalisch exponentiell)
+  { key: 'autoFilter', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Auto-Filter', layerOrder: 45, consumers: ALL_CONSUMERS, cost: envCost(3), workletModules: ['envfollower'],
+    params: {
+      filterType: { def: 'lowpass', enum: ['lowpass', 'bandpass', 'highpass'], label: 'Filtertyp', ui: { options: { lowpass: 'Tiefpass', bandpass: 'Bandpass', highpass: 'Hochpass' } } },
+      source: controlSourceParam('envelope'),
+      frequency: { def: 600, range: [50, 10000], unit: 'Hz', label: 'Grundfrequenz', ui: { min: 50, max: 10000, step: 10, scale: 'log', digits: 0 } },
+      depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      rate: { def: 2, range: [0.1, 10], unit: 'Hz', label: 'Rate (LFO)', ui: { min: 0.1, max: 10, step: 0.1 } },
+      resonance: { def: 3, range: [0.5, 20], label: 'Resonanz (Q)', ui: { min: 0.5, max: 20, step: 0.5 } },
+      sensitivity: sensitivityParam()
+    } },
+  // Parametrischer EQ (10d): bis zu 8 Bänder (Glocke, Shelves, Cuts, Bandpass, Notch), Daten als Bänderliste mit Objekten { on, type, freq, gain, Q }
+  { key: 'paramEq', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: 'Parametrischer EQ', layerOrder: 52, consumers: ALL_CONSUMERS, cost: peqCost,
+    params: { bands: { def: PEQ_DEFAULT_BANDS, bandList: true, label: 'Bänder' } } }
 ];
 
 /**
@@ -220,7 +262,7 @@ export const NUM_RANGES = (() => {
   return out;
 })();
 
-const cloneDef = v => (Array.isArray(v) ? v.slice() : v);
+const cloneDef = v => (Array.isArray(v) ? v.map(x => (x && typeof x === 'object' ? { ...x } : x)) : v);   // Bänderlisten (P10d) enthalten Objekte
 
 /** Frisches Default-Objekt EINES Moduls ({ enabled:false, …Parameter }), Schlüsselreihenfolge wie bisher. */
 export function defaultModule(key) {

@@ -14,7 +14,7 @@
 
 import {
   MODULES, MODULE_KEYS, MODULE_BY_KEY, NUM_RANGES, REMOVED_KEYS, CURRENT_REV, EXCLUSIVE_GROUPS,
-  defaultModule, defaultModules, IR_IMPULSE_NAMES
+  defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP
 } from './registry.js';
 
 export const MAX_X_BYTES = 262144;
@@ -90,6 +90,22 @@ const _enum = (val, allowed, fallback) => (allowed.includes(val) ? val : fallbac
  * Identisch zum früheren filt()/irReverb/eq10-Zweig von normalizeEffectsObject().
  * @returns {object|null} null bei unbekanntem Modul
  */
+/** Ein Band des Parametrischen EQ (10d): bekannte Felder streng, unbekannte Felder bleiben erhalten (AE-18), Prototyp-Schlüssel nie. */
+export function normalizePeqBand(b) {
+  const s = isObj(b) ? b : {};
+  const type = _enum(s.type, PEQ_TYPES, 'bell');
+  const o = {};
+  for (const [k, v] of Object.entries(s)) if (!['on', 'type', 'freq', 'gain', 'Q'].includes(k) && !['__proto__', 'constructor', 'prototype'].includes(k)) o[k] = v;
+  return {
+    ...o,
+    on: _bool(s.on, true),
+    type,
+    freq: _num(s.freq, PEQ_RANGES.freq, 1000),
+    gain: _num(s.gain, PEQ_RANGES.gain, 0),
+    Q: _num(s.Q, PEQ_RANGES.Q, type === 'lowShelf' || type === 'highShelf' ? 0.7 : type === 'lowCut' || type === 'highCut' ? 0.71 : 1)
+  };
+}
+
 export function normalizeModule(key, raw) {
   const m = MODULE_BY_KEY[key];
   if (!m) return null;
@@ -110,6 +126,12 @@ export function normalizeModule(key, raw) {
       } else bands.push(_num(b, [-18, 18], 0));
     }
     return { enabled: _bool(s.enabled, d.enabled), bands };
+  }
+
+  if (key === 'paramEq') {
+    // Bänderliste: bis PEQ_MAX_KEEP Objekte bleiben erhalten (die Engine baut die ersten PEQ_MAX_BUILD); Nicht-Objekte entfallen.
+    const rawBands = Array.isArray(s.bands) ? s.bands : d.bands;
+    return { enabled: _bool(s.enabled, d.enabled), bands: rawBands.filter(isObj).slice(0, PEQ_MAX_KEEP).map(normalizePeqBand) };
   }
 
   const o = { enabled: _bool(s.enabled, d.enabled) };

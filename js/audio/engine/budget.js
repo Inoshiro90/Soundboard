@@ -109,6 +109,15 @@ export function initVoiceBudget(ctx) {
   (window.requestIdleCallback || (cb => setTimeout(cb, 1500)))(() => { attempt(0).catch(() => { _calibrating = false; }); }, { timeout: 5000 });
 }
 
+/** Hinweis (P10c): Hüllkurven-Steuerung ohne geladenes Worklet → Ersatz durch den LFO; einmal pro Sitzung. */
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  let _fallbackNoted = false;
+  window.addEventListener('sb:fx-fallback', e => {
+    if (_fallbackNoted) return; _fallbackNoted = true;
+    toast(`${e.detail?.module || 'Effekt'}: Hüllkurven-Steuerung nicht verfügbar (AudioWorklet) — es läuft der LFO.`);
+  });
+}
+
 /** Diagnose-Overlay (?debug=audio): Voices, Punkte, Kapazität, Uhr-Verhältnis. */
 export function mountAudioDebug() {
   if (typeof location === 'undefined' || !/[?&]debug=audio\b/.test(location.search) || document.getElementById('audioDebug')) return;
@@ -120,6 +129,7 @@ export function mountAudioDebug() {
     const st = getVoiceManager().getState();
     el.textContent = `Stimmen ${st.voices.length} · ${st.used}/${st.budget} Punkte (Kapazität ${st.capacity}, ${st.mode})\n` +
       `entzogen ${st.stats.evicted} · degradiert ${st.stats.degraded} · über Budget ${st.stats.overBudget} · Überlast ${st.stats.overloads}\n` +
+      (typeof window !== 'undefined' && window.__swapStats ? `Austausch ${window.__swapStats.swaps}× · Aufbau ${Math.round(window.__swapStats.buildMs)} ms · gesamt ${Math.round(window.__swapStats.totalMs)} ms (max ${Math.round(window.__swapStats.maxTotalMs)}) · zusammengefasst ${window.__swapStats.coalesced}\n` : '') +
       st.voices.slice(0, 8).map(v => `${v.kind}${v.loop ? '∞' : ''} ${v.id ?? ''} ${v.points}${v.hub ? ' Hub ' + v.hub : ''}${v.degraded ? ' ↓' : ''}`).join('\n');
   }, 1000);
 }

@@ -828,3 +828,20 @@
   .fx-macro { grid-template-columns: 1fr 3.5rem; }
   .fx-macro__label { grid-column: 1 / -1; }
 }
+
+
+/* ── Parametrischer EQ (P10d): Bandtabelle ───────────────────────────────── */
+.fx-peq__wrap { overflow-x: auto; max-width: 100%; }
+.fx-peq__table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.fx-peq__table th { text-align: left; font-weight: 500; padding: 2px 6px; white-space: nowrap; }
+.fx-peq__table td { padding: 2px 4px; vertical-align: middle; }
+.fx-peq__num { width: 5.5rem; min-height: 32px; }
+.fx-peq__type { min-height: 32px; max-width: 11rem; }
+.fx-peq__row.is-off td { opacity: 0.55; }
+.fx-peq__c-on, .fx-peq__c-del { text-align: center; }
+.fx-peq__head { display: inline-flex; gap: 4px; margin-left: auto; }
+.fx-peq__head .fx-eq10-reset { margin-left: 0; }
+@media (pointer: coarse) {
+  .fx-peq__num, .fx-peq__type, .fx-peq__del, .fx-peq__add { min-height: 44px; }
+  .fx-peq__row input[type="checkbox"] { width: 24px; height: 24px; }
+}
