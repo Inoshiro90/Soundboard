@@ -845,3 +845,14 @@
   .fx-peq__num, .fx-peq__type, .fx-peq__del, .fx-peq__add { min-height: 44px; }
   .fx-peq__row input[type="checkbox"] { width: 24px; height: 24px; }
 }
+
+/* ── 10-Band-EQ: Frequenzen anpassen (P10e) ──────────────────────────────── */
+.fx-eq10-freqs { margin-top: 6px; }
+.fx-eq10-freqs > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; font-size: 0.8rem; }
+.fx-eq10-freqs__body { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 4px 0; }
+.fx-eq10-freqs__item { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; }
+.fx-eq10-freqs__num { width: 5rem; min-height: 32px; }
+.fx-eq10-freqs__reset { margin: 4px 0; }
+@media (pointer: coarse) {
+  .fx-eq10-freqs > summary, .fx-eq10-freqs__num, .fx-eq10-freqs__reset { min-height: 44px; }
+}

@@ -38,6 +38,7 @@ export function createModuleCard(def, api) {
     if (spec.bands) {                                                  // 10-Band-EQ: eigenes Control mit Reset im Kopf
       const c = createBandsControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, spec, getBands: () => api.get(param), setBands: v => api.set(param, v) });
       controls.push(c); body.appendChild(c.root); head.appendChild(c.headExtra);
+      if (c.after) body.appendChild(c.after);                           // einklappbare Frequenzliste (P10e)
       continue;
     }
     const values = Array.isArray(spec.enum) ? spec.enum : spec.impulse ? IR_IMPULSE_NAMES : null;       // Aufzählung oder Impulsantwort-Name
