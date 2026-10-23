@@ -41,7 +41,8 @@ export function defaultPlayback() {
 //     sie mit smooth=false (direkte Zuweisung — exakt das bisherige Verhalten), beim Live-Update mit smooth=true
 //     (`setTargetAtTime`, klickfrei). Dadurch gibt es keine zweite Formel, die vom Bau abweichen könnte.
 //   • `update(p)` liefert true, wenn alle Änderungen live angewendet wurden, und false, wenn sich ein NICHT glättbarer Wert
-//     geändert hat (IR, Verzerrungskurve, LFO-Form …). Dann muss der Aufrufer neu bauen/überblenden (runtime.js).
+//     geändert hat (LFO-Form, Filter-Stufenzahl …). Dann muss der Aufrufer neu bauen/überblenden (runtime.js).
+//     Ausnahme (P10f): Verzerrungskurve und Hall-IR tauschen nur ihren Kern aus (`_hotSlot`) und melden true.
 
 export const EQ10_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
@@ -55,15 +56,79 @@ const _setter = (ctx, smooth) => (param, v) => {
 };
 
 /** Versieht ein Segment {input, output} mit Schlüssel und update(); `sig(p)` = Signatur der nicht glättbaren Werte. */
-function _inst(key, seg, p, { apply, sig = null }) {
+function _inst(key, seg, p, { apply, sig = null, hot = null }) {
   const s0 = sig ? sig(p) : '';
   seg.key = key;
   seg.update = np => {
+    if (hot) { apply(np, true); hot.request(np); return true; }   // nicht glättbarer Kern: Modul-Austausch (_hotSlot) statt Pipeline-Neubau
     if (sig && sig(np) !== s0) return false;
     apply(np, true);
     return true;
   };
   return seg;
+}
+
+
+/**
+ * Modul-Austausch (P10f, AE-04′ „Doppelinstanz nur für dieses Modul“): Für nicht glättbare Werte (Verzerrungskurve, Reverb-IR) wird NICHT
+ * mehr die ganze Pipeline neu gebaut (das baute auch das Pitch-Worklet jedes Mal neu auf), sondern nur der Kern dieses Moduls.
+ * Aufbau: input(Gain 1) → [Kern] → Kern-Fade(Gain 1) → output(Gain 1). Beim Austausch läuft der neue Kern parallel, beide werden
+ * `fadeSec` lang überblendet, danach wird der alte entsorgt. Anfragen werden gedrosselt (Leading + Trailing, `throttleMs`): ein Regler
+ * erzeugt so höchstens ca. 1000/throttleMs Austausche pro Sekunde, und der zuletzt angefragte Wert gewinnt immer.
+ * Beim Bau ist der Graph bis auf die Einsen-Gains identisch zum bisherigen (Gain 1 ist verlustfrei → Goldens unverändert).
+ * `make(q)` → {input, output, dispose?()}. `tr` = dispose()-Liste der Pipeline.
+ */
+export const MODULE_SWAP_STATS = { swaps: 0, requests: 0 };
+function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, power = true } = {}) {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const mount = q => {
+    const core = make(q), fade = ctx.createGain();
+    input.connect(core.input); core.output.connect(fade); fade.connect(output);
+    return { core, fade };
+  };
+  const drop = c => {
+    try { c.core.output.disconnect(); } catch (e) { /* schon getrennt */ }
+    try { c.fade.disconnect(); } catch (e) { /* schon getrennt */ }
+    try { input.disconnect(c.core.input); } catch (e) { /* schon getrennt */ }
+    try { c.core.dispose?.(); } catch (e) { /* ignorieren */ }
+  };
+  let cur = mount(p0), curSig = sig(p0), pending = null, timer = null, last = -Infinity, dead = false;
+  const retiring = new Set();
+  const curveUp = new Float32Array(32), curveDn = new Float32Array(32);
+  for (let i = 0; i < 32; i++) {
+    const x = i / 31;
+    // power: Equal-Power (unkorrelierte Kerne, z. B. zwei IRs); sonst Raised-Cosine (Summe = 1, an beiden Enden ohne Knick — korrelierte Kerne)
+    curveUp[i] = power ? Math.sin(x * Math.PI / 2) : (1 - Math.cos(x * Math.PI)) / 2;
+    curveDn[i] = power ? Math.cos(x * Math.PI / 2) : (1 + Math.cos(x * Math.PI)) / 2;
+  }
+  const run = q => {
+    if (dead) return;
+    last = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const nu = mount(q), old = cur, t0 = ctx.currentTime;
+    nu.fade.gain.value = 0;
+    nu.fade.gain.setValueCurveAtTime(curveUp, t0, fadeSec);
+    old.fade.gain.cancelScheduledValues(t0);
+    old.fade.gain.setValueCurveAtTime(curveDn, t0, fadeSec);
+    cur = nu; curSig = sig(q); MODULE_SWAP_STATS.swaps++;
+    retiring.add(old);
+    setTimeout(() => { if (retiring.delete(old)) drop(old); }, fadeSec * 1000 + 80);
+  };
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const request = q => {
+    if (dead) return;
+    const sg = sig(q);
+    if (!pending && sg === curSig) return;           // nichts zu tun (auch Rückkehr auf den aktuellen Wert)
+    pending = q; MODULE_SWAP_STATS.requests++;
+    const wait = throttleMs - (now() - last);
+    if (wait <= 0 && !timer) { const x = pending; pending = null; if (sig(x) !== curSig) run(x); return; }
+    if (!timer) timer = setTimeout(() => { timer = null; const x = pending; pending = null; if (x && sig(x) !== curSig) run(x); }, Math.max(0, wait));
+  };
+  if (tr) tr.push({ stop() {
+    dead = true; if (timer) { clearTimeout(timer); timer = null; }
+    for (const c of retiring) drop(c); retiring.clear();
+    drop(cur);
+  } });
+  return { input, output, request };
 }
 
 /**
@@ -160,12 +225,17 @@ function _buildDistortionCurve(mode, amount) {
   return curve;
 }
 
-/** Verzerrung: Kurve und Oversampling sind nicht glättbar → jede Änderung verlangt Neubau/Überblendung. */
-function _buildDistortion(ctx, p) {
-  const s = ctx.createWaveShaper();
-  s.curve = _buildDistortionCurve(p.mode, p.amount ?? 40);
-  s.oversample = ['none', '2x', '4x'].includes(p.oversample) ? p.oversample : '4x';
-  return _inst('distortion', { input: s, output: s }, p, { apply: () => {}, sig: q => `${q.mode}|${q.amount ?? 40}|${q.oversample}` });
+/** Verzerrung: Kurve und Oversampling sind nicht glättbar → Modul-Austausch mit Überblendung (P10f), kein Pipeline-Neubau. */
+function _buildDistortion(ctx, p, tr) {
+  const sig = q => `${q.mode}|${q.amount ?? 40}|${q.oversample}`;
+  const make = q => {
+    const s = ctx.createWaveShaper();
+    s.curve = _buildDistortionCurve(q.mode, q.amount ?? 40);
+    s.oversample = ['none', '2x', '4x'].includes(q.oversample) ? q.oversample : '4x';
+    return { input: s, output: s };
+  };
+  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.04, throttleMs: 80, power: false });
+  return _inst('distortion', { input: slot.input, output: slot.output }, p, { apply: () => {}, sig, hot: slot });
 }
 
 /**
@@ -453,33 +523,26 @@ function _buildRingMod(ctx, p, tr) {
   return _inst('ringmod', { input, output }, p, { apply });
 }
 
-/**
- * Gibt den Faltungspuffer eines ConvolverNodes bei dispose() frei. Chrome hält pro `conv.buffer = …` eine native
- * Faltungs-Engine (FFT-Partitionen ≈ Vielfaches der IR-Größe), die nur über den GC freigegeben wird — dessen Druck
- * sieht diesen Speicher nicht. Gemessen (Phase 0, Chrome 154): Absturz nach ≈ 275 Bau-/Entsorgungszyklen bei 3,5-s-IR,
- * ≈ 200 bei 5-s-IR, unabhängig vom Abstand der Zyklen (L-02). `buffer = null` gibt die Engine sofort frei.
- * `tr` ist die dispose()-Liste der Pipeline (Einträge mit stop()).
- */
-function _trackConvolver(conv, tr) {
-  if (tr) tr.push({ stop() { try { conv.buffer = null; } catch (e) { /* Knoten bereits verworfen */ } } });
-}
-
-/** Gemeinsame Hall-Hülle: Dry/Wet um einen Convolver. `wetOf(p)` liefert den Anteil; die IR ist nicht glättbar (Signatur). */
+/** Gemeinsame Hall-Hülle: Dry/Wet um einen Convolver. `wetOf(p)` liefert den Anteil; die IR ist nicht glättbar → Modul-Austausch (P10f). */
 function _buildConvolverModule(ctx, p, tr, { key, wetOf, irOf, sig }) {
-  const inp  = ctx.createGain(); const dry = ctx.createGain();
+  const dry = ctx.createGain();
   const wetG = ctx.createGain(); const out = ctx.createGain();
-  const conv = ctx.createConvolver();
   const apply = (q, sm) => {
     const set = _setter(ctx, sm);
     const wet = wetOf(q);
     set(dry.gain, 1 - wet); set(wetG.gain, wet);
   };
   apply(p, false);
-  conv.buffer = irOf(ctx, p);
-  _trackConvolver(conv, tr);
-  inp.connect(dry); inp.connect(conv); conv.connect(wetG);
+  const make = q => {
+    const conv = ctx.createConvolver();
+    conv.buffer = irOf(ctx, q);
+    return { input: conv, output: conv, dispose() { try { conv.buffer = null; } catch (e) { /* Knoten bereits verworfen */ } } };   // Chrome-Leck (L-02)
+  };
+  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.05, throttleMs: 150, power: true });
+  const inp = slot.input;
+  inp.connect(dry); slot.output.connect(wetG);
   dry.connect(out); wetG.connect(out);
-  return _inst(key, { input: inp, output: out }, p, { apply, sig });
+  return _inst(key, { input: inp, output: out }, p, { apply, sig, hot: slot });
 }
 
 function _buildReverb(ctx, p, tr) {
@@ -644,7 +707,7 @@ function _collectSegments(ctx, effects, tr, omit) {
   if (effects.limiter?.enabled)    segs.push(_buildCompressor(ctx, effects.limiter, 'limiter'));
   else if (effects.compressor?.enabled) segs.push(_buildCompressor(ctx, effects.compressor, 'compressor'));
 
-  if (effects.distortion?.enabled) segs.push(_buildDistortion(ctx, effects.distortion));
+  if (effects.distortion?.enabled) segs.push(_buildDistortion(ctx, effects.distortion, tr));
   if (effects.ringmod?.enabled)    segs.push(_buildRingMod(ctx, effects.ringmod, tr));
 
   // Chorus/Flanger: Modulationseffekte, bewusst vor Reverb/Delay platziert
