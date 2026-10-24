@@ -29,6 +29,8 @@ import { moduleTail, moduleCost } from './registry.js';
 
 /** Vorgabewerte der Überblendung. */
 export const XFADE_SECONDS = 0.04;           // Addendum A: 30–50 ms
+/** Mindestabstand zwischen den Starts zweier struktureller Austausche (Wanduhr, ms). Erster sofort, letzter gewinnt (Fix B, Befund 3A). */
+export const MIN_SWAP_INTERVAL_MS = 200;
 const FADE_POINTS = 32;
 const _up   = new Float32Array(FADE_POINTS), _down = new Float32Array(FADE_POINTS);
 for (let i = 0; i < FADE_POINTS; i++) { const a = (i / (FADE_POINTS - 1)) * Math.PI / 2; _up[i] = Math.sin(a); _down[i] = Math.cos(a); }
@@ -91,7 +93,7 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
     if (ps.enabled && ps.semitones) {
       if (caps.pitch === 'worklet') {
         const n = buildPitchNode(ctx, ps, numChannels);
-        if (n) { link(n); rec.pitch = n; }
+        if (n) { link(n); rec.pitch = n; track.push({ stop() { n.dispose?.(); } }); }
         else {
           detuneSemitones += ps.semitones;
           console.warn('[pipeline] Pitch-Worklet nicht verfügbar — Notbehelf über detune (Reihenfolge nicht garantiert)');
@@ -132,6 +134,8 @@ export class PipelineRuntime {
     this.bypassable = !!o.bypassable;
     this.live = !!o.live;
     this.xfade = o.xfade ?? XFADE_SECONDS;
+    this.minSwapInterval = Math.max(0, o.minSwapInterval ?? MIN_SWAP_INTERVAL_MS);
+    this._lastSwapAt = -Infinity;
     this.disposed = false;
     this.plan = plan;
     this.sig = planSignature(plan);
@@ -215,7 +219,11 @@ export class PipelineRuntime {
   async _drain() {
     try {
       while (this._pending && !this.disposed) {
+        // Drosselung (Fix B): Neubauten höchstens im Abstand `minSwapInterval`. Währenddessen darf `_pending` durch neuere Pläne ersetzt werden (letzter gewinnt).
+        const wait = this._lastSwapAt + this.minSwapInterval - Date.now();
+        if (wait > 0) { await new Promise(r => setTimeout(r, wait)); continue; }
         const { plan, fade } = this._pending; this._pending = null;
+        this._lastSwapAt = Date.now();
         await this.prepare(plan);
         if (this.disposed) break;
         await this._swapNow(plan, fade);

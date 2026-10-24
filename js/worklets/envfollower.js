@@ -21,10 +21,14 @@ class EnvelopeFollowerProcessor extends AudioWorkletProcessor {
 
   constructor() {
     super();
+    // Beendigung (Fix A, Befund 3A): ein getrennter Knoten mit process() → true bliebe aktiv. 'dispose' lässt process() false liefern.
+    this._alive = true;
+    this.port.onmessage = e => { if (e && e.data === 'dispose') this._alive = false; };
     this._env = new EnvelopeFollower(sampleRate);
   }
 
   process(inputs, outputs, params) {
+    if (!this._alive) return false;
     const out = outputs[0] && outputs[0][0];
     if (!out) return true;
     const ch = inputs[0] && inputs[0].length ? inputs[0] : [];

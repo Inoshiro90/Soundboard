@@ -399,6 +399,16 @@
   scrollbar-width: thin;
 }
 
+/* Master-Pegel in der Board-Toolbar: gleiche Höhe wie die Buttons (statt fester 22 px aus timeline-lab.css). */
+.board-toolbar > .master-meter {
+  height: var(--h-btn);
+  min-height: var(--h-btn);
+  box-sizing: border-box;
+  padding-block: var(--space-1);
+  flex-shrink: 0;
+}
+.board-toolbar > .master-meter .master-meter__bar { height: 100%; }
+
 /* Board-Toolbar-Buttons: Grundgestaltung kommt vollständig von .btn
    (components.css) — hier nur die tatsächlich zusätzlich benötigten,
    rasterbasierten Board-Toolbar-Maße ergänzen, keine Duplizierung, keine

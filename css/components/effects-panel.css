@@ -698,7 +698,7 @@
 .fx-preview-meter { gap: 3px; height: 28px; padding-inline: 8px; }
 .fx-preview-meter .master-meter__bar { height: 22px; }
 .fx-preview-meter[hidden] { display: none; }
-.fx-preview-meter__text { margin-left: 6px; align-self: center; min-width: 11ch; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fx-preview-meter__text { margin-left: 6px; align-self: center; min-width: 31ch; text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .fx-preview-bar .btn[aria-pressed="true"] { background: var(--accent-soft, rgba(0, 117, 222, 0.12)); border-color: var(--accent, #0075de); }
 @media (max-width: 575.98px) { .fx-preview-meter__text { display: none; } }
 
@@ -745,7 +745,8 @@
 .fx-eq10-reset { font-size: 0.7rem; padding: 1px 6px; margin-left: auto; }
 
 /* Phase 8 · Struktur: „Nur aktive Module zeigen“, Hinweis „Überlagert“ */
-.fx-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+/* :not(.board-toolbar): #fxToolbar trägt beide Klassen und muss einzeilig scrollen (layout.css .board-toolbar), nicht umbrechen. */
+.fx-toolbar:not(.board-toolbar) { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
 .fx-toolbar__hint { font-size: var(--text-badge); color: var(--text-secondary); }
 .fx-card[hidden], .disclosure-section[hidden] { display: none !important; }
 .fx-card__note { margin: var(--space-1) 0 var(--space-2); padding: var(--space-1) var(--space-2); font-size: var(--text-badge); color: var(--text-primary);

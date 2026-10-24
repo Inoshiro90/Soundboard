@@ -82,6 +82,6 @@ export function makeEnvelopeFollower(ctx, p = {}) {
   return {
     input: node, output: node,
     update(np = {}) { if (!disposed) apply(np, true); },
-    dispose() { if (disposed) return; disposed = true; try { node.disconnect(); } catch (e) { /* bereits getrennt */ } }
+    dispose() { if (disposed) return; disposed = true; try { node.disconnect(); } catch (e) { /* bereits getrennt */ } try { node.port.postMessage('dispose'); } catch (e) { /* Port schon zu */ } }   // Prozessor beenden (Fix A)
   };
 }

@@ -263,6 +263,8 @@ export function playBufferPreview(buf, slot, vol, pitch) {
   const dur = Math.max(0.01, te - ts);
 
   src.connect(gainNode);
+  // Gain-Knoten freigeben, sobald die Vorschau endet oder gestoppt wird (der Aufrufer darf src.stop() rufen).
+  src.onended = () => { try { gainNode.disconnect(); } catch (e) { /* bereits getrennt */ } };
   src.start(0, ts, dur);
   return src;
 }

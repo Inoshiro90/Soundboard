@@ -2,7 +2,7 @@
  * ui/slot-editor.js — Slot-Liste, Slot-Bearbeiten-Dialog, Trim-Modal-Guard
  */
 
-import { iconSvg } from './icons.js';
+import { iconSvg, setIcon } from './icons.js';
 import { APP, CItems } from '../core/state.js';
 import '../utils.js';
 import { playBufferPreview } from '../audio/playback.js';
@@ -46,6 +46,7 @@ function _resyncEdBuffers(prevSlots) {
 export function renderSlotList() {
   const list = document.getElementById('slotList');
   if (!list) return;
+  stopSlotPreview();   // Indizes können sich verschieben (Entfernen/Umordnen) — laufende Slot-Vorschau beenden
   list.innerHTML = '';
 
   let slotDragSrc = null;
@@ -195,16 +196,49 @@ export function initSlotEditModal() {
   });
 }
 
+// ─── SLOT-VORSCHAU (Stopp-Schalter) ───────────────────────────
+// Höchstens eine laufende Vorschau. Der Vorschau-Button wird zum Stopp-Button, solange sie läuft. Die Wiedergabe läuft über
+// den Preview-Bus (playBufferPreview → 'preview'), Live-Wiedergabe bleibt unberührt (Invariante 5).
+let _slotPrev = null;   // { src, idx }
+
+function _setPrevIcon(idx, playing) {
+  const btn = document.querySelector(`#slotList .slot-row[data-si="${idx}"] .js-prev-btn`);
+  if (!btn) return;
+  setIcon(btn.querySelector('svg'), playing ? 'square' : 'play');
+  btn.title = playing ? 'Vorschau stoppen' : 'Vorschau abspielen';
+  btn.setAttribute('aria-label', playing ? 'Slot-Vorschau stoppen' : 'Slot vorschau');
+  btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+}
+
+/** Beendet die laufende Slot-Vorschau (idempotent). */
+export function stopSlotPreview() {
+  const p = _slotPrev;
+  if (!p) return;
+  _slotPrev = null;
+  try { p.src.stop(); } catch (e) { /* bereits beendet */ }
+  _setPrevIcon(p.idx, false);
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('hidden.bs.modal', e => { if (e.target && e.target.id === 'soundModal') stopSlotPreview(); });
+}
+
 // previewSlot: applies the sound's existing pitch (Pitch hat keine eigene
-// UI mehr, siehe Audio-Effekte → Pitch Shift)
+// UI mehr, siehe Audio-Effekte → Pitch Shift). Zweiter Klick auf denselben Slot stoppt.
 function previewSlot(i) {
+  if (_slotPrev && _slotPrev.idx === i) { stopSlotPreview(); return; }
+  stopSlotPreview();
   const sl = APP.editSlots[i];
   if (!sl || !sl.data) { toast('Slot leer'); return; }
   const buf = APP.audioBuffers[`_ed_${i}`];
   if (!buf) { toast('Audio lädt…'); return; }
   const vol   = parseFloat(document.getElementById('eVol')?.value) || 1;
   const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
-  playBufferPreview(buf, sl, vol, pitch);
+  const src = playBufferPreview(buf, sl, vol, pitch);
+  if (!src) return;
+  _slotPrev = { src, idx: i };
+  _setPrevIcon(i, true);
+  src.addEventListener('ended', () => { if (_slotPrev && _slotPrev.src === src) { _slotPrev = null; _setPrevIcon(i, false); } });
   toast(`Slot ${i + 1} ▶`, 'ok');
 }
 

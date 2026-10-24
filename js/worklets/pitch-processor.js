@@ -108,10 +108,14 @@ class PitchShifterProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     // sampleRate ist ein Global im AudioWorkletGlobalScope.
+    // Beendigung (Fix A, Befund 3A): ein getrennter Knoten mit process() → true bliebe aktiv. 'dispose' lässt process() false liefern.
+    this._alive = true;
+    this.port.onmessage = e => { if (e && e.data === 'dispose') this._alive = false; };
     this._engines = [new PitchShiftEngine(sampleRate), new PitchShiftEngine(sampleRate)];
   }
 
   process(inputs, outputs, parameters) {
+    if (!this._alive) return false;
     const input  = inputs[0];
     const output = outputs[0];
     if (!input || !input.length || !output || !output.length) return true;

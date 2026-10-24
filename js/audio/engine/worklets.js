@@ -30,6 +30,11 @@ export const WORKLETS = {
     // M-1-Methode (Suite 13, 16 Instanzen, Punkte relativ zum Tiefpass): Chrome 155 ≈ 4,8; Firefox 158 ≈ 3,5 (Lauf überlappte mit
     // Chrome, Firefox-Timer ganzzahlig in ms → eher Obergrenze). Registry-Konvention: Maximum, aufgerundet. Noch kein Verbraucher.
     cost: { base: 5, measured: true }
+  },
+  // P11a: Gate und Expander (Rechenkern dsp-lib/dynamics.js; weitere Modi — Limiter, Transient — folgen in 11b/11d).
+  dynamics: {
+    url: './js/worklets/dynamics.js', processor: 'dynamics-processor', imports: true, fallback: 'none',
+    cost: { base: 5, measured: false, estimate: 'envfollower' }   // Schätzwert: gleiche Größenordnung wie der Hüllkurvenfolger; M-1 steht aus
   }
 };
 
@@ -52,6 +57,10 @@ export function workletsForPlan(plan, caps) {
   // P10c: Hüllkurvenfolger, wenn Wah-Wah/Auto-Filter aktiv von der Hüllkurve gesteuert werden.
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
     for (const id of workletsOfModule('autoFilter')) ids.add(id);
+  }
+  // P11a: Gate/Expander laufen im Worklet `dynamics`; ohne Worklet wird das Modul übersprungen (Registry-Fallback „none“).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['noiseGate', 'expander'].some(k => s.params?.[k]?.enabled))) {
+    for (const id of workletsOfModule('noiseGate')) ids.add(id);
   }
   return [...ids];
 }

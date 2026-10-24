@@ -92,6 +92,9 @@ const sensitivityParam = () => ({ def: 0.5, range: [0, 1], label: 'Empfindlichke
 /** Kosten: Basis (gemessen) + Hüllkurven-Worklet (Schätzwert 3 Punkte, „leichtes Worklet“, bis zur Messung nicht gemessen). */
 export const ENVELOPE_WORKLET_POINTS = 3;
 const envCost = base => p => (p?.source === 'envelope' ? { base: base + ENVELOPE_WORKLET_POINTS, measured: false, estimate: 'envfollower' } : { base, measured: true });
+/** P11a: Dynamik im Worklet `dynamics` — Schätzwert, solange M-1 es nicht gemessen hat (Suite 13). */
+const DYNAMICS_WORKLET_POINTS = 5;
+const dynamicsCost = () => ({ base: DYNAMICS_WORKLET_POINTS, measured: false, estimate: 'dynamics' });
 
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
@@ -212,13 +215,18 @@ export const MODULES = [
       coneOuterAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel außen', ui: { hidden: true } },
       coneOuterGain: { def: 0, range: [0, 1], label: 'Kegel-Restpegel', ui: { hidden: true } }
     } },
-  // attack/release: Compressor-Näherung (siehe _collectSegments). Presets ohne diese Felder funktionieren unverändert,
-  // da die Engine sie mit `?? 5`/`?? 150` defaultet. (B-03: ersetzt in Phase 11 durch ein echtes Gate.)
-  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: c(17.5),
+  // P11a: echtes Gate (Worklet `dynamics`, Rechenkern dsp-lib/dynamics.js; B-03 behoben). Der Schlüssel bleibt `noiseGate` (Entscheidung A):
+  // keine Rev-Migration, Alt-Daten und Presets bleiben gültig. Presets ohne die neuen Felder (3 Built-ins setzen nur `threshold`)
+  // bekommen die Defaults unten. attack/release in ms (wie bisher); hold/range/hysteresis/scHp seit P11a.
+  { key: 'noiseGate', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Noise Gate', layerOrder: 140, consumers: ALL_CONSUMERS, cost: dynamicsCost, workletModules: ['dynamics'], needsWorklet: true,
     params: {
       threshold: { def: -50, range: [-100, 0], unit: 'dB', label: 'Schwelle', ui: { min: -80, max: -10, step: 1 } },
-      attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { hidden: true } },
-      release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { hidden: true } }
+      attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { min: 0, max: 100, step: 1 } },
+      release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { min: 5, max: 1500, step: 5 } },
+      hold: { def: 50, range: [0, 2000], unit: 'ms', label: 'Hold', ui: { min: 0, max: 500, step: 5 } },
+      range: { def: -80, range: [-100, 0], unit: 'dB', label: 'Absenkung', ui: { min: -80, max: 0, step: 1 } },
+      hysteresis: { def: 3, range: [0, 24], unit: 'dB', label: 'Hysterese', ui: { min: 0, max: 12, step: 0.5 } },
+      scHp: { def: 20, range: [20, 2000], unit: 'Hz', label: 'Sidechain-Hochpass', ui: { min: 20, max: 2000, step: 10, scale: 'log', digits: 0 } }
     } },
   // ── P10 (Schritt 10b): neue Module stehen am ENDE der Liste (Reihenfolge in defaultEffects()); die Position im Layer bestimmt layerOrder ──
   { key: 'bandpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Bandpass', layerOrder: 35, consumers: ALL_CONSUMERS, cost: bandpassCost,
@@ -236,7 +244,17 @@ export const MODULES = [
     } },
   // Parametrischer EQ (10d): bis zu 8 Bänder (Glocke, Shelves, Cuts, Bandpass, Notch), Daten als Bänderliste mit Objekten { on, type, freq, gain, Q }
   { key: 'paramEq', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: 'Parametrischer EQ', layerOrder: 52, consumers: ALL_CONSUMERS, cost: peqCost,
-    params: { bands: { def: PEQ_DEFAULT_BANDS, bandList: true, label: 'Bänder' } } }
+    params: { bands: { def: PEQ_DEFAULT_BANDS, bandList: true, label: 'Bänder' } } },
+  // Expander (11a): Abwärts-Expander im Worklet `dynamics`. Liegt direkt hinter dem Noise Gate (Legacy-Gate sitzt am Layer-Ende, E8).
+  { key: 'expander', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Expander', layerOrder: 141, consumers: ALL_CONSUMERS, cost: dynamicsCost, workletModules: ['dynamics'], needsWorklet: true,
+    params: {
+      threshold: { def: -40, range: [-100, 0], unit: 'dB', label: 'Schwelle', ui: { min: -80, max: -10, step: 1 } },
+      ratio: { def: 2, range: [1, 20], unit: ':1', label: 'Verhältnis', ui: { min: 1, max: 10, step: 0.1, digits: 1 } },
+      range: { def: -40, range: [-100, 0], unit: 'dB', label: 'Max. Absenkung', ui: { min: -80, max: 0, step: 1 } },
+      attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { min: 0, max: 100, step: 1 } },
+      release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { min: 5, max: 1500, step: 5 } },
+      scHp: { def: 20, range: [20, 2000], unit: 'Hz', label: 'Sidechain-Hochpass', ui: { min: 20, max: 2000, step: 10, scale: 'log', digits: 0 } }
+    } }
 ];
 
 /**

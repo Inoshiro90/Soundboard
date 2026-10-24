@@ -4,6 +4,7 @@
  * Default-Datenmodelle für Effekte/Wiedergabeparameter.
  */
 
+import { makeDynamicsNode } from './engine/dynamics-node.js';
 import { _pitchWorkletReadyContexts } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
 import { defaultModules, peqActiveBands } from './engine/registry.js';
@@ -579,22 +580,23 @@ function _buildDelay(ctx, p) {
 }
 
 /**
- * Noise-Gate: Compressor-Approximation. Das ist AUSDRÜCKLICH kein echtes Gate (ein DynamicsCompressorNode dämpft
- * oberhalb, nicht unterhalb des Thresholds) — nur eine hörbare Näherung (B-03, wird in P11 ersetzt).
+ * Noise Gate und Expander (P11a): Worklet `dynamics` (dsp-lib/dynamics.js). Ersetzt die frühere Compressor-Näherung (B-03), die
+ * oberhalb der Schwelle verdichtete, statt darunter abzusenken. Alle Parameter sind live (AudioParam, k-rate).
+ * Ohne geladenes Worklet (kein Secure Context, addModule fehlgeschlagen) wird das Modul übersprungen: Durchgang + `seg.fallback = 'none'`.
  */
-function _buildNoiseGate(ctx, p) {
-  const g = ctx.createDynamicsCompressor();
-  g.ratio.value = 20;        // maximal mögliches Ratio der Web Audio API
-  g.knee.value = 0;          // harte Kennlinie, Annäherung an Gate-Verhalten
-  const apply = (q, sm) => {
-    const set = _setter(ctx, sm);
-    set(g.threshold, Math.max(-100, Math.min(0, q.threshold ?? -45)));
-    set(g.attack, Math.max(0.001, (q.attack ?? 5) / 1000));
-    set(g.release, Math.max(0.01, (q.release ?? 150) / 1000));
-  };
-  apply(p, false);
-  return _inst('noiseGate', { input: g, output: g }, p, { apply });
+function _buildDynamicsModule(ctx, p, tr, kind) {
+  const key = kind === 'gate' ? 'noiseGate' : 'expander';
+  const node = makeDynamicsNode(ctx, kind, p);
+  if (!node) {
+    const pass = ctx.createGain();
+    const seg = _inst(key, { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  return _inst(key, { input: node.input, output: node.output }, p, { apply: q => node.update(q) });
 }
+
 
 /**
  * Baut einen Pitch-Shift-Node für GENAU den übergebenen Context.
@@ -629,6 +631,7 @@ export function buildPitchNode(ctx, p, numChannels = 2) {
       // Live-Update: nur die Tonhöhe selbst ist glättbar. Ob der Knoten überhaupt existiert (Halbtöne ≠ 0), entscheidet
       // die Runtime (Strukturvergleich) — deshalb liefert update() bei Halbtönen = 0 false (Neubau/Überblendung nötig).
       const seg = { input: n, output: n, key: 'pitchShift' };
+      seg.dispose = () => { try { n.port.postMessage('dispose'); } catch (e) { /* Port schon zu */ } };   // Prozessor beenden (Fix A)
       seg.update = np => {
         const st = np?.semitones ?? 0;
         if (!st) return false;
@@ -730,8 +733,9 @@ function _collectSegments(ctx, effects, tr, omit) {
   // Trockensignal.
   if (effects.tremolo?.enabled)    segs.push(_buildTremolo(ctx, effects.tremolo, tr));
 
-  // Noise-Gate: Compressor-Approximation (B-03), s. _buildNoiseGate().
-  if (effects.noiseGate?.enabled)  segs.push(_buildNoiseGate(ctx, effects.noiseGate));
+  // Noise-Gate (echtes Gate seit P11a, Worklet `dynamics`) und Expander dahinter.
+  if (effects.noiseGate?.enabled)  segs.push(_buildDynamicsModule(ctx, effects.noiseGate, tr, 'gate'));
+  if (effects.expander?.enabled)   segs.push(_buildDynamicsModule(ctx, effects.expander, tr, 'expander'));
   return segs;
 }
 
