@@ -58,8 +58,9 @@ export function workletsForPlan(plan, caps) {
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
     for (const id of workletsOfModule('autoFilter')) ids.add(id);
   }
-  // P11a: Gate/Expander laufen im Worklet `dynamics`; ohne Worklet wird das Modul übersprungen (Registry-Fallback „none“).
-  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['noiseGate', 'expander'].some(k => s.params?.[k]?.enabled))) {
+  // P11a/b: Gate/Expander/Limiter laufen im Worklet `dynamics`; ohne Worklet wird Gate/Expander übersprungen (Registry-Fallback „none“),
+  // der Limiter fällt auf die Kompressor-Näherung zurück.
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['noiseGate', 'expander', 'limiter'].some(k => s.params?.[k]?.enabled))) {
     for (const id of workletsOfModule('noiseGate')) ids.add(id);
   }
   return [...ids];

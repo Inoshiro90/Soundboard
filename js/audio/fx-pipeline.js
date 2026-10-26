@@ -296,7 +296,7 @@ export function estimateTail(plan) {
   let sum = 0;
   for (const s of plan.steps) {
     let t = 0;
-    for (const k of ['irReverb', 'reverb', 'delay']) if (s.params[k]?.enabled) t = Math.max(t, moduleTail(k, s.params[k]));
+    for (const k of MODULE_KEYS) if (s.params[k]?.enabled) t = Math.max(t, moduleTail(k, s.params[k]));   // alle Module mit Nachlauf (Hall, Delay, seit 11b auch Limiter-Lookahead)
     sum += t;
   }
   return Math.min(30, sum);

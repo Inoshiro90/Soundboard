@@ -1,18 +1,18 @@
 /**
- * dynamics.js — AudioWorklet Processor (Phase 11a): Gate und Expander.
+ * dynamics.js — AudioWorklet Processor (Phase 11a/11b): Gate, Expander und Limiter.
  * Registriert als: 'dynamics-processor'
  *
  * Ein Eingang, ein Ausgang, gleiche Kanalzahl wie der Eingang (Mono bleibt Mono — die Pegelbilanz der Kette ändert sich nicht, M-3).
- * Parameter (k-rate): mode 0 = Gate, 1 = Expander; threshold/range/hysteresis in dB; attack/hold/release in Sekunden; ratio; scHp in Hz.
+ * Parameter (k-rate): mode 0 = Gate, 1 = Expander, 2 = Limiter (threshold = Ceiling, release in s, inputGain in dB, lookahead in s; Latenz = Lookahead); threshold/range/hysteresis in dB; attack/hold/release in Sekunden; ratio; scHp in Hz.
  * Rechenkern: audio/dsp-lib/dynamics.js (per `import`, wie envfollower.js: Chrome/Firefox/Node [S], Safari/iOS offen [H]).
  */
-import { Dynamics } from '../audio/dsp-lib/dynamics.js';
+import { Dynamics, Limiter } from '../audio/dsp-lib/dynamics.js';
 
 const K = 'k-rate';
 class DynamicsProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'mode',       defaultValue: 0,      minValue: 0,     maxValue: 1,    automationRate: K },
+      { name: 'mode',       defaultValue: 0,      minValue: 0,     maxValue: 2,    automationRate: K },
       { name: 'threshold',  defaultValue: -50,    minValue: -100,  maxValue: 0,    automationRate: K },
       { name: 'range',      defaultValue: -80,    minValue: -100,  maxValue: 0,    automationRate: K },
       { name: 'attack',     defaultValue: 0.005,  minValue: 0.0001, maxValue: 5,   automationRate: K },
@@ -20,7 +20,9 @@ class DynamicsProcessor extends AudioWorkletProcessor {
       { name: 'release',    defaultValue: 0.15,   minValue: 0.0001, maxValue: 10,  automationRate: K },
       { name: 'hysteresis', defaultValue: 3,      minValue: 0,     maxValue: 24,   automationRate: K },
       { name: 'ratio',      defaultValue: 2,      minValue: 1,     maxValue: 20,   automationRate: K },
-      { name: 'scHp',       defaultValue: 20,     minValue: 1,     maxValue: 5000, automationRate: K }
+      { name: 'scHp',       defaultValue: 20,     minValue: 1,     maxValue: 5000, automationRate: K },
+      { name: 'inputGain',  defaultValue: 0,      minValue: -24,   maxValue: 48,   automationRate: K },
+      { name: 'lookahead',  defaultValue: 0.005,  minValue: 0.0005, maxValue: 0.02, automationRate: K }
     ];
   }
 
@@ -30,6 +32,9 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     this._alive = true;
     this.port.onmessage = e => { if (e && e.data === 'dispose') this._alive = false; };
     this._dyn = new Dynamics(sampleRate, 2);
+    this._lim = new Limiter(sampleRate, 2);
+    this._lp = { ceilingDb: -1, inputGainDb: 0, release: 0.08, lookahead: 0.005 };
+    this._zero = [new Float32Array(128), new Float32Array(128)];
     this._p = { mode: 0, thresholdDb: -50, rangeDb: -80, attack: 0.005, hold: 0.05, release: 0.15, hysteresisDb: 3, ratio: 2, scHp: 20 };
   }
 
@@ -37,6 +42,15 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     if (!this._alive) return false;
     const inp = inputs[0], out = outputs[0];
     if (!out || !out.length) return true;
+    if (params.mode[0] >= 1.5) {                       // Limiter: auch ohne Eingang weiterlaufen, damit die Verzögerung ausklingt
+      const lp = this._lp;
+      lp.ceilingDb = params.threshold[0]; lp.inputGainDb = params.inputGain[0]; lp.release = params.release[0]; lp.lookahead = params.lookahead[0];
+      const n = out[0].length;
+      let src = inp && inp.length ? inp : this._zero;
+      if (src === this._zero && this._zero[0].length < n) this._zero = [new Float32Array(n), new Float32Array(n)];
+      this._lim.process(src, out, n, lp);
+      return true;
+    }
     if (!inp || !inp.length) { for (const ch of out) ch.fill(0); return true; }
     const p = this._p;
     p.mode = params.mode[0]; p.thresholdDb = params.threshold[0]; p.rangeDb = params.range[0];

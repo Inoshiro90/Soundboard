@@ -95,6 +95,8 @@ const envCost = base => p => (p?.source === 'envelope' ? { base: base + ENVELOPE
 /** P11a: Dynamik im Worklet `dynamics` — Schätzwert, solange M-1 es nicht gemessen hat (Suite 13). */
 const DYNAMICS_WORKLET_POINTS = 5;
 const dynamicsCost = () => ({ base: DYNAMICS_WORKLET_POINTS, measured: false, estimate: 'dynamics' });
+// Limiter mit Lookahead (Phase 11b): Worklet plus Verzögerungsleitung; Schätzwert bis M-1 für das Worklet `dynamics` vorliegt.
+const limiterCost = () => ({ base: DYNAMICS_WORKLET_POINTS + 1, measured: false, estimate: 'dynamics' });
 
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
@@ -170,13 +172,19 @@ export const MODULES = [
       attack: { def: 0.003, range: [0, 1], unit: 's', label: 'Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
       release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } }
     } },
-  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(16),
+  { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: limiterCost, workletModules: ['dynamics'],
+    // Phase 11b: Lookahead-Spitzenbegrenzer (Worklet `dynamics`, Modus 2). `threshold` bleibt der Schlüssel und ist das Ceiling (Altdaten gültig).
+    // Ohne Worklet fällt der Graph auf die bisherige Kompressor-Näherung zurück (knee/ratio/attack, daher weiter vorhanden).
+    tail: p => Math.min(20, Math.max(1, p?.lookahead ?? 5)) / 1000,
+    latencySamples: (p, sr = 48000) => Math.min(Math.ceil(sr * 0.02), Math.max(1, Math.round(Math.min(20, Math.max(1, p?.lookahead ?? 5)) / 1000 * sr))),
     params: {
-      threshold: { def: -1, range: [-24, 0], unit: 'dB', label: 'Schwelle', ui: { min: -20, max: 0, step: 0.5 } },
+      threshold: { def: -1, range: [-24, 0], unit: 'dB', label: 'Ceiling', ui: { min: -20, max: 0, step: 0.5 } },
       knee: { def: 0, raw: true, unit: 'dB', label: 'Knie', ui: { hidden: true } },
       ratio: { def: 20, raw: true, label: 'Verhältnis', ui: { hidden: true } },
       attack: { def: 0.001, raw: true, unit: 's', label: 'Attack', ui: { hidden: true } },
-      release: { def: 0.08, raw: true, unit: 's', label: 'Release', ui: { hidden: true } }
+      release: { def: 0.08, raw: true, unit: 's', label: 'Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } },
+      inputGain: { def: 0, range: [-12, 24], unit: 'dB', label: 'Eingangsverstärkung', ui: { min: -12, max: 24, step: 0.5 } },
+      lookahead: { def: 5, range: [1, 20], unit: 'ms', label: 'Lookahead (Latenz)', ui: { min: 1, max: 20, step: 0.5 } }
     } },
   { key: 'distortion', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'distortion', label: 'Verzerrung', layerOrder: 70, consumers: ALL_CONSUMERS,
     cost: p => ({ base: ({ none: 1, '2x': 5, '4x': 10 })[p?.oversample ?? '4x'] ?? 10, measured: true }), degrade: { oversample: true },
@@ -302,6 +310,12 @@ export function defaultModules() {
 export function moduleTail(key, params) {
   const m = MODULE_BY_KEY[key];
   return m && typeof m.tail === 'function' ? m.tail(params) : 0;
+}
+
+/** Latenz eines Moduls in Samples (Lookahead-Module; sonst 0). */
+export function moduleLatency(key, params, sampleRate = 48000) {
+  const m = MODULE_BY_KEY[key];
+  return m && typeof m.latencySamples === 'function' ? m.latencySamples(params, sampleRate) : 0;
 }
 
 /** Kostenpunkte eines Moduls für die gegebenen Parameter: { base, measured }. */

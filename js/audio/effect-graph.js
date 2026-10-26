@@ -177,7 +177,7 @@ function _buildEQ3(ctx, p) {
   return _inst('eq', { input: ls, output: hs }, p, { apply });
 }
 
-/** Kompressor (auch Limiter-Näherung bis P11): `key` = 'compressor' | 'limiter'. */
+/** Kompressor; als Limiter-Notbehelf (ohne Worklet) die frühere Näherung: `key` = 'compressor' | 'limiter'. */
 function _buildCompressor(ctx, p, key = 'compressor') {
   const n = ctx.createDynamicsCompressor();
   const apply = (q, sm) => {
@@ -190,6 +190,36 @@ function _buildCompressor(ctx, p, key = 'compressor') {
   };
   apply(p, false);
   return _inst(key, { input: n, output: n }, p, { apply });
+}
+
+/**
+ * Limiter mit Lookahead (Phase 11b): Worklet `dynamics`, Modus 2. Ceiling, Eingangsverstärkung und Release laufen live; eine Änderung des
+ * Lookaheads (= der Latenz) tauscht nur den Kern aus (_hotSlot, wie bei der Verzerrung), kein Pipeline-Neubau. Ohne geladenes Worklet
+ * greift die frühere Kompressor-Näherung (`seg.fallback = 'compressor'`): die Kette bleibt begrenzt, aber ohne Garantie für das Ceiling.
+ */
+function _buildLimiter(ctx, p, tr) {
+  const first = makeDynamicsNode(ctx, 'limiter', p);
+  if (!first) {
+    const seg = _buildCompressor(ctx, p, 'limiter');
+    seg.fallback = 'compressor';
+    return seg;
+  }
+  const cores = new Set();
+  let seed = first;
+  const make = q => {
+    let node = seed; seed = null;
+    node = node || makeDynamicsNode(ctx, 'limiter', q);
+    if (!node) { const c = _buildCompressor(ctx, q, 'limiter'); return { input: c.input, output: c.output }; }   // Worklet nicht erzeugbar: Näherung für diesen Kern
+    cores.add(node);
+    return { input: node.input, output: node.output, dispose: () => { cores.delete(node); node.dispose(); } };
+  };
+  const lookaheadMs = q => Math.min(20, Math.max(1, Number.isFinite(Number(q.lookahead)) ? Number(q.lookahead) : 5));
+  const sig = q => String(lookaheadMs(q));
+  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.04, throttleMs: 120, power: false });
+  const seg = { input: slot.input, output: slot.output };
+  const setLatency = q => { seg.latencySamples = Math.round(lookaheadMs(q) / 1000 * ctx.sampleRate); };
+  setLatency(p);
+  return _inst('limiter', seg, p, { apply: (q, sm) => { for (const c of cores) c.update(q); setLatency(q); }, sig, hot: slot });
 }
 
 /**
@@ -707,7 +737,7 @@ function _collectSegments(ctx, effects, tr, omit) {
   else if (effects.eq?.enabled)    segs.push(_buildEQ3(ctx, effects.eq));
   if (effects.paramEq?.enabled)    segs.push(_buildParamEq(ctx, effects.paramEq));
 
-  if (effects.limiter?.enabled)    segs.push(_buildCompressor(ctx, effects.limiter, 'limiter'));
+  if (effects.limiter?.enabled)    segs.push(_buildLimiter(ctx, effects.limiter, tr));
   else if (effects.compressor?.enabled) segs.push(_buildCompressor(ctx, effects.compressor, 'compressor'));
 
   if (effects.distortion?.enabled) segs.push(_buildDistortion(ctx, effects.distortion, tr));
