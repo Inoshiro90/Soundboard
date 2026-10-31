@@ -40,7 +40,7 @@ export function reverbSeconds(key, p) {
 
 function _moduleCost(key, p, degrade) {
   let base = moduleCost(key, p).base || 0;
-  if (key === 'spatial' && p?.equalPower) base = Math.min(base, EQUALPOWER_POINTS);                    // bereits degradierter Plan
+  if (key === 'spatial' && (p?.equalPower || p?.panningModel === 'equalpower')) base = Math.min(base, EQUALPOWER_POINTS);   // degradierter Plan bzw. Equal-Power gewählt (13e)
   if (key === 'irReverb' && Number.isFinite(p?.irMax)) base = convolverPoints(reverbSeconds(key, p));    // desgleichen
   if (!degrade) return base;
   if (key === 'distortion' && degrade.oversample) {

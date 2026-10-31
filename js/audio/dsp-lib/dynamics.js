@@ -20,6 +20,13 @@
  *   Garantiert wird der SAMPLE-Peak, nicht der True-Peak (Zwischenwerte nach D/A-Wandlung können darüber liegen).
  *   Latenz = Lookahead in Samples (`latencySamples`).
  *
+ * Transient Shaper (Klasse `Transient`, mode 3): Hüllkurvendifferenz. Eine schnelle (Attack 0,3 ms, Release 8 ms) und eine langsame Hüllkurve
+ *   (Attack 25 ms, Release einstellbar) folgen dem stereo gekoppelten Spitzenpegel. Ihr Verhältnis in dB ist pegelunabhängig: positiv beim
+ *   Anschlag (schnell ≫ langsam), negativ im Ausklang (schnell < langsam). Daraus ergibt sich je Sample ein Anteil 0…1 (Differenz geteilt durch die
+ *   Empfindlichkeitsschwelle), der `attack` (dB) bzw. `sustain` (dB) skaliert. Die Verstärkung wird mit 0,5 ms geglättet. Bei attack = sustain = 0 ist
+ *   die Verstärkung exakt 1 (bit-genau neutral). `mix` blendet trocken/nass ohne Latenz. Keine Latenz, Mono bleibt Mono.
+ *   Unter −80 dBFS (schnelle Hüllkurve) wird nicht geformt (kein Aufziehen des Rauschbodens).
+ *
  * Keine Allokation in process(); NaN/Inf im Eingang werden als 0 gewertet, Zustände werden von Denormalen freigehalten.
  */
 import { clamp, dbToLin, DENORMAL_FLOOR } from './util.js';
@@ -173,5 +180,54 @@ export class Limiter {
     }
     if (sum < 0) sum = 0;
     this.mr = mr < DENORMAL_FLOOR ? 0 : mr; this.sum = sum; this.n = N; this.qh = qh; this.qt = qt;
+  }
+}
+
+const T_FAST_ATTACK_S = 0.0003, T_FAST_RELEASE_S = 0.008, T_SLOW_ATTACK_S = 0.025, T_GAIN_SMOOTH_S = 0.0005, T_FLOOR = 1e-4, T_HOLD_S = 0.01;   // T_HOLD_S: Spitzenwert-Haltezeit, überbrückt die Halbperiode von ≥ 50 Hz (kein Gleichrichter-Welligkeit im Hüllkurven-Abstand)
+const LN10_20 = Math.LN10 / 20;
+
+export class Transient {
+  constructor(sampleRate, maxChannels = 2) {
+    this.sr = sampleRate; this.chs = maxChannels;
+    const c = t => 1 - Math.exp(-1 / (sampleRate * t));
+    this.aF = c(T_FAST_ATTACK_S); this.rF = c(T_FAST_RELEASE_S); this.aS = c(T_SLOW_ATTACK_S); this.cG = c(T_GAIN_SMOOTH_S);
+    this.holdN = Math.max(1, Math.round(sampleRate * T_HOLD_S));
+    this.reset();
+  }
+
+  reset() { this.ef = 0; this.es = 0; this.g = 1; this.hp = 0; this.hc = 0; }
+
+  /**
+   * @param {{attackDb:number, sustainDb:number, sensitivity:number, release:number, mix:number}} p  release in Sekunden; sensitivity/mix 0…1
+   */
+  process(inp, out, n, p) {
+    const chs = Math.min(inp.length, out.length, this.chs);
+    const atkDb = clamp(p.attackDb, -24, 24), susDb = clamp(p.sustainDb, -24, 24);
+    const sensDb = 12 * (1 - 0.8 * clamp(p.sensitivity, 0, 1));
+    const rS = 1 - Math.exp(-1 / (this.sr * Math.max(0.005, p.release)));
+    const mix = clamp(p.mix, 0, 1);
+    const aF = this.aF, rF = this.rF, aS = this.aS, cG = this.cG;
+    let ef = this.ef, es = this.es, g = this.g, hp = this.hp, hc = this.hc;
+    const holdN = this.holdN;
+    for (let i = 0; i < n; i++) {
+      let pk = 0;
+      for (let c = 0; c < chs; c++) { const x = inp[c][i]; const a = Number.isFinite(x) ? (x < 0 ? -x : x) : 0; if (a > pk) pk = a; }
+      // Gehaltener Spitzenwert für beide Folger: ohne Halten fällt `ef` zwischen den gleichgerichteten Spitzen tiefer Töne ab → Dauerton wird moduliert (Knistern, Hörliste 11d Punkt 10)
+      if (pk >= hp) { hp = pk; hc = holdN; } else if (hc > 0) hc--; else hp = pk;
+      ef += (hp > ef ? aF : rF) * (hp - ef);
+      es += (hp > es ? aS : rS) * (hp - es);
+      let target = 1;
+      if ((atkDb !== 0 || susDb !== 0) && ef > T_FLOOR) {
+        const d = 20 * Math.log10((ef + 1e-9) / (es + 1e-9));                 // dB: > 0 Anschlag, < 0 Ausklang
+        const aAmt = d > 0 ? Math.min(1, d / sensDb) : 0, sAmt = d < 0 ? Math.min(1, -d / sensDb) : 0;
+        const gDb = atkDb * aAmt + susDb * sAmt;
+        if (gDb !== 0) target = Math.exp(gDb * LN10_20);
+      }
+      g += (target - g) * cG;
+      const k = 1 + mix * (g - 1);
+      for (let c = 0; c < chs; c++) { const x = inp[c][i]; const y = (Number.isFinite(x) ? x : 0) * k; out[c][i] = Math.abs(y) < DENORMAL_FLOOR ? 0 : y; }
+    }
+    this.hp = hp < DENORMAL_FLOOR ? 0 : hp; this.hc = hc;
+    this.ef = ef < DENORMAL_FLOOR ? 0 : ef; this.es = es < DENORMAL_FLOOR ? 0 : es; this.g = Math.abs(g - 1) < 1e-12 ? 1 : g;
   }
 }

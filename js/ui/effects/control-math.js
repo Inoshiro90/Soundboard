@@ -9,11 +9,16 @@
  * `{ factor: 1000, unit: 'ms' }`). Der Datenwert bleibt unverändert, nur Zahlfeld, Einheit und `aria-valuetext` rechnen um.
  * `ui.signed`: positive Werte mit „+“ im `aria-valuetext` (EQ-Gain, Halbtöne). `ui.unit`: Einheit überschreiben (z. B. „:1“).
  *
+ * Rastung (K2): Lineare Regler mit höchstens DETENT_MAX_STOPS Stufen (z. B. Chorus-Stimmen, Phaser-Stufen, Halbtöne) rasten auch mit dem
+ * Schieber ein: `ui.detents` = Anzahl der Stufen, der Schieber springt beim Ziehen auf `toPos(snapValue(…))`. Werte aus Daten bleiben unangetastet.
+ *
  * UI-Bereich (`spec.ui`) ≠ Datenbereich (`spec.range`): Option b (Phase 8) bildet die Bereiche des alten Formulars ab, z. B.
  * Tiefpass 100–20000 Hz im Regler, 20–20000 Hz in den Daten. Ein Datenwert außerhalb des Reglerbereichs bleibt erhalten.
  */
 
 export const POS_MAX = 1000;
+/** K2: Ab wie vielen Stufen ein linearer Regler NICHT mehr einrastet (darüber wirkt er stufenlos). */
+export const DETENT_MAX_STOPS = 25;
 
 /** Anzahl Nachkommastellen von x (auch für 1e-7). */
 export function decimalsOf(x) {
@@ -46,7 +51,10 @@ export function resolveParamUi(spec) {
   if (!(factor > 0)) throw new Error('Ungültiger Anzeigefaktor');
   const dispDigits = Math.max(0, fineDigits - Math.round(Math.log10(factor)));   // Nachkommastellen der ANZEIGE (Daten 0,001 → „0,1 %“)
   const unit = percent ? '%' : (u.display?.unit ?? u.unit ?? spec.unit ?? '');
-  return { hidden: false, min, max, step, scale, digits, fineDigits, percent, factor, dispDigits, unit, signed: !!u.signed, label: spec.label || '' };
+  // K2: Anzahl der Raststufen (0 = stufenlos). Nur linear und nur, wenn der Bereich ein ganzzahliges Vielfaches des Rasters ist.
+  const intervals = span / step, whole = Math.round(intervals);
+  const detents = scale === 'lin' && Math.abs(intervals - whole) < 1e-9 && whole + 1 <= DETENT_MAX_STOPS ? whole + 1 : 0;
+  return { hidden: false, min, max, step, scale, digits, fineDigits, percent, factor, dispDigits, unit, signed: !!u.signed, label: spec.label || '', detents };
 }
 
 export const clampUi = (ui, v) => Math.min(ui.max, Math.max(ui.min, v));
@@ -62,6 +70,11 @@ export function toPos(ui, v) {
 export function fromPos(ui, pos) {
   const p = Math.min(POS_MAX, Math.max(0, pos)) / POS_MAX;
   return ui.scale === 'log' ? ui.min * (ui.max / ui.min) ** p : ui.min + p * (ui.max - ui.min);
+}
+
+/** K2: Schieberposition beim Ziehen. Rastende Regler (`ui.detents`) springen auf die Position des gerundeten Werts, sonst bleibt `pos`. */
+export function dragPos(ui, pos, value) {
+  return ui.detents ? toPos(ui, value) : pos;
 }
 
 /** Rundet einen Wert für eine Nutzeraktion: linear aufs Raster (ab `min`), log auf `digits`; immer im UI-Bereich.

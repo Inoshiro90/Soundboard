@@ -55,6 +55,44 @@ export function makeLfo(ctx, p = {}) {
 }
 
 /**
+ * LFO-Wellenform mit Phasenversatz (Phase 12): `PeriodicWave` aus den Fourier-Koeffizienten der Spezifikation (Web Audio §OscillatorNode:
+ * sine b1 = 1; square b_k = 4/(kπ), k ungerade; saw b_k = 2·(−1)^(k+1)/(kπ); triangle b_k = 8·sin(kπ/2)/(kπ)²), jede Harmonische k um k·φ
+ * gedreht: b·sin(kωt + kφ) = b·sin(kφ)·cos(kωt) + b·cos(kφ)·sin(kωt) → real[k] = b·sin(kφ), imag[k] = b·cos(kφ). Normalisierung wie bei den
+ * eingebauten Formen (Spitzenwert 1). Gebraucht für L/R-Versatz (Stereo-Tremolo, Flanger) und Startphase (Auto-Pan); ein Oszillator mit
+ * `type` kennt keine Phase. Zahl der Harmonischen: 2048 (≈ Tabellengrenze der Browser bei 48 kHz [H]), Sinus nur eine.
+ * @param {BaseAudioContext} ctx
+ * @param {'sine'|'triangle'|'square'|'saw'} shape  unbekannt → sine
+ * @param {number} phaseDeg  Phasenversatz in Grad (Vorlauf)
+ * @returns {PeriodicWave}
+ */
+export const LFO_HARMONICS = 2048;
+const _waveCache = new WeakMap();   // ctx → Map(`${shape}|${phase}` → PeriodicWave); PeriodicWave ist an den Context gebunden
+export function makePhasedWave(ctx, shape, phaseDeg = 0) {
+  const sh = SHAPES[shape] ? shape : 'sine';
+  const ph = Number.isFinite(phaseDeg) ? ((phaseDeg % 360) + 360) % 360 : 0;
+  let m = _waveCache.get(ctx);
+  if (!m) { m = new Map(); _waveCache.set(ctx, m); }
+  const id = `${sh}|${ph}`;
+  if (m.has(id)) return m.get(id);
+  const n = sh === 'sine' ? 1 : LFO_HARMONICS;
+  const re = new Float32Array(n + 1), im = new Float32Array(n + 1);
+  const phi = ph * Math.PI / 180;
+  for (let k = 1; k <= n; k++) {
+    let b = 0;
+    if (sh === 'sine') b = k === 1 ? 1 : 0;
+    else if (sh === 'square') b = k % 2 ? 4 / (k * Math.PI) : 0;
+    else if (sh === 'saw') b = (k % 2 ? 2 : -2) / (k * Math.PI);
+    else b = 8 * Math.sin(k * Math.PI / 2) / ((k * Math.PI) * (k * Math.PI));
+    if (b === 0) continue;
+    re[k] = b * Math.sin(k * phi);
+    im[k] = b * Math.cos(k * phi);
+  }
+  const w = ctx.createPeriodicWave(re, im, { disableNormalization: false });
+  m.set(id, w);
+  return w;
+}
+
+/**
  * Hüllkurvenfolger als Steuersignal (Worklet `envfollower`). `null`, wenn das Worklet im Context nicht geladen ist
  * (Aufrufer: vorher `await ensureWorklets(ctx, ['envfollower'])`; Fallback laut Worklet-Registry: Baustein überspringen).
  * @param {BaseAudioContext} ctx

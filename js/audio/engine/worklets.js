@@ -10,7 +10,7 @@
  *   imports    true, wenn das Modul per `import` Hilfsmodule lädt (dsp-lib). Browserabhängig: Chrome/Firefox/Node [S],
  *              Safari/iOS offen [H]; scheitert addModule(), meldet ensureWorklets() `false` (kein Absturz).
  *   fallback   was der Aufrufer bei `false` tut: 'detune' (Pitch ändert dann das Tempo), 'none' (Quelle/Signal fehlt,
- *              Aufrufer überspringt den Baustein)
+ *              Aufrufer überspringt den Baustein), 'native' (Aufrufer baut die bisherige native Näherung, P12c: Flanger mit B-14-Klemmung)
  *   cost       Kostenpunkte je Instanz (AE-13′). `measured:false` ⇒ noch NICHT gemessen (M-1-Methode, Suite 13);
  *              der Wert `null` heißt „unbekannt“, nicht „kostenlos“ (gilt für `noise`, nur Quelle). Pitch: Zahl steht in der Modul-Registry (pitchShift).
  */
@@ -35,6 +35,11 @@ export const WORKLETS = {
   dynamics: {
     url: './js/worklets/dynamics.js', processor: 'dynamics-processor', imports: true, fallback: 'none',
     cost: { base: 5, measured: false, estimate: 'envfollower' }   // Schätzwert: gleiche Größenordnung wie der Hüllkurvenfolger; M-1 steht aus
+  },
+  // P12c: Kurzzeit-Verzögerung mit sample-genauer Rückkopplung (Flanger; P12d: Phaser; Basis für P21 Comb/Resonator). Rechenkern dsp-lib/delayline.js.
+  delayline: {
+    url: './js/worklets/delayline.js', processor: 'delayline-processor', imports: true, fallback: 'native',
+    cost: { base: 7, measured: false, estimate: 'delayline' }   // Schätzwert (Hermite-Interpolation je Sample und Kanal); M-1 steht aus
   }
 };
 
@@ -58,10 +63,14 @@ export function workletsForPlan(plan, caps) {
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
     for (const id of workletsOfModule('autoFilter')) ids.add(id);
   }
-  // P11a/b: Gate/Expander/Limiter laufen im Worklet `dynamics`; ohne Worklet wird Gate/Expander übersprungen (Registry-Fallback „none“),
+  // P11a/b/d: Gate/Expander/Limiter/Transient laufen im Worklet `dynamics`; ohne Worklet wird Gate/Expander übersprungen (Registry-Fallback „none“),
   // der Limiter fällt auf die Kompressor-Näherung zurück.
-  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['noiseGate', 'expander', 'limiter'].some(k => s.params?.[k]?.enabled))) {
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['noiseGate', 'expander', 'limiter', 'transient'].some(k => s.params?.[k]?.enabled))) {
     for (const id of workletsOfModule('noiseGate')) ids.add(id);
+  }
+  // P12c/d: Flanger und Phaser im Worklet `delayline` (E1: in allen Motoren); ohne Worklet baut der Graph die native Näherung.
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.flanger?.enabled || s.params?.phaser?.enabled)) {
+    for (const id of workletsOfModule('flanger')) ids.add(id);
   }
   return [...ids];
 }

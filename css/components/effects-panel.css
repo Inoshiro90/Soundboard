@@ -847,6 +847,20 @@
   .fx-peq__row input[type="checkbox"] { width: 24px; height: 24px; }
 }
 
+/* ── Multi-Tap-Delay (P14b): Tap-Tabelle (Aufbau wie die PEQ-Bandtabelle) ─── */
+.fx-taps__wrap { overflow-x: auto; max-width: 100%; }
+.fx-taps__table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.fx-taps__table th { text-align: left; font-weight: 500; padding: 2px 6px; }
+.fx-taps__table td { padding: 2px 4px; vertical-align: middle; }
+.fx-taps__num { width: 5rem; min-height: 32px; }
+.fx-taps__row.is-off td { opacity: 0.55; }
+.fx-taps__c-on, .fx-taps__c-del { text-align: center; }
+.fx-taps__foot { display: flex; justify-content: flex-end; margin-top: 4px; }
+@media (pointer: coarse) {
+  .fx-taps__num, .fx-taps__del, .fx-taps__add { min-height: 44px; }
+  .fx-taps__row input[type="checkbox"] { width: 24px; height: 24px; }
+}
+
 /* ── 10-Band-EQ: Frequenzen anpassen (P10e) ──────────────────────────────── */
 .fx-eq10-freqs { margin-top: 6px; }
 .fx-eq10-freqs > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; font-size: 0.8rem; }

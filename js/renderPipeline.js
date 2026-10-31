@@ -215,6 +215,9 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // `onended` nie feuern und die await-Kette der Makro-Sequenz hinge fest.
   // Phase 7: Die Effekt-Vorschau darf auf Wunsch loopen (`opts.loopPreview`, Schalter „Loop“); der Export nie.
   src.loop = (isLive || (mode === 'preview' && loopPreview)) && allowLoop && !!s.loop;
+  // Phase 13d-0: Der Loop wiederholt genau den getrimmten Bereich [trimStart, trimEnd). Vorher fehlten loopStart/loopEnd, die Quelle lief
+  // über das Trim-Ende hinaus und loopte danach den ganzen Puffer ab 0 (gemessen). Ein Durchlauf dauert damit überall `dur` (Context-Zeit).
+  if (src.loop) { src.loopStart = ts; src.loopEnd = ts + bufferDur; }
 
   // Pipeline: EIN Plan (Quelle → Medium → Umgebung → Hörer, Layer in Benutzerreihenfolge) → EINE serielle
   // Knotenkette. Live, Preview und Export laufen durch dieselbe Funktion; es gibt keine Optimierung, die Layer
@@ -278,9 +281,16 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
     send: graph.send,
     /** PipelineRuntime (Phase 3): update(plan)/swapTo(plan)/setModuleBypass/tailSeconds()/cost(). Mit `opts.live` überblendbar. */
     runtime: graph.runtime,
-    /** Startet die Quelle. `when` ist eine ctx-relative Zeit (Default: sofort). */
+    /**
+     * Startet die Quelle. `when` ist eine ctx-relative Zeit (Default: sofort). Phase 13d: meldet dabei die Zeitbasis an die Runtime
+     * (Beginn = tatsächlicher Startzeitpunkt, Durchlauf = `dur`, Loop wie die Quelle) — EINE Stelle für Live, Vorschau und Export.
+     */
     start(when = 0) {
       src.start(when, ts, src.loop ? undefined : bufferDur);
-    }
+      const t0 = Math.max(when || 0, ctx.currentTime);
+      graph.runtime.arm({ origin: t0, passStart: t0, passIndex: 0, dur, loop: src.loop });
+    },
+    /** Zeitbasis, die start() gemeldet hat (Phase 13d; null vor dem Start). */
+    get timing() { return graph.runtime.timing; }
   };
 }

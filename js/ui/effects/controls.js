@@ -4,13 +4,14 @@
  * Zustand liegt NICHT im DOM, sondern im Aufrufer (`getValue`/`setValue`, siehe effect-editor.js). Das DOM ist nur Ansicht.
  *  • Schieberegler: Positionsachse 0…1000 (control-math.js), `aria-valuetext` mit Einheit, vollständige Tastatursteuerung
  *    (Pfeile = ein Schritt, Shift = fein, Bild↑/↓ = grob, Pos1/Ende = Min/Max). Doppelklick = Standardwert.
+ *    K2: Regler mit wenigen Stufen (`ui.detents`) rasten ein — der Schieber springt beim Ziehen auf die Stufe (Klasse `fx-slider--detents`).
  *  • Zahlfeld: Eingabe wirkt sofort, sobald sie gültig ist und im Reglerbereich liegt; beim Verlassen wird geklemmt.
  *  • Eigene Tastatur-/Doppelklick-Aktionen senden ein künstliches `input`-Ereignis mit `fxUser = true` (der Vorschau-Hook
  *    in dialogs/fx-pipeline-modals.js lässt sonst nur echte Nutzereingaben durch, `isTrusted`). Das programmatische Befüllen
  *    (`sync()`) sendet NIE ein Ereignis.
  * Reine Browser-Datei (document); die Rechenlogik steht in control-math.js und ist in Node getestet.
  */
-import { resolveParamUi, toPos, fromPos, snapValue, stepValue, clampUi, formatNumber, formatValueText, toDisplay, fromDisplay, POS_MAX } from './control-math.js';
+import { resolveParamUi, toPos, fromPos, dragPos, snapValue, stepValue, clampUi, formatNumber, formatValueText, toDisplay, fromDisplay, POS_MAX } from './control-math.js';
 
 export const el = (tag, cls, attrs) => {
   const e = document.createElement(tag);
@@ -41,7 +42,7 @@ export function createNumberControl({ idBase, moduleLabel, spec, getValue, setVa
   const root = el('div', 'fx-param');
   const label = el('label', 'fx-param__label', { for: idBase }); label.textContent = ui.label;
   const row = el('div', 'fx-slider-row');
-  const slider = el('input', 'slider fx-slider', { type: 'range', id: idBase, min: 0, max: POS_MAX, step: 1, 'aria-label': name });
+  const slider = el('input', ui.detents ? 'slider fx-slider fx-slider--detents' : 'slider fx-slider', { type: 'range', id: idBase, min: 0, max: POS_MAX, step: 1, 'aria-label': name });
   const wrap = el('span', 'fx-num-wrap');
   const num = el('input', 'fx-num', { type: 'number', id: idBase + '-num', min: toDisplay(ui, ui.min), max: toDisplay(ui, ui.max), step: 'any', inputmode: 'decimal', 'aria-label': `${name}, Zahlenwert` });
   wrap.appendChild(num);
@@ -67,7 +68,9 @@ export function createNumberControl({ idBase, moduleLabel, spec, getValue, setVa
 
   slider.addEventListener('input', e => {
     if (e.fxUser) return;                                       // eigene Aktionen haben den Zustand schon gesetzt
-    const v = snapValue(ui, fromPos(ui, Number(slider.value)));
+    const pos = Number(slider.value), v = snapValue(ui, fromPos(ui, pos));
+    const at = dragPos(ui, pos, v);
+    if (at !== pos) slider.value = String(at);                  // K2: Schieber rastet auf der Stufe ein
     setValue(v);
     num.value = formatNumber(ui, v); showValueText(v);
   });

@@ -7,6 +7,12 @@
  *   swapTo(plan)        Neue Pipeline daneben bauen und per Equal-Power-Kreuzblende (Standard 40 ms) umschalten.
  *   setModuleBypass     Modul klickfrei an/aus (nur bei `bypassable: true`).
  *   setPipelineBypass   Ganze Pipeline klickfrei auf den trockenen Pfad (A/B; nur im Live-Modus).
+ *   arm(timing)/hold()  Zeitbasis für Bewegungen (Phase 13d, timebase.js): Der Aufrufer meldet beim START der Quelle Beginn und
+ *                       Durchlaufdauer; Module mit `arm({timing, from, to, reset})` planen ihre Automation daraus. Ein Live-Update
+ *                       plant geänderte Module relativ zum ursprünglichen Start neu (ab „jetzt“), ein Austausch startet die neue
+ *                       Kette mit derselben Zeitbasis. Loop-Durchläufe werden mit Vorlauf geplant und per Wanduhr-Timer nachgeplant
+ *                       (nicht in Offline-Contexts). `hold()` friert ein (Musik-Pause); ein neues arm() setzt fort.
+ *                       Module ohne `arm` sind unberührt — ohne solche Module ist arm() wirkungslos (kein Knoten, kein Timer).
  *   tailSeconds()/cost()/dispose()
  *
  * Betriebsarten
@@ -24,8 +30,10 @@
 import { buildPitchNode, buildLayerChain, buildTerminalPanner } from '../effect-graph.js';
 import { ensureWorklets } from '../context.js';
 import { workletsForPlan } from './worklets.js';
+import { ensureCompressorLatency, planNeedsCompressorProbe } from './compressor-probe.js';
 import { effectiveActiveKeys } from './schema.js';
 import { moduleTail, moduleCost } from './registry.js';
+import { makeTiming, planHorizon } from './timebase.js';
 
 /** Vorgabewerte der Überblendung. */
 export const XFADE_SECONDS = 0.04;           // Addendum A: 30–50 ms
@@ -55,6 +63,10 @@ function _waitAudioTime(ctx, t, isDisposed, maxMs) {
 }
 
 const _pitchActive = ps => !!(ps && ps.enabled && ps.semitones);
+/** Module einer gebauten Kette, die eine Zeitbasis brauchen (13d). */
+const _armable = inner => inner.steps.flatMap(r => r.modules.filter(m => typeof m.arm === 'function'));
+/** Offline-Context (Export, Tests): kein Wanduhr-Timer, Loops gibt es dort nicht. */
+const _isOffline = ctx => typeof ctx.startRendering === 'function';
 
 /** Strukturunterschrift eines Plans: gleiche Unterschrift ⇒ gleiche Knotentopologie, nur Parameter dürfen abweichen. */
 export function planSignature(plan) {
@@ -146,6 +158,8 @@ export class PipelineRuntime {
     this._pending = null;
     this._swapping = false;
     this.bypassedAll = false;
+    // Zeitbasis (13d): erst beim Start der Quelle bekannt (arm). `_armedTo` = bis wohin Module geplant sind.
+    this.timing = null; this.held = false; this._armedTo = -Infinity; this._timer = null;
     // Sendmodus (Phase 3b): nur nicht-live und ohne Bypass-Hüllen. `o.send` = { step, key, ... } aus fx-pipeline.sendEligibility().
     this.send = (o.send && !this.live && !this.bypassable) ? o.send : null;
     this.sendSig = this.send ? JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) : null;
@@ -174,6 +188,7 @@ export class PipelineRuntime {
   async prepare(plan) {
     const ids = workletsForPlan(plan, this.caps);
     if (ids.length) await ensureWorklets(this.ctx, ids);
+    if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(this.ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
   }
 
   /**
@@ -196,7 +211,21 @@ export class PipelineRuntime {
     }
     // Sendmodus: der Hall liegt außerhalb der Kette (Hub) — geänderte Hall-Parameter erfordern einen Neubau.
     if (ok && this.send && JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) !== this.sendSig) ok = false;
-    if (ok) { this.plan = plan; return 'live'; }
+    if (ok) {
+      const old = this.plan; this.plan = plan;
+      // Zeitbasis (13d): geänderte Module mit Bewegung relativ zum ursprünglichen Start neu planen (ab jetzt, bis zum bisherigen Vorlauf).
+      if (this.timing && !this.held) {
+        const now = this.ctx.currentTime, to = Math.max(this._armedTo, planHorizon(this.timing, now));
+        plan.steps.forEach((st, i) => {
+          for (const m of this.cur.steps[i].modules) {
+            if (typeof m.arm !== 'function') continue;
+            if (JSON.stringify(old.steps[i]?.params?.[m.key]) === JSON.stringify(st.params[m.key])) continue;
+            m.arm({ timing: this.timing, from: now, to, reset: true });
+          }
+        });
+      }
+      return 'live';
+    }
     return this.live ? this.swapTo(plan).then(() => 'swapped') : 'rebuild';
   }
 
@@ -239,6 +268,8 @@ export class PipelineRuntime {
     if (nu.input) this.entry.connect(nu.input); else this.entry.connect(nu.fade);
     if (nu.output) nu.output.connect(nu.fade);
     nu.fade.connect(this.wetBus);
+    // Zeitbasis (13d): die neue Kette übernimmt die laufende Bewegung (gleicher Start, ab jetzt geplant) — sonst begänne sie von vorn.
+    if (this.timing && !this.held) this._armInner(nu, ctx.currentTime, Math.max(this._armedTo, planHorizon(this.timing, ctx.currentTime)), true);
     const t0 = ctx.currentTime, d = Math.max(0.005, fade);
     _ramp(nu.fade.gain, _up, t0, d, 1);
     _ramp(old.fade.gain, _down, t0, d, 0);
@@ -254,6 +285,51 @@ export class PipelineRuntime {
     }
     try { old.dispose(); old.fade.disconnect(); } catch (e) { /* ignorieren */ }
   }
+
+  /**
+   * Zeitbasis setzen und Bewegungen planen (Phase 13d). Aufruf beim START der Quelle (renderPipeline.js start(), Musik bei
+   * playing/seeked). `timing` siehe timebase.js (origin, passStart, passIndex, dur, loop). Ein erneuter Aufruf ersetzt die Zeitbasis
+   * und plant ab jetzt neu (Musik: Fortsetzen nach Pause, Sprung, neuer Durchlauf). Rückgabe: Anzahl geplanter Module.
+   */
+  arm(timing) {
+    if (this.disposed) return 0;
+    this.timing = makeTiming(timing); this.held = false;
+    this._stopTimer();
+    const now = this.ctx.currentTime, mods = _armable(this.cur);
+    if (!mods.length) { this._armedTo = planHorizon(this.timing, now); return 0; }
+    this._armInner(this.cur, now, planHorizon(this.timing, now), true);
+    if (this.timing.loop && !_isOffline(this.ctx)) this._startTimer();
+    return mods.length;
+  }
+
+  /** Bewegungen einfrieren (Musik-Pause): Module mit `hold(t)` halten ihren aktuellen Wert; Nachplanen stoppt. arm() setzt fort. */
+  hold() {
+    if (this.disposed || !this.timing) return;
+    this.held = true; this._stopTimer();
+    const t = this.ctx.currentTime;
+    for (const m of _armable(this.cur)) m.hold?.(t);
+  }
+
+  /** Loop-Durchläufe nachplanen: Fenster mit Beginn in [_armedTo, neuer Vorlauf) anhängen (ohne Neuplanung des Bisherigen). */
+  _topUp() {
+    if (this.disposed || this.held || !this.timing?.loop) return;
+    const to = planHorizon(this.timing, this.ctx.currentTime);
+    if (!(to > this._armedTo)) return;
+    this._armInner(this.cur, this._armedTo, to, false);
+  }
+
+  _armInner(inner, from, to, reset) {
+    for (const m of _armable(inner)) m.arm({ timing: this.timing, from, to, reset });
+    this._armedTo = to;
+  }
+
+  _startTimer() {
+    const ms = Math.max(250, (planHorizon(this.timing, 0) / 2) * 1000);
+    const tick = () => { this._timer = null; if (this.disposed || this.held) return; this._topUp(); this._timer = setTimeout(tick, ms); };
+    this._timer = setTimeout(tick, ms);
+  }
+
+  _stopTimer() { if (this._timer) { clearTimeout(this._timer); this._timer = null; } }
 
   /** Modul (Layer-Schritt `layerId`, Schlüssel `key`) klickfrei an/aus. Nur mit `bypassable:true`. */
   setModuleBypass(layerId, key, on, smooth = true) {
@@ -300,6 +376,7 @@ export class PipelineRuntime {
     if (this.disposed) return;
     this.disposed = true;
     this._pending = null;
+    this._stopTimer();
     for (const r of this._retiring) { try { r.dispose(); } catch (e) { /* ignorieren */ } }
     this._retiring.clear();
     try { this.cur.dispose(); } catch (e) { /* ignorieren */ }

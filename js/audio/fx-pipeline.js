@@ -31,6 +31,7 @@ import { uid } from '../utils.js';
 import { defaultEffects } from './effect-graph.js';
 import { ensureWorklets } from './context.js';
 import { workletsForPlan } from './engine/worklets.js';
+import { ensureCompressorLatency, planNeedsCompressorProbe } from './engine/compressor-probe.js';
 import { PipelineRuntime } from './engine/runtime.js';
 import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
@@ -369,6 +370,7 @@ export function sendEligibility(plan) {
 export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound) {
   const ids = workletsForPlan(plan, caps);
   if (ids.length) await ensureWorklets(ctx, ids);
+  if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
 }
 
 /**
@@ -383,7 +385,7 @@ export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound
  * @param {object} [o] { numChannels, caps, live (Ein-/Ausgangs-Gain + swapTo), bypassable (Bypass-Hülle je Modul), xfade,
  *                       shareReverb (Phase 3b: Hall über den Hub; Rückgabe `send` ≠ null → Aufrufer hängt reverb-hub.attachSend an) }
  * @returns {{input:AudioNode|null, output:AudioNode|null, detuneSemitones:number, skippedPitch:number,
- *            dispose:()=>void, runtime:PipelineRuntime, update:Function, tailSeconds:()=>number, cost:Function}}
+ *            dispose:()=>void, runtime:PipelineRuntime, update:Function, tailSeconds:()=>number, cost:Function, arm:Function, hold:Function}}
  *   input/output = null, wenn die Pipeline leer ist (Aufrufer verbindet dann die Quelle direkt) — im Live-Modus nie null.
  *   detuneSemitones: nur gesetzt, wenn ein Pitch-Worklet für diesen Schritt nicht verfügbar war (Notbehelf
  *   über src.detune, Reihenfolge dann NICHT garantiert; Console-Warnung). skippedPitch: vom Ziel nicht ausgeführte Pitch-Schritte.
@@ -400,7 +402,10 @@ export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_C
     runtime: rt,
     update: p => rt.update(p),
     tailSeconds: () => rt.tailSeconds(),
-    cost: () => rt.cost()
+    cost: () => rt.cost(),
+    /** Zeitbasis für Bewegungen (Phase 13d, timebase.js): beim Start der Quelle arm(timing), bei Pause hold(). */
+    arm: timing => rt.arm(timing),
+    hold: () => rt.hold()
   };
 }
 

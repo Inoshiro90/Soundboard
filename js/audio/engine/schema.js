@@ -14,7 +14,7 @@
 
 import {
   MODULES, MODULE_KEYS, MODULE_BY_KEY, NUM_RANGES, REMOVED_KEYS, CURRENT_REV, EXCLUSIVE_GROUPS,
-  defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP
+  defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP, DELAY_TAP_RANGES, DELAY_TAPS_MAX_KEEP
 } from './registry.js';
 
 export const MAX_X_BYTES = 262144;
@@ -106,6 +106,21 @@ export function normalizePeqBand(b) {
   };
 }
 
+/** Ein Tap des Multi-Tap-Delays (14b): bekannte Felder streng (geklemmt), unbekannte bleiben erhalten (AE-18), Prototyp-Schlüssel nie. */
+export function normalizeDelayTap(t) {
+  const s = isObj(t) ? t : {};
+  const o = {};
+  for (const [k, v] of Object.entries(s)) if (!['on', 'time', 'level', 'panorama', 'feedback'].includes(k) && !['__proto__', 'constructor', 'prototype'].includes(k)) o[k] = v;
+  return {
+    ...o,
+    on: _bool(s.on, true),
+    time: _num(s.time, DELAY_TAP_RANGES.time, 0.25),
+    level: _num(s.level, DELAY_TAP_RANGES.level, 0.7),
+    panorama: _num(s.panorama, DELAY_TAP_RANGES.panorama, 0),
+    feedback: _num(s.feedback, DELAY_TAP_RANGES.feedback, 0)
+  };
+}
+
 export function normalizeModule(key, raw) {
   const m = MODULE_BY_KEY[key];
   if (!m) return null;
@@ -142,6 +157,9 @@ export function normalizeModule(key, raw) {
       o[field] = _num(s[field], spec.range, d[field]);
     } else if (spec.enum) {
       o[field] = _enum(s[field], spec.enum, d[field]);
+    } else if (spec.tapList) {
+      // Tap-Liste (14b): bis DELAY_TAPS_MAX_KEEP Objekte bleiben erhalten (die Engine baut die ersten DELAY_TAPS_MAX_BUILD); Nicht-Objekte entfallen.
+      o[field] = (Array.isArray(s[field]) ? s[field] : d[field]).filter(isObj).slice(0, DELAY_TAPS_MAX_KEEP).map(normalizeDelayTap);
     } else {
       o[field] = s[field] ?? d[field];            // raw: wie bisher ohne Klemmung
     }

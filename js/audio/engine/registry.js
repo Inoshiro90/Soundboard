@@ -15,10 +15,12 @@
  *   { def, enum:[…],  label }               Auswahl; ungültig → Default
  *   { def:null, impulse:true }              IR-Name (IR_IMPULSE_NAMES) oder null
  *   { def:[0×10], bands:true }              10 EQ-Bänder: Zahl (Gain) oder {freq, gain, Q}
+ *   { def:[…], tapList:true }               Tap-Liste des Multi-Tap-Delays (14b): {on, time, level, panorama, feedback} je Tap (schema.js normalizeDelayTap)
  *
  * `ui` (Modul): `{ generated: true }` — das Formular erzeugt das Modul aus dieser Registry (ui/effects/, Phase 8); es gibt kein handgeschriebenes
  *   Effekt-HTML mehr. (`enabledId` entfiel mit dem Abbau des alten Formulars; Suite 09 prüft, dass jedes Modul `generated` ist.)
- * `ui` (Parameter, optional): `{ hidden?, min?, max?, step?, scale?:'lin'|'log', digits?, percent?, display?, signed?, unit?, options?, emptyLabel? }` (percent: Daten 0…1, Anzeige 0…100 %; display `{factor,unit}`: andere Anzeigeeinheit, z. B. s → ms; signed: „+“ bei positiven Werten; options: Beschriftungen einer Aufzählung) — Darstellung im Regler. Fehlt `ui`, wird der
+ * `ui` (Parameter, optional): `{ hidden?, min?, max?, step?, scale?:'lin'|'log', digits?, percent?, display?, signed?, unit?, options?, emptyLabel?, showIf? }`
+ *   (showIf `{ feld: [Werte…] }`, Phase 13e: Regler nur sichtbar, wenn ALLE genannten Felder desselben Moduls einen der Werte haben; der Wert bleibt erhalten) (percent: Daten 0…1, Anzeige 0…100 %; display `{factor,unit}`: andere Anzeigeeinheit, z. B. s → ms; signed: „+“ bei positiven Werten; options: Beschriftungen einer Aufzählung) — Darstellung im Regler. Fehlt `ui`, wird der
  *   Bereich aus `range` abgeleitet (ui/effects/control-math.js resolveParamUi). Der UI-Bereich darf ENGER sein als `range`
  *   (Option b, Phase 8: bildet die Bereiche des alten Formulars ab; Datenwerte außerhalb bleiben erhalten). `hidden:true` =
  *   kein Regler, der Wert wird beim Bearbeiten unverändert mitgeführt. Die Datenbereiche (`range`) bleiben die alleinige Grundlage der Importklemmung.
@@ -96,7 +98,169 @@ const envCost = base => p => (p?.source === 'envelope' ? { base: base + ENVELOPE
 const DYNAMICS_WORKLET_POINTS = 5;
 const dynamicsCost = () => ({ base: DYNAMICS_WORKLET_POINTS, measured: false, estimate: 'dynamics' });
 // Limiter mit Lookahead (Phase 11b): Worklet plus Verzögerungsleitung; Schätzwert bis M-1 für das Worklet `dynamics` vorliegt.
+// Phase 11e: 3 Kompressoren (je 12,5, gemessen) + 9 Biquads der LR4-Weiche (je ≈ 1); mit Parallelanteil (mix < 1) je Band ein Delay (+2). Schätzwert bis M-1.
+const multibandCost = p => ({ base: 3 * 12.5 + 9 + ((p?.mix ?? 1) < 1 ? 6 : 0), measured: false, estimate: 'multiband' });
 const limiterCost = () => ({ base: DYNAMICS_WORKLET_POINTS + 1, measured: false, estimate: 'dynamics' });
+/** Phase 12: Modulationsmodule mit LFO-Wellenform aus PeriodicWave, Kanaltrennung und Gains — Schätzwerte bis M-1 (`estimate: 'modulation'`). */
+const tremoloCost = p => (p?.stereo === 'on' ? { base: 3, measured: false, estimate: 'modulation' } : { base: 2, measured: true });
+const autoPanCost = () => ({ base: 4, measured: false, estimate: 'modulation' });
+/** Chorus-Stimmen (12b): 1 im Altmodus, 3 im Ensemble, sonst `voices`. */
+/** K3: höchstens CHORUS_MAX_VOICES Stimmen (vorher 4; Daten 1–4 unverändert). */
+export const CHORUS_MAX_VOICES = 8;
+export const chorusVoices = p => (p?.mode === 'ensemble' ? 3 : Math.max(1, Math.min(CHORUS_MAX_VOICES, Math.round(Number(p?.voices) || 1))));
+export const chorusIsMulti = p => p?.mode === 'ensemble' || chorusVoices(p) > 1;
+const chorusCost = p => (chorusIsMulti(p) ? { base: 4 * chorusVoices(p) + 2, measured: false, estimate: 'modulation' } : { base: 4, measured: true });
+const vibratoCost = () => ({ base: 4, measured: false, estimate: 'modulation' });
+/** Phaser (12d): Worklet `delayline` (Koeffizienten je Sample) — Schätzwert wächst mit der Stufenzahl. */
+const phaserCost = p => ({ base: 4 + Math.max(2, Math.min(12, Number(p?.stages) || 4)) / 2, measured: false, estimate: 'delayline' });
+/** Phase 13a: Stereo-Module (Kanalmatrix aus Gains; Breite mit Kurzverzögerung, Bass-Mono + 2 Biquads LR4 und Allpass) — Schätzwerte bis M-1 (`estimate: 'stereo'`). */
+const utilityCost = () => ({ base: 2, measured: false, estimate: 'stereo' });
+const widthCost = p => ({ base: 4 + (p?.bassMono === 'on' ? 3 : 0), measured: false, estimate: 'stereo' });
+/** Phase 13b: Mid/Side (2 × 3 Biquads + Gains), Stereo-Shaper (LR4-Dreibandweiche 9 Biquads + 2 Allpässe für die Mitte + Gains) — Schätzwerte. */
+const midSideCost = () => ({ base: 8, measured: false, estimate: 'stereo' });
+const stereoShaperCost = () => ({ base: 13, measured: false, estimate: 'stereo' });
+/** Phase 13c: Haas (2 Verzögerungen + 2 Gains hinter dem Hochmischer) — Schätzwert. */
+const haasCost = () => ({ base: 3, measured: false, estimate: 'stereo' });
+/** Phase 13f: Doppler (Hochmischer, 1 Verzögerung, 1 Biquad, 2 Gains; Automation ohne Knoten) — Schätzwert. */
+const dopplerCost = () => ({ base: 4, measured: false, estimate: 'stereo' });
+/**
+ * Delay v2 (Phase 14a) — eine Wahrheit für Registry, Engine und Tests.
+ * Neutralwerte: lowCut = 20 Hz und highCut = 20 kHz heißen „aus“, modDepth = 0 heißt „keine Modulation“.
+ */
+export const DELAY_MODES = ['mono', 'stereo', 'pingpong', 'multitap'];
+export const DELAY_MODE_LABELS = { mono: 'Mono (ein Echo)', stereo: 'Stereo (Zeit je Seite)', pingpong: 'Ping-Pong (abwechselnd L/R)', multitap: 'Multi-Tap (mehrere Echos)' };
+/**
+ * Multi-Tap (Phase 14b): Liste `taps` je { on, time (s), level (0–1, linear), panorama (−1 … +1), feedback (0–0,95) } (+ unbekannte Felder bleiben, AE-18).
+ * Die Engine baut die ersten DELAY_TAPS_MAX_BUILD Taps, die Daten behalten bis DELAY_TAPS_MAX_KEEP (wie die PEQ-Bänder).
+ */
+export const DELAY_TAPS_MAX_BUILD = 8;
+export const DELAY_TAPS_MAX_KEEP = 16;
+export const DELAY_TAP_RANGES = { time: [0.01, 2], level: [0, 1], panorama: [-1, 1], feedback: [0, 0.95] };
+export const DELAY_DEFAULT_TAPS = [
+  { on: true, time: 0.15, level: 0.8, panorama: -0.6, feedback: 0 },
+  { on: true, time: 0.3, level: 0.6, panorama: 0.6, feedback: 0 },
+  { on: true, time: 0.45, level: 0.4, panorama: 0, feedback: 0 }
+];
+/** Indizes der gebauten Taps (die ersten DELAY_TAPS_MAX_BUILD Einträge, davon die eingeschalteten). */
+export const delayActiveTaps = p => (Array.isArray(p?.taps) ? p.taps : []).slice(0, DELAY_TAPS_MAX_BUILD).map((t, i) => [t, i]).filter(([t]) => t && typeof t === 'object' && t.on !== false);
+export const DELAY_LOWCUT_OFF = 20;
+export const DELAY_HIGHCUT_OFF = 20000;
+export const DELAY_MOD_MAX_MS = 10;
+/** Kleinste Verzögerung in der Engine (s); liegt bei allen üblichen Abtastraten über 128 Samples (Rückkopplungszyklus, Plan P14). */
+export const DELAY_MIN_S = 0.01;
+/** Größte Schleifenverstärkung (Rückkopplung + Kreuz-Rückkopplung), damit sich nichts aufschaukelt. */
+export const DELAY_MAX_LOOP_GAIN = 0.95;
+const _fin = (v, d) => (Number.isFinite(v) ? v : d);
+const _clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
+/** Gültiger Modus (unbekannt → mono, wie die Schemaklemmung). */
+export const delayMode = p => (DELAY_MODES.includes(p?.mode) ? p.mode : 'mono');
+/** true = bisheriges Delay (Modus mono, alle neuen Felder neutral): Engine baut den unveränderten Graphen, Tail wie bisher. */
+export function delayIsLegacy(p) {
+  return delayMode(p) === 'mono' && !(_fin(p?.lowCut, DELAY_LOWCUT_OFF) > DELAY_LOWCUT_OFF) && !(_fin(p?.highCut, DELAY_HIGHCUT_OFF) < DELAY_HIGHCUT_OFF) && !(_fin(p?.modDepth, 0) > 0);
+}
+/** Rückkopplung und Kreuz-Rückkopplung (Stereo) nach der Begrenzung: Summe ≤ DELAY_MAX_LOOP_GAIN (beide gleich skaliert). */
+export function delayLoopGains(p) {
+  const fb = _clamp(0, 0.95, _fin(p?.feedback, 0.35));
+  const x = delayMode(p) === 'stereo' ? _clamp(0, 0.95, _fin(p?.crossFeedback, 0)) : 0;
+  const s = fb + x > DELAY_MAX_LOOP_GAIN ? DELAY_MAX_LOOP_GAIN / (fb + x) : 1;
+  return { fb: fb * s, cross: x * s };
+}
+/**
+ * Nachklang (s). Bisheriges Delay: unveränderte Formel (höchstens 60 Wiederholungen, höchstens 10 s). Sonst (Entscheidung B, P14):
+ * Zeit · ⌈ln 0,001 / ln g⌉ mit der Schleifenverstärkung g (Stereo: fb + cross, längere Seite), zuzüglich Modulationstiefe; Grenze nur die 30 s des Exports.
+ */
+export function delayTailSeconds(p) {
+  if (delayIsLegacy(p)) {
+    const time = Math.max(0.01, p?.time ?? 0.22);
+    const fb = Math.max(0, Math.min(0.95, p?.feedback ?? 0.35));
+    const repeats = fb > 0 ? Math.min(60, Math.ceil(Math.log(0.001) / Math.log(fb))) : 1;
+    return Math.min(10, time * repeats);
+  }
+  const t = v => _clamp(DELAY_MIN_S, 2, _fin(v, 0.22));
+  const mode = delayMode(p), { fb, cross } = delayLoopGains(p);
+  const depthS = _clamp(0, DELAY_MOD_MAX_MS, _fin(p?.modDepth, 0)) / 1000;
+  if (mode === 'multitap') {
+    // je Tap: Zeit · Wiederholungen der eigenen Rückkopplung; das längste zählt
+    let m = 0;
+    for (const [tp] of delayActiveTaps(p)) {
+      const g = _clamp(0, 0.95, _fin(tp.feedback, 0));
+      m = Math.max(m, t(tp.time) * (g > 0 ? Math.ceil(Math.log(0.001) / Math.log(g)) : 1));
+    }
+    return Math.min(30, m + depthS);
+  }
+  const T = mode === 'stereo' ? Math.max(t(p?.timeL), t(p?.timeR ?? 0.33)) : t(p?.time);
+  const g = fb + cross;
+  const repeats = g > 0 ? Math.ceil(Math.log(0.001) / Math.log(g)) : 1;
+  return Math.min(30, T * repeats + depthS);
+}
+/** Multiband-Delay (14c): Bänder in Weichen-Reihenfolge; Feldnamen <band>Time/Feedback/Level. */
+export const DMB_BANDS = ['low', 'mid', 'high'];
+/** Weichenfrequenzen (Hz), geklemmt; die obere liegt immer mindestens eine Oktave über der unteren. */
+export function delayMultibandCross(p) {
+  const f1 = _clamp(40, 1000, _fin(p?.crossLow, 300));
+  return [f1, Math.max(2 * f1, _clamp(1000, 12000, _fin(p?.crossHigh, 3000)))];
+}
+/** Werte eines Bandes, geklemmt wie in der Engine: { time (s, ≥ DELAY_MIN_S), feedback, level }. */
+export function delayMultibandBand(p, b) {
+  const d = { low: [0.3, 0.4], mid: [0.2, 0.3], high: [0.12, 0.2] }[b];
+  return { time: _clamp(DELAY_MIN_S, 2, _fin(p?.[b + 'Time'], d[0])), feedback: _clamp(0, 0.95, _fin(p?.[b + 'Feedback'], d[1])), level: _clamp(0, 1, _fin(p?.[b + 'Level'], 1)) };
+}
+/** Nachklang: längste Bandfahne (Zeit · ⌈ln 0,001 / ln fb⌉), stumme Bänder zählen nicht; höchstens 30 s. */
+export function delayMultibandTail(p) {
+  let m = 0;
+  for (const b of DMB_BANDS) {
+    const v = delayMultibandBand(p, b);
+    if (!(v.level > 0)) continue;
+    m = Math.max(m, v.time * (v.feedback > 0 ? Math.ceil(Math.log(0.001) / Math.log(v.feedback)) : 1));
+  }
+  return Math.min(30, m);
+}
+/** Kosten: bisheriges Delay gemessen (4); erweiterte Graphen Schätzwert aus der Knotenzahl (M-1 steht aus). */
+const delayCost = p => {
+  if (delayIsLegacy(p)) return { base: 4, measured: true };
+  const m = delayMode(p);
+  if (m === 'multitap') return { base: 3 + 7 * delayActiveTaps(p).length, measured: false, estimate: 'delay' };   // Hochmischer/Summe + je Tap Delay, 2 Biquads, Pegel, Panner, Rückkopplung, Sättigung
+  return { base: m === 'mono' ? 8 : m === 'stereo' ? 16 : 15, measured: false, estimate: 'delay' };
+};
+/** Doppler (13f): Schallgeschwindigkeit (m/s) und größte Verzögerung (s, Entscheidung B; weiter weg „parkt“ die Quelle). */
+export const DOPPLER_C = 343;
+export const DOPPLER_MAX_DELAY_S = 2;
+/**
+ * Nachklang des Dopplers (s): größte Verzögerung der Bahn, Anteil Tonhöhe · (d_max − d_min)/c, höchstens DOPPLER_MAX_DELAY_S. Bei Dauer relativ zur
+ * Clip-Dauer ist die Bahnlänge hier unbekannt → Obergrenze. Ohne Tonhöhenanteil keine Verzögerung.
+ */
+export function dopplerTailSeconds(p) {
+  const k = Math.max(0, Math.min(1, Number.isFinite(p?.pitchAmount) ? p.pitchAmount : 1));
+  if (!(k > 0)) return 0;
+  if (p?.motionUnit === 'relative') return DOPPLER_MAX_DELAY_S;
+  const v = Number.isFinite(p?.speed) ? p.speed : 20, dmin = Number.isFinite(p?.minDistance) ? p.minDistance : 5;
+  const cl = Math.max(0, Math.min(1, Number.isFinite(p?.closest) ? p.closest : 0.5)), len = Number.isFinite(p?.motionTime) ? p.motionTime : 4;
+  const x = v * len * Math.max(cl, 1 - cl);
+  return Math.min(DOPPLER_MAX_DELAY_S, k * (Math.hypot(dmin, x) - dmin) / DOPPLER_C);
+}
+/** Mid/Side-EQ (13b): Bänder je Kanal (Mitte, Seite) — eine Wahrheit für Registry, Engine und Tests. */
+export const MS_EQ_DEF = { LowGain: 0, LowFreq: 200, PeakGain: 0, PeakFreq: 1000, PeakQ: 0.7, HighGain: 0, HighFreq: 5000 };
+const msEqParams = (ch, name) => ({
+  [`${ch}LowGain`]: { def: 0, range: [-18, 18], unit: 'dB', label: `${name}: Tiefen-Shelf`, ui: { min: -18, max: 18, step: 0.5, signed: true } },
+  [`${ch}LowFreq`]: { def: 200, range: [20, 1000], unit: 'Hz', label: `${name}: Tiefen-Shelf Frequenz`, ui: { min: 20, max: 1000, step: 5, scale: 'log', digits: 0 } },
+  [`${ch}PeakGain`]: { def: 0, range: [-18, 18], unit: 'dB', label: `${name}: Glocke`, ui: { min: -18, max: 18, step: 0.5, signed: true } },
+  [`${ch}PeakFreq`]: { def: 1000, range: [50, 15000], unit: 'Hz', label: `${name}: Glocke Frequenz`, ui: { min: 50, max: 15000, step: 10, scale: 'log', digits: 0 } },
+  [`${ch}PeakQ`]: { def: 0.7, range: [0.1, 10], label: `${name}: Glocke Güte (Q)`, ui: { min: 0.1, max: 10, step: 0.1, digits: 1 } },
+  [`${ch}HighGain`]: { def: 0, range: [-18, 18], unit: 'dB', label: `${name}: Höhen-Shelf`, ui: { min: -18, max: 18, step: 0.5, signed: true } },
+  [`${ch}HighFreq`]: { def: 5000, range: [1000, 20000], unit: 'Hz', label: `${name}: Höhen-Shelf Frequenz`, ui: { min: 1000, max: 20000, step: 50, scale: 'log', digits: 0 } }
+});
+/** Feste Verzögerung der Dekorrelation (komplementärer Kammfilter L = M + a·M(t−τ), R = M − a·M(t−τ); Kerben im Abstand 1/τ ≈ 91 Hz). */
+export const WIDTH_DECOR_DELAY_S = 0.011;
+/** Vibrato (12b): Verzögerungsamplitude (s) für eine Spitzenabweichung `cents` bei Rate `f` (Sinus: 2π·f·A, Dreieck: 4·f·A = 2^(c/1200) − 1). */
+export const VIBRATO_MAX_SWING = 0.2;
+export function vibratoSwing(cents, f, shape = 'sine') {
+  const dev = Math.pow(2, Math.max(0, Number(cents) || 0) / 1200) - 1, ff = Math.max(0.1, Number(f) || 5);
+  const a = shape === 'triangle' ? dev / (4 * ff) : dev / (2 * Math.PI * ff);
+  return Math.min(VIBRATO_MAX_SWING, a);
+}
+/** LFO-Formen der Phase-12-Module (modsources.js LFO_SHAPES); Sample&Hold erst mit P20. */
+const LFO_WAVE_OPTIONS = { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck', saw: 'Sägezahn' };
+const lfoWaveParam = () => ({ def: 'sine', enum: ['sine', 'triangle', 'square', 'saw'], label: 'Wellenform', ui: { options: LFO_WAVE_OPTIONS } });
 
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
@@ -123,38 +287,60 @@ export const MODULES = [
       duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer', ui: { min: 0.1, max: 10, step: 0.1 } },
       decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen', ui: { min: 0.1, max: 6, step: 0.1 } }
     } },
-  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { generated: true }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: c(4),
-    tail: p => {
-      const time = Math.max(0.01, p?.time ?? 0.22);
-      const fb = Math.max(0, Math.min(0.95, p?.feedback ?? 0.35));
-      const repeats = fb > 0 ? Math.min(60, Math.ceil(Math.log(0.001) / Math.log(fb))) : 1;
-      return Math.min(10, time * repeats);
-    },
+  // Phase 14a (additiv): Modi mono (Standard = bisheriges Delay) | stereo | pingpong, Low-/High-Cut und Schutzsättigung in der Rückkopplung,
+  // Modulation der Verzögerung. Mono mit neutralen neuen Feldern (delayIsLegacy) baut exakt den bisherigen Graphen.
+  { key: 'delay', stageHint: p => ((p?.time ?? 0) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { generated: true }, family: 'space', label: 'Echo (Delay)', layerOrder: 120, consumers: ALL_CONSUMERS, cost: delayCost,
+    tail: p => delayTailSeconds(p),
     params: {
-      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
-      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
-      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } }
+      mode: { def: 'mono', enum: DELAY_MODES, label: 'Modus', ui: { options: DELAY_MODE_LABELS } },
+      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['mono', 'pingpong'] } } },
+      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['mono', 'stereo', 'pingpong'] } } },
+      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      timeL: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit links', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
+      timeR: { def: 0.33, range: [0, 2], unit: 's', label: 'Zeit rechts', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
+      crossFeedback: { def: 0, range: [0, 0.95], label: 'Kreuz-Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['stereo'] } } },
+      lowCut: { def: DELAY_LOWCUT_OFF, range: [DELAY_LOWCUT_OFF, 2000], unit: 'Hz', label: 'Low-Cut (je Wiederholung)', ui: { min: 20, max: 2000, step: 5, scale: 'log', digits: 0 } },
+      highCut: { def: DELAY_HIGHCUT_OFF, range: [500, DELAY_HIGHCUT_OFF], unit: 'Hz', label: 'High-Cut (je Wiederholung)', ui: { min: 500, max: 20000, step: 50, scale: 'log', digits: 0 } },
+      modRate: { def: 0.5, range: [0.05, 5], unit: 'Hz', label: 'Modulation: Rate', ui: { min: 0.05, max: 5, step: 0.05 } },
+      modDepth: { def: 0, range: [0, DELAY_MOD_MAX_MS], unit: 'ms', label: 'Modulation: Tiefe', ui: { min: 0, max: DELAY_MOD_MAX_MS, step: 0.1, digits: 1 } },
+      taps: { def: DELAY_DEFAULT_TAPS, tapList: true, label: 'Taps', ui: { showIf: { mode: ['multitap'] } } }      // Phase 14b
     } },
-  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: c(4),
+  { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: chorusCost,
     params: {
       baseDelay: { def: 15, range: [1, 40], unit: 'ms', label: 'Grundverzögerung', ui: { min: 5, max: 40, step: 0.5 } },
       depth: { def: 8, range: [0, 20], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 20, step: 0.5 } },
       rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
-      mix: { def: 0.3, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+      mix: { def: 0.3, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // Phase 12b (additiv): Stimmen und Stereo-Verteilung, Ensemble als Modus (3 Stimmen). voices 1 + mode 'chorus' (Standard, auch bei
+      // fehlenden Feldern) = Graph wie bisher; `spread` wirkt erst ab 2 Stimmen bzw. im Ensemble.
+      voices: { def: 1, range: [1, 8], label: 'Stimmen', ui: { min: 1, max: 8, step: 1, digits: 0 } },   // K3: 1–8 (vorher 1–4)
+      spread: { def: 0, range: [0, 1], label: 'Stereo-Verteilung', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mode: { def: 'chorus', enum: ['chorus', 'ensemble'], label: 'Modus', ui: { options: { chorus: 'Chorus', ensemble: 'Ensemble (3 Stimmen)' } } },
+      // K3 (additiv): Anteil des schnellen 6-Hz-LFO an der Tiefe im Ensemble (Beschriftung „Schimmern“; Feldname bewusst nicht „shimmer“, das ist in Tests der Name eines unbekannten Zukunftsmoduls). Standard 0,12 = bisheriger fester Wert (bit-gleich); live.
+      fastShare: { def: 0.12, range: [0, 0.5], label: 'Schimmern', ui: { min: 0, max: 0.5, step: 0.01, percent: true, showIf: { mode: ['ensemble'] } } }
     } },
-  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS, cost: c(7),
+  // Phase 12c: Flanger im Worklet `delayline` (sample-genaue Rückkopplung ohne die 128-Sample-Klemmung von Node/Firefox, B-14; Entscheidung E1:
+  // in allen Motoren). Ohne Worklet: bisheriger nativer Graph (Fallback 'native', `phase` wirkt dort nicht).
+  { key: 'flanger', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Flanger', layerOrder: 100, consumers: ALL_CONSUMERS,
+    cost: () => ({ base: 7, measured: false, estimate: 'delayline' }), workletModules: ['delayline'],
     params: {
       baseDelay: { def: 2, range: [0.5, 10], unit: 'ms', label: 'Grundverzögerung', ui: { min: 0.5, max: 5, step: 0.1 } },
       depth: { def: 1.5, range: [0, 10], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 10, step: 0.1 } },
       rate: { def: 0.2, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
       feedback: { def: 0.5, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
-      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // Phase 12c (additiv): LFO-Form (Sinus = bisher; Rechteck/Säge bewusst nicht: Sprünge der Verzögerung knacken) und L/R-Versatz (E3, Standard 0 = mono).
+      waveform: { def: 'sine', enum: ['sine', 'triangle'], label: 'Wellenform', ui: { options: { sine: 'Sinus', triangle: 'Dreieck' } } },
+      phase: { def: 0, range: [0, 180], unit: '°', label: 'Phasenversatz L/R', ui: { min: 0, max: 180, step: 1 } }
     } },
-  { key: 'tremolo', ui: { generated: true }, family: 'modulation', label: 'Tremolo', layerOrder: 130, consumers: ALL_CONSUMERS, cost: c(2),
+  { key: 'tremolo', ui: { generated: true }, family: 'modulation', label: 'Tremolo', layerOrder: 130, consumers: ALL_CONSUMERS, cost: tremoloCost,
     params: {
       rate: { def: 5, range: [0.1, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.1, max: 20, step: 0.1 } },
       depth: { def: 0.5, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
-      waveform: { def: 'sine', enum: ['sine', 'triangle', 'square'], label: 'Wellenform', ui: { options: { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck' } } }
+      waveform: { def: 'sine', enum: ['sine', 'triangle', 'square'], label: 'Wellenform', ui: { options: { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck' } } },
+      // Phase 12a (additiv): Stereo-Tremolo mit L/R-Versatz. `stereo: 'off'` (Standard, auch bei fehlendem Feld) = Graph wie bisher; `phase` wirkt nur bei 'on'.
+      stereo: { def: 'off', enum: ['off', 'on'], label: 'Stereo', ui: { options: { off: 'Aus (L = R)', on: 'Ein (L/R versetzt)' } } },
+      phase: { def: 90, range: [0, 180], unit: '°', label: 'Phasenversatz L/R', ui: { min: 0, max: 180, step: 1 } }
     } },
   { key: 'eq', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: '3-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(3),
     params: {
@@ -164,13 +350,17 @@ export const MODULES = [
     } },
   { key: 'eq10', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'eq', label: '10-Band-EQ', layerOrder: 50, consumers: ALL_CONSUMERS, cost: c(12),
     params: { bands: { def: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bands: true, label: 'Bänder', ui: { gain: { min: -18, max: 18, step: 1 }, q: { min: 0.3, max: 10, step: 0.1, def: 1.4 } } } } },
-  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS, cost: c(12.5),
+  { key: 'compressor', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Kompressor', layerOrder: 60, consumers: ALL_CONSUMERS,
+    // Mit Parallelanteil (mix < 1) kommt ein Delay als zeitgleicher Dry-Pfad dazu (+2 Punkte, Schätzwert bis M-1 ihn misst).
+    cost: p => ((p?.mix ?? 1) < 1 ? { base: 14.5, measured: false, estimate: 'compressor+delay' } : { base: 12.5, measured: true }),
     params: {
       threshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Schwelle', ui: { min: -60, max: 0, step: 1 } },
       knee: { def: 30, range: [0, 40], unit: 'dB', label: 'Knie', ui: { min: 0, max: 40, step: 1 } },
       ratio: { def: 12, range: [1, 20], label: 'Verhältnis', ui: { min: 1, max: 20, step: 0.5, unit: ':1' } },
       attack: { def: 0.003, range: [0, 1], unit: 's', label: 'Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
-      release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } }
+      release: { def: 0.25, range: [0, 1], unit: 's', label: 'Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } },
+      makeup: { def: 0, range: [-12, 24], unit: 'dB', label: 'Makeup', ui: { min: -12, max: 24, step: 0.5 } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } },
   { key: 'limiter', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Limiter', layerOrder: 60, consumers: ALL_CONSUMERS, cost: limiterCost, workletModules: ['dynamics'],
     // Phase 11b: Lookahead-Spitzenbegrenzer (Worklet `dynamics`, Modus 2). `threshold` bleibt der Schlüssel und ist das Ceiling (Altdaten gültig).
@@ -213,15 +403,30 @@ export const MODULES = [
     } },
   { key: 'spatial', ui: { generated: true }, family: 'position', label: 'Räumliche Position (3D)', layerOrder: 150, consumers: ALL_CONSUMERS, cost: c(4), degrade: { hrtf: true },
     params: {
-      x: { def: 0, range: [-1000, 1000], label: 'X (links ↔ rechts)', ui: { min: -10, max: 10, step: 0.1 } },
-      y: { def: 0, range: [-1000, 1000], label: 'Y (unten ↔ oben)', ui: { min: -10, max: 10, step: 0.1 } },
-      z: { def: -1, range: [-1000, 1000], label: 'Z (vorn ↔ hinten)', ui: { min: -10, max: 10, step: 0.1 } },
+      x: { def: 0, range: [-1000, 1000], label: 'X (links ↔ rechts)', ui: { min: -50, max: 50, step: 0.1 } },
+      y: { def: 0, range: [-1000, 1000], label: 'Y (unten ↔ oben)', ui: { min: -50, max: 50, step: 0.1 } },
+      z: { def: -1, range: [-1000, 1000], label: 'Z (vorn ↔ hinten)', ui: { min: -50, max: 50, step: 0.1 } },
       rolloff: { def: 1, range: [0, 10], label: 'Rolloff', ui: { min: 0, max: 5, step: 0.1 } },
-      maxDistance: { def: 10000, range: [1, 100000], label: 'Max. Distanz', ui: { hidden: true } },
-      refDistance: { def: 1, range: [0, 1000], label: 'Referenzdistanz', ui: { hidden: true } },
-      coneInnerAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel innen', ui: { hidden: true } },
-      coneOuterAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel außen', ui: { hidden: true } },
-      coneOuterGain: { def: 0, range: [0, 1], label: 'Kegel-Restpegel', ui: { hidden: true } }
+      maxDistance: { def: 10000, range: [1, 100000], label: 'Max. Distanz', ui: { min: 1, max: 10000, step: 1, scale: 'log', digits: 0 } },
+      refDistance: { def: 1, range: [0, 1000], label: 'Referenzdistanz', ui: { min: 0, max: 100, step: 0.1, digits: 1 } },
+      coneInnerAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel innen', ui: { min: 0, max: 360, step: 1, digits: 0 } },
+      coneOuterAngle: { def: 360, range: [0, 360], unit: '°', label: 'Kegel außen', ui: { min: 0, max: 360, step: 1, digits: 0 } },
+      coneOuterGain: { def: 0, range: [0, 1], label: 'Kegel-Restpegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // K2: Reglerbereich der Positionen ±50 m (vorher ±10 m; Daten ±1000 m unverändert).
+      // Phase 13e (Spatial v2, additiv): Modelle, Ausrichtung des Kegels, Bewegung Start (x/y/z) → Ziel (toX/toY/toZ) über die Zeitbasis (13d).
+      // Standardwerte = bisheriges Verhalten (HRTF, inverse, feste Ausrichtung +X, keine Bewegung). Die Bewegungsfelder erscheinen nur bei
+      // Bewegung ≠ Aus (`ui.showIf`, module-card.js). `maxDistance` wirkt in allen Distanzmodellen (Entscheidung A: eigene Begrenzung des Abstands).
+      panningModel: { def: 'HRTF', enum: ['HRTF', 'equalpower'], label: 'Panning-Modell', ui: { options: { HRTF: 'HRTF (3D, Kopfhörer)', equalpower: 'Equal-Power (einfaches Panorama)' } } },
+      distanceModel: { def: 'inverse', enum: ['inverse', 'linear', 'exponential'], label: 'Distanzmodell', ui: { options: { inverse: 'Invers (natürlich)', linear: 'Linear (bis Max. Distanz still)', exponential: 'Exponentiell' } } },
+      facing: { def: 'fixed', enum: ['fixed', 'motion'], label: 'Kegel zeigt', ui: { options: { fixed: 'fest nach rechts (+X)', motion: 'in Fahrtrichtung (Start → Ziel)' } } },
+      motion: { def: 'off', enum: ['off', 'once', 'loop'], label: 'Bewegung', ui: { options: { off: 'Aus', once: 'Einmal je Start', loop: 'Je Durchlauf (Loop)' } } },
+      toX: { def: 0, range: [-1000, 1000], label: 'Ziel X (links ↔ rechts)', ui: { min: -50, max: 50, step: 0.1, showIf: { motion: ['once', 'loop'] } } },
+      toY: { def: 0, range: [-1000, 1000], label: 'Ziel Y (unten ↔ oben)', ui: { min: -50, max: 50, step: 0.1, showIf: { motion: ['once', 'loop'] } } },
+      toZ: { def: -1, range: [-1000, 1000], label: 'Ziel Z (vorn ↔ hinten)', ui: { min: -50, max: 50, step: 0.1, showIf: { motion: ['once', 'loop'] } } },
+      motionUnit: { def: 'seconds', enum: ['seconds', 'relative'], label: 'Dauer angeben', ui: { options: { seconds: 'in Sekunden', relative: 'als Anteil der Clip-Dauer' }, showIf: { motion: ['once', 'loop'] } } },
+      motionTime: { def: 2, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, step: 0.05, scale: 'log', digits: 2, showIf: { motion: ['once', 'loop'], motionUnit: ['seconds'] } } },
+      motionShare: { def: 1, range: [0.01, 1], label: 'Dauer (Anteil)', ui: { min: 0.01, max: 1, step: 0.01, percent: true, showIf: { motion: ['once', 'loop'], motionUnit: ['relative'] } } },
+      curve: { def: 'linear', enum: ['linear', 'easeIn', 'easeOut', 'easeInOut'], label: 'Verlauf', ui: { options: { linear: 'Gleichmäßig', easeIn: 'Beschleunigen', easeOut: 'Abbremsen', easeInOut: 'Weich (an- und abschwellend)' }, showIf: { motion: ['once', 'loop'] } } }
     } },
   // P11a: echtes Gate (Worklet `dynamics`, Rechenkern dsp-lib/dynamics.js; B-03 behoben). Der Schlüssel bleibt `noiseGate` (Entscheidung A):
   // keine Rev-Migration, Alt-Daten und Presets bleiben gültig. Presets ohne die neuen Felder (3 Built-ins setzen nur `threshold`)
@@ -262,6 +467,164 @@ export const MODULES = [
       attack: { def: 5, range: [0, 1000], unit: 'ms', label: 'Attack', ui: { min: 0, max: 100, step: 1 } },
       release: { def: 150, range: [0, 2000], unit: 'ms', label: 'Release', ui: { min: 5, max: 1500, step: 5 } },
       scHp: { def: 20, range: [20, 2000], unit: 'Hz', label: 'Sidechain-Hochpass', ui: { min: 20, max: 2000, step: 10, scale: 'log', digits: 0 } }
+    } },
+  // Phase 11d: Transient Shaper (Worklet `dynamics`, Modus 3). Hüllkurvendifferenz, pegelunabhängig, keine Latenz; attack = sustain = 0 ist bit-genau neutral.
+  { key: 'transient', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Transient Shaper', layerOrder: 65, consumers: ALL_CONSUMERS, cost: dynamicsCost, workletModules: ['dynamics'], needsWorklet: true,
+    params: {
+      attack: { def: 0, range: [-12, 12], unit: 'dB', label: 'Anschlag', ui: { min: -12, max: 12, step: 0.5 } },
+      sustain: { def: 0, range: [-12, 12], unit: 'dB', label: 'Ausklang', ui: { min: -12, max: 12, step: 0.5 } },
+      sensitivity: { def: 0.5, range: [0, 1], label: 'Empfindlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      release: { def: 150, range: [20, 500], unit: 'ms', label: 'Release', ui: { min: 20, max: 500, step: 5 } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 11e: Multiband-Kompressor — LR4-Weiche (engine/crossover.js, 3 Bänder) und je Band ein nativer Kompressor mit Makeup.
+  // Rein nativ (kein Worklet). Alle Bänder haben dieselbe Kompressor-Vorverzögerung, bleiben also zeitgleich; `mix` wirkt je Band
+  // (Dry-Pfad = Verzögerung, wie beim Kompressor), so summiert sich der unbearbeitete Anteil phasenrichtig über dieselbe Weiche.
+  { key: 'multiband', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'dynamics', label: 'Multiband-Kompressor', layerOrder: 66, consumers: ALL_CONSUMERS,
+    cost: multibandCost,
+    params: {
+      crossLow: { def: 200, range: [40, 800], unit: 'Hz', label: 'Weiche Tiefen/Mitten', ui: { min: 40, max: 800, step: 5, scale: 'log', digits: 0 } },
+      crossHigh: { def: 2500, range: [1000, 12000], unit: 'Hz', label: 'Weiche Mitten/Höhen', ui: { min: 1000, max: 12000, step: 50, scale: 'log', digits: 0 } },
+      lowThreshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Tiefen: Schwelle', ui: { min: -60, max: 0, step: 1 } },
+      lowRatio: { def: 3, range: [1, 20], label: 'Tiefen: Verhältnis', ui: { min: 1, max: 20, step: 0.5, unit: ':1' } },
+      lowAttack: { def: 0.01, range: [0, 1], unit: 's', label: 'Tiefen: Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
+      lowRelease: { def: 0.25, range: [0, 1], unit: 's', label: 'Tiefen: Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } },
+      lowMakeup: { def: 0, range: [-12, 24], unit: 'dB', label: 'Tiefen: Makeup', ui: { min: -12, max: 24, step: 0.5 } },
+      midThreshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Mitten: Schwelle', ui: { min: -60, max: 0, step: 1 } },
+      midRatio: { def: 3, range: [1, 20], label: 'Mitten: Verhältnis', ui: { min: 1, max: 20, step: 0.5, unit: ':1' } },
+      midAttack: { def: 0.01, range: [0, 1], unit: 's', label: 'Mitten: Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
+      midRelease: { def: 0.25, range: [0, 1], unit: 's', label: 'Mitten: Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } },
+      midMakeup: { def: 0, range: [-12, 24], unit: 'dB', label: 'Mitten: Makeup', ui: { min: -12, max: 24, step: 0.5 } },
+      highThreshold: { def: -24, range: [-60, 0], unit: 'dB', label: 'Höhen: Schwelle', ui: { min: -60, max: 0, step: 1 } },
+      highRatio: { def: 3, range: [1, 20], label: 'Höhen: Verhältnis', ui: { min: 1, max: 20, step: 0.5, unit: ':1' } },
+      highAttack: { def: 0.01, range: [0, 1], unit: 's', label: 'Höhen: Attack', ui: { min: 0.0001, max: 0.5, step: 0.001, display: { factor: 1000, unit: 'ms' } } },
+      highRelease: { def: 0.25, range: [0, 1], unit: 's', label: 'Höhen: Release', ui: { min: 0.01, max: 1, step: 0.01, display: { factor: 1000, unit: 'ms' } } },
+      highMakeup: { def: 0, range: [-12, 24], unit: 'dB', label: 'Höhen: Makeup', ui: { min: -12, max: 24, step: 0.5 } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 12a: Auto-Pan — eigene Gains statt StereoPannerNode (Entscheidung 12a): Mitte/Seite-Breite der Quelle, dann je Kanal √2·cos/√2·sin des
+  // Panwinkels (LFO·Tiefe über eine WaveShaper-Kurve). Konstante Leistung für Mono- und Stereoquellen, Mitte = Pegel wie hinter jedem kanalerhaltenden Modul (Mono: L = R = −3,01 dB, M-3).
+  // Eine Mono-Quelle wird hier bewusst stereo (Zweck des Moduls). Ohne Worklet, ohne Latenz.
+  { key: 'autoPan', ui: { generated: true }, family: 'modulation', label: 'Auto-Pan', layerOrder: 132, consumers: ALL_CONSUMERS, cost: autoPanCost,
+    params: {
+      rate: { def: 0.5, range: [0.01, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      depth: { def: 1, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      waveform: lfoWaveParam(),
+      phase: { def: 0, range: [0, 360], unit: '°', label: 'Startphase', ui: { min: 0, max: 360, step: 1 } },
+      width: { def: 1, range: [0, 1], label: 'Stereobreite der Quelle', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 12b: Vibrato — modulierte Verzögerung (nativ). `depth` = Spitzenabweichung der Tonhöhe in Cent (Entscheidung E2); die Wellenform
+  // beschreibt die Verzögerung: Sinus → weiches Vibrato, Dreieck → Tonhöhe springt zwischen ±depth (Triller-artig). Rechteck/Säge sind hier
+  // bewusst nicht wählbar (Sprünge der Verzögerung = Knackser). Mix 1 = reines Vibrato; darunter entsteht ein Chorus-artiger Anteil.
+  { key: 'vibrato', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Vibrato', layerOrder: 104, consumers: ALL_CONSUMERS, cost: vibratoCost,
+    params: {
+      rate: { def: 5, range: [0.1, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.1, max: 14, step: 0.1 } },
+      depth: { def: 20, range: [0, 100], unit: 'ct', label: 'Tiefe', ui: { min: 0, max: 100, step: 1, digits: 0 } },
+      waveform: { def: 'sine', enum: ['sine', 'triangle'], label: 'Wellenform', ui: { options: { sine: 'Sinus', triangle: 'Dreieck (springt)' } } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 12d: Phaser — Kette aus stages/2 Allpass-Biquads (Q 0,5 = je zwei Allpässe 1. Ordnung, also stages/2 Kerben), Mittenfrequenz exponentiell
+  // vom LFO bewegt (depth 1 = ± 2 Oktaven). Worklet `delayline` (Modus 1) mit sample-genauer Rückkopplung; ohne Worklet: native Allpass-Kette ohne
+  // Rückkopplung (Fallback 'native'). Mix 0,5 = tiefste Kerben.
+  { key: 'phaser', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Phaser', layerOrder: 102, consumers: ALL_CONSUMERS, cost: phaserCost,
+    workletModules: ['delayline'],
+    params: {
+      rate: { def: 0.5, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      feedback: { def: 0, range: [-0.9, 0.9], label: 'Rückkopplung', ui: { min: -0.9, max: 0.9, step: 0.01, percent: true, signed: true } },   // K2: Anzeige −90 … +90 % (Daten −0,9 … +0,9)
+      stages: { def: 4, range: [2, 12], label: 'Stufen', ui: { min: 2, max: 12, step: 2, digits: 0 } },
+      center: { def: 800, range: [100, 8000], unit: 'Hz', label: 'Mittenfrequenz', ui: { min: 100, max: 8000, step: 10, scale: 'log', digits: 0 } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // ── Phase 13 (Stereo & Spatial): Module zwischen Expander (141) und Spatial (150); in keinem Built-in aktiv ──
+  // Phase 13a: Stereobreite über Mitte/Seite. Breite in Prozent (0 = mono, 100 = unverändert, 200 = doppelte Seite); die Mono-Summe (L + R)/2 hängt
+  // nicht von der Breite ab. `decorrelate` erzeugt aus der Mitte eine künstliche Seite (komplementäre Kurzverzögerung, Entscheidung C): nur so wird
+  // eine Mono-Quelle breiter (ihre Seite ist 0); die Mono-Summe bleibt dabei unverändert. Bass-Mono: Seite unterhalb `bassFreq` über LR4 entfernt.
+  { key: 'width', ui: { generated: true }, family: 'stereo', label: 'Stereobreite', layerOrder: 144, consumers: ALL_CONSUMERS, cost: widthCost,
+    params: {
+      width: { def: 100, range: [0, 200], unit: '%', label: 'Breite', ui: { min: 0, max: 200, step: 1, digits: 0 } },
+      center: { def: 0, range: [-24, 12], unit: 'dB', label: 'Center-Pegel', ui: { min: -24, max: 12, step: 0.5, signed: true } },
+      decorrelate: { def: 0, range: [0, 1], label: 'Mono-Verbreiterung (Dekorrelation)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      bassMono: { def: 'off', enum: ['off', 'on'], label: 'Bass-Mono', ui: { options: { off: 'Aus', on: 'Ein' } } },
+      bassFreq: { def: 120, range: [40, 500], unit: 'Hz', label: 'Bass-Mono bis', ui: { min: 40, max: 500, step: 5, scale: 'log', digits: 0 } }
+    } },
+  // Phase 13a: Utility — Panorama (Entscheidung B: `pan` kehrt als Feld dieses Moduls zurück; als Layer-Schlüssel bleibt es entfernt), Phase
+  // invertieren, Mono-Summe, L/R tauschen. Eine 2×2-Kanalmatrix, alle Regler live (Schalter blenden über die Glättung um, ≈ 45 ms).
+  { key: 'utility', ui: { generated: true }, family: 'stereo', label: 'Utility (Panorama, Phase, Mono)', layerOrder: 147, consumers: ALL_CONSUMERS, cost: utilityCost,
+    params: {
+      pan: { def: 0, range: [-1, 1], label: 'Panorama', ui: { min: -1, max: 1, step: 0.01, digits: 2, signed: true } },
+      // Panorama-Gesetz (13a, freigegeben: beide mit Schalter). balance: je Kanal √2·cos/√2·sin (wie Auto-Pan, konstante Leistung, Gegenkanal wird leiser);
+      // stereo: Formel des StereoPannerNode für zwei Kanäle (Gegenkanal wird auf die Zielseite hinübergemischt, bei korreliertem Inhalt bis +3 dB).
+      panMode: { def: 'balance', enum: ['balance', 'stereo'], label: 'Panorama-Modus', ui: { options: { balance: 'Balance (gleiche Leistung)', stereo: 'Verschieben (wie StereoPanner)' } } },
+      invert: { def: 'none', enum: ['none', 'left', 'right', 'both'], label: 'Phase invertieren', ui: { options: { none: 'Aus', left: 'Links', right: 'Rechts', both: 'Beide' } } },
+      mono: { def: 'off', enum: ['off', 'on'], label: 'Mono-Summe', ui: { options: { off: 'Aus', on: 'Ein (L = R)' } } },
+      swap: { def: 'off', enum: ['off', 'on'], label: 'L/R tauschen', ui: { options: { off: 'Aus', on: 'Ein' } } }
+    } },
+  // Phase 13b: Mid/Side — Mitte und Seite getrennt: Pegel und je ein EQ (Tiefen-Shelf, Glocke, Höhen-Shelf). Standard = Nulltest. Deckt den Mid/Side-EQ ab (Masterliste #13).
+  { key: 'midSide', ui: { generated: true }, family: 'stereo', label: 'Mid/Side (Pegel, EQ)', layerOrder: 143, consumers: ALL_CONSUMERS, cost: midSideCost,
+    params: {
+      midGain: { def: 0, range: [-24, 12], unit: 'dB', label: 'Mitte: Pegel', ui: { min: -24, max: 12, step: 0.5, signed: true } },
+      sideGain: { def: 0, range: [-24, 12], unit: 'dB', label: 'Seite: Pegel', ui: { min: -24, max: 12, step: 0.5, signed: true } },
+      ...msEqParams('mid', 'Mitte'),
+      ...msEqParams('side', 'Seite')
+    } },
+  // Phase 13b: Stereo-Shaper — Breite in drei Bändern (LR4-Weiche aus 11e auf der Seite, passender Allpass auf der Mitte). Bänder summieren flach.
+  { key: 'stereoShaper', ui: { generated: true }, family: 'stereo', label: 'Stereo-Shaper (Breite in 3 Bändern)', layerOrder: 145, consumers: ALL_CONSUMERS, cost: stereoShaperCost,
+    params: {
+      crossLow: { def: 200, range: [40, 800], unit: 'Hz', label: 'Weiche Tiefen/Mitten', ui: { min: 40, max: 800, step: 5, scale: 'log', digits: 0 } },
+      crossHigh: { def: 2500, range: [1000, 12000], unit: 'Hz', label: 'Weiche Mitten/Höhen', ui: { min: 1000, max: 12000, step: 50, scale: 'log', digits: 0 } },
+      lowWidth: { def: 100, range: [0, 200], unit: '%', label: 'Tiefen: Breite', ui: { min: 0, max: 200, step: 1, digits: 0 } },
+      midWidth: { def: 100, range: [0, 200], unit: '%', label: 'Mitten: Breite', ui: { min: 0, max: 200, step: 1, digits: 0 } },
+      highWidth: { def: 100, range: [0, 200], unit: '%', label: 'Höhen: Breite', ui: { min: 0, max: 200, step: 1, digits: 0 } }
+    } },
+  // Phase 13c: Haas — ein Kanal wird um 1–35 ms verzögert (ohne Rückkopplung); die Ortung folgt dem früheren Kanal. `side` = wohin der Klang wandert
+  // (verzögert wird der Gegenkanal), `level` = Pegel des verzögerten Kanals. Alle Regler live (Zeitänderung gleitet über ≈ 0,45 s, Seitenwechsel ebenso).
+  { key: 'haas', ui: { generated: true }, family: 'stereo', label: 'Haas (Laufzeit-Stereo)', layerOrder: 146, consumers: ALL_CONSUMERS, cost: haasCost,
+    params: {
+      time: { def: 15, range: [1, 35], unit: 'ms', label: 'Verzögerung', ui: { min: 1, max: 35, step: 0.1, digits: 1 } },
+      side: { def: 'right', enum: ['left', 'right'], label: 'Klang wandert nach', ui: { options: { left: 'Links', right: 'Rechts' } } },
+      level: { def: 0, range: [-24, 6], unit: 'dB', label: 'Pegel verzögerter Kanal', ui: { min: -24, max: 6, step: 0.5, signed: true } }
+    } },
+  // Phase 13f: Doppler — Vorbeifahrt auf einer Geraden im Abstand `minDistance` (Entscheidung A: eigenständig, nicht an Spatial gekoppelt).
+  // Tonhöhe über die Laufzeit (Entscheidung C: exakte Sendezeit, Doppler-Faktor c/(c + v_r)), dazu Abstandspegel, Luftdämpfung (Tiefpass)
+  // und Panorama; jeder Anteil skalierbar. Zeitpunkt der größten Nähe `closest` (0 = nur Entfernen, 1 = nur Herankommen). Bewegung über die
+  // Zeitbasis (13d) wie Spatial; Standard = einmal über die ganze Clip-Dauer (Entscheidung D). Verzögerung höchstens DOPPLER_MAX_DELAY_S
+  // (Entscheidung B: weiter weg „parkt“ die Quelle). Alle Regler live (die Bahn wird ab „jetzt“ neu geplant).
+  { key: 'doppler', ui: { generated: true }, family: 'stereo', label: 'Doppler (Vorbeifahrt)', layerOrder: 148, consumers: ALL_CONSUMERS, cost: dopplerCost,
+    tail: p => dopplerTailSeconds(p),
+    params: {
+      direction: { def: 'leftToRight', enum: ['leftToRight', 'rightToLeft'], label: 'Richtung', ui: { options: { leftToRight: 'Links → rechts', rightToLeft: 'Rechts → links' } } },
+      speed: { def: 20, range: [1, 150], unit: 'm/s', label: 'Geschwindigkeit', ui: { min: 1, max: 150, step: 0.5, scale: 'log', digits: 1 } },
+      minDistance: { def: 5, range: [0.5, 100], unit: 'm', label: 'Nächste Distanz', ui: { min: 0.5, max: 100, step: 0.1, scale: 'log', digits: 1 } },
+      closest: { def: 0.5, range: [0, 1], label: 'Größte Nähe bei', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      motion: { def: 'once', enum: ['once', 'loop'], label: 'Vorbeifahrt', ui: { options: { once: 'Einmal je Start', loop: 'Je Durchlauf (Loop)' } } },
+      motionUnit: { def: 'relative', enum: ['seconds', 'relative'], label: 'Dauer angeben', ui: { options: { seconds: 'in Sekunden', relative: 'als Anteil der Clip-Dauer' } } },
+      motionTime: { def: 4, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, step: 0.05, scale: 'log', digits: 2, showIf: { motionUnit: ['seconds'] } } },
+      motionShare: { def: 1, range: [0.01, 1], label: 'Dauer (Anteil)', ui: { min: 0.01, max: 1, step: 0.01, percent: true, showIf: { motionUnit: ['relative'] } } },
+      pitchAmount: { def: 1, range: [0, 1], label: 'Anteil Tonhöhe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      levelAmount: { def: 1, range: [0, 1], label: 'Anteil Pegel (Abstand)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      airAmount: { def: 0.5, range: [0, 1], label: 'Luftdämpfung (Tiefpass)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      panAmount: { def: 1, range: [0, 1], label: 'Anteil Panorama', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 14c: Multiband-Delay — LR4-Dreibandweiche (engine/crossover.js, wie der Multiband-Kompressor), je Band eine Echoschleife mit eigener Zeit,
+  // Rückkopplung und Pegel (Delay → Rückkopplung → Schutzsättigung). Kanalerhaltend wie das Mono-Delay (Mono bleibt mono), keine Exklusivgruppe,
+  // sitzt direkt hinter `delay` (layerOrder 121, vor dem Tremolo). Alle Regler live.
+  { key: 'delayMultiband', stageHint: p => (Math.max(...DMB_BANDS.map(b => p?.[b + 'Time'] ?? 0)) >= 0.12 ? { stage: 'environment', weight: 1 } : null), ui: { generated: true }, family: 'space', label: 'Multiband-Delay (3 Bänder)', layerOrder: 121, consumers: ALL_CONSUMERS,
+    cost: () => ({ base: 22, measured: false, estimate: 'delay' }),   // Weiche 9 Biquads + Summe, je Band Delay, Rückkopplung, Sättigung, Pegel
+    tail: p => delayMultibandTail(p),
+    params: {
+      crossLow: { def: 300, range: [40, 1000], unit: 'Hz', label: 'Weiche Tiefen/Mitten', ui: { min: 40, max: 1000, step: 5, scale: 'log', digits: 0 } },
+      crossHigh: { def: 3000, range: [1000, 12000], unit: 'Hz', label: 'Weiche Mitten/Höhen', ui: { min: 1000, max: 12000, step: 50, scale: 'log', digits: 0 } },
+      lowTime: { def: 0.3, range: [0, 2], unit: 's', label: 'Tiefen: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      lowFeedback: { def: 0.4, range: [0, 0.95], label: 'Tiefen: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      lowLevel: { def: 1, range: [0, 1], label: 'Tiefen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      midTime: { def: 0.2, range: [0, 2], unit: 's', label: 'Mitten: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      midFeedback: { def: 0.3, range: [0, 0.95], label: 'Mitten: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      midLevel: { def: 1, range: [0, 1], label: 'Mitten: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      highTime: { def: 0.12, range: [0, 2], unit: 's', label: 'Höhen: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      highFeedback: { def: 0.2, range: [0, 0.95], label: 'Höhen: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
+      highLevel: { def: 1, range: [0, 1], label: 'Höhen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } }
     } }
 ];
 

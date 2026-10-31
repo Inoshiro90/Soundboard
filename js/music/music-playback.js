@@ -11,6 +11,7 @@ import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } 
 import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
 import { connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
+import { musicTiming } from '../audio/engine/timebase.js';     // Phase 13d: Zeitbasis für Bewegungen
 import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // Zirkulärer Import (music-model.js importiert umgekehrt stopMusic/
 // _revokeBlobUrl/_orderedTracks/_blobUrls/_resetShuffleOrder aus diesem
@@ -128,6 +129,10 @@ function _ensurePlayers() {
     // Wechsel wird neu gerendert, unabhängig davon, WARUM sich der Zustand geändert hat.
     audio.addEventListener('play',  () => { renderMusicPanel(); renderMusicPlayer(); });
     audio.addEventListener('pause', () => { renderMusicPanel(); renderMusicPlayer(); });
+    // Phase 13d: Zeitbasis der Effektkette folgt dem Media-Element (Start, Fortsetzen, Sprung → arm; Pause → einfrieren).
+    audio.addEventListener('playing', () => _armMusicFx(rec));
+    audio.addEventListener('seeked',  () => { if (!audio.paused) _armMusicFx(rec); });
+    audio.addEventListener('pause',   () => { try { rec.fxChain?.hold(); } catch (e) { /* ignorieren */ } });
     return rec;
   };
   _players = { A: mk(), B: mk(), master };
@@ -167,6 +172,21 @@ function _reconnectSlotFx(rec, effects) {
   if (graph.input) { rec.source.connect(graph.input); graph.output.connect(rec.gain); }
   else rec.source.connect(rec.gain);
   rec.fxChain = graph;
+  // Phase 13d: Neu verbunden während der Wiedergabe (Notbehelf in applyMusicTrackEffectsLive) → Zeitbasis sofort übernehmen.
+  if (!rec.audio.paused) _armMusicFx(rec);
+}
+
+/**
+ * Phase 13d: Zeitbasis der Effektkette aus der Wiedergabeposition melden (timebase.js musicTiming). Position 0 des Clips = Trim-Anfang
+ * des Tracks; „Wiederholen: eins“ zählt als neuer Durchlauf (`rec.newPass`, gesetzt in _handleTrackEnded). Ohne Kette/Track nichts.
+ */
+function _armMusicFx(rec) {
+  if (!rec.fxChain || !rec.trackId) return;
+  const track = _findTrack(rec.trackId);
+  rec.timing = musicTiming({ ctxNow: actx().currentTime, position: rec.audio.currentTime, clipStart: track?.trimStart || 0,
+    duration: rec.audio.duration, rate: rec.audio.playbackRate || 1, prev: rec.timing || null, newPass: !!rec.newPass });
+  rec.newPass = false;
+  try { rec.fxChain.arm(rec.timing); } catch (e) { console.warn('[music] Zeitbasis:', e); }
 }
 
 /**
@@ -216,6 +236,7 @@ async function _loadIntoSlot(slot, track) {
 
   rec.audio.src   = url;
   rec.trackId     = track.id;
+  rec.timing      = null; rec.newPass = false;   // Phase 13d: neuer Track → erster Durchlauf
   // Effektkette für DIESEN Track aufbauen — jeder
   // Track kann ein anderes Preset haben, daher pro Ladevorgang neu.
   try { await preparePipelineContext(actx(), resolvePlan(asPipelineEffects(track.effects)), TARGET_CAPS.music); } catch (e) {}
@@ -238,7 +259,7 @@ function _attachEndedHandler(rec, trackId) {
 function _handleTrackEnded() {
   if (APP.music.repeatMode === 'one') {
     const rec = _players[_activeSlot];
-    if (rec) { rec.audio.currentTime = 0; rec.audio.play().catch(() => {}); _startProgressLoop(); }
+    if (rec) { rec.newPass = true; rec.audio.currentTime = 0; rec.audio.play().catch(() => {}); _startProgressLoop(); }   // 13d: neuer Durchlauf
     return;
   }
   if (!APP.music.autoplay) { stopMusic(); return; }

@@ -157,7 +157,7 @@
             </button>
             <div class="disclosure-section__panel" id="smFxDyn" hidden>
               <!-- Phase 8: Karten für Kompressor und Limiter erzeugt js/ui/effects/ aus der Registry. -->
-              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="compressor,limiter,noiseGate,expander"></div>
+              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="compressor,limiter,multiband,transient,noiseGate,expander"></div>
             </div>
           </div>
 
@@ -188,7 +188,7 @@
             </button>
             <div class="disclosure-section__panel" id="smFxMod" hidden>
               <!-- Phase 8: Karten für Tremolo, Chorus, Flanger und Wahwah erzeugt js/ui/effects/ aus der Registry. -->
-              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="tremolo,chorus,flanger,wahwah"></div>
+              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="tremolo,autoPan,chorus,flanger,phaser,vibrato,wahwah"></div>
             </div>
           </div>
 
@@ -217,8 +217,8 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="disclosure-section__panel" id="smFxDelay" hidden>
-              <!-- Phase 8: Karte für Echo/Delay erzeugt js/ui/effects/ aus der Registry. -->
-              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="delay"></div>
+              <!-- Phase 8: Karte für Echo/Delay erzeugt js/ui/effects/ aus der Registry (14c: + Multiband-Delay). -->
+              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="delay,delayMultiband"></div>
             </div>
           </div>
 
@@ -227,13 +227,13 @@
             <button type="button" class="disclosure-section__toggle" data-disclosure-toggle data-disclosure-inline
               aria-expanded="false" aria-controls="smFxSpatial" id="smFxSpatialToggle">
               <span class="disclosure-section__label">
-                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-headphones" aria-hidden="true"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg> 3D Raumklang (HRTF)
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-headphones" aria-hidden="true"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg> Stereo &amp; 3D-Raumklang
               </span>
               <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon lucide lucide-chevron-down disclosure-section__chevron" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="disclosure-section__panel" id="smFxSpatial" hidden>
-              <!-- Phase 8: Karte für den 3D-Raumklang erzeugt js/ui/effects/ aus der Registry. -->
-              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="spatial"></div>
+              <!-- Phase 8: Karte für den 3D-Raumklang erzeugt js/ui/effects/ aus der Registry; Phase 13a/b: Mid/Side, Stereobreite, Stereo-Shaper und Utility davor (Kettenreihenfolge). -->
+              <div class="fx-host u-mt-2" data-fx-host data-fx-modules="midSide,width,stereoShaper,haas,utility,doppler,spatial"></div>
             </div>
           </div>
 
