@@ -28,6 +28,7 @@ function normalizeModule(def, src) {
     const v = src[p];
     if (spec.impulse) { out[p] = IR_IMPULSE_NAMES.includes(v) ? v : null; }               // wie schema.js: bekannter Name, sonst „nicht gesetzt“
     else if (spec.tapList) { out[p] = schemaNormalize(def.key, { [p]: v })[p]; }          // Tap-Liste (14b): eine Wahrheit (schema.js)
+    else if (spec.pointList) { out[p] = schemaNormalize(def.key, { [p]: v })[p]; }        // Kurvenpunkte (15b): eine Wahrheit (schema.js)
     else if (typeof spec.def === 'number') {
       if (!Number.isFinite(v)) continue;
       const r = NUM_RANGES[`${def.key}.${p}`];

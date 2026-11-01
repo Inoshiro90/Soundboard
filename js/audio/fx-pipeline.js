@@ -30,10 +30,11 @@
 import { uid } from '../utils.js';
 import { defaultEffects } from './effect-graph.js';
 import { ensureWorklets } from './context.js';
-import { workletsForPlan } from './engine/worklets.js';
+import { workletsForPlan, fallbackWorklets } from './engine/worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './engine/compressor-probe.js';
+import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './engine/waveshaper-probe.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
 import {
   fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
@@ -282,7 +283,7 @@ export function resolvePlan(effects) {
     v: PIPELINE_VERSION,
     steps,
     needsPanner,
-    hasPitch: steps.some(s => s.params.pitchShift.enabled && s.params.pitchShift.semitones),
+    hasPitch: steps.some(s => pitchActive(s.params.pitchShift)),
     /** Lesbare Reihenfolge für Tests/Diagnose, z. B. ['source:monster', 'source:manual', 'medium:radio'] */
     sequence: steps.map(s => `${s.stage}:${s.presetId || 'manual'}`)
   };
@@ -313,7 +314,9 @@ export function planTailSeconds(plan) {
   let sum = 0;
   for (const s of plan.steps) {
     let t = 0;
-    for (const k of effectiveActiveKeys(s.params)) t = Math.max(t, moduleTail(k, s.params[k]));
+    for (const k of effectiveActiveKeys(s.params)) if (k !== 'pitchShift') t = Math.max(t, moduleTail(k, s.params[k]));
+    // P17b: Die Latenz des Pitch-Knotens verschiebt die ganze Kette des Schritts → addiert statt Maximum (legacy: 0, wie bisher).
+    if (pitchActive(s.params.pitchShift)) t += moduleTail('pitchShift', s.params.pitchShift);
     sum += t;
   }
   return Math.min(30, sum);
@@ -338,9 +341,9 @@ export function suggestStageForParams(params) {
 
 const _LAYER_ORDER = Object.fromEntries(MODULES.map(m => [m.key, m.layerOrder]));
 
-/** Klingende Module eines Schritts: aktiv, nicht überlagert (B-02); Pitch nur mit Halbtönen ≠ 0 (sonst wird kein Knoten gebaut). */
+/** Klingende Module eines Schritts: aktiv, nicht überlagert (B-02); Pitch nur, wenn ein Knoten gebaut wird (registry.pitchActive, P17b). */
 function _soundingKeys(params) {
-  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || (params.pitchShift.enabled && params.pitchShift.semitones));
+  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || pitchActive(params.pitchShift));
 }
 
 /**
@@ -369,8 +372,9 @@ export function sendEligibility(plan) {
 /** Lädt, falls nötig, die vom Plan benötigten Worklets im Ziel-Context (muss vor buildPipelineGraph() fertig sein). */
 export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound) {
   const ids = workletsForPlan(plan, caps);
-  if (ids.length) await ensureWorklets(ctx, ids);
+  if (ids.length) { const fb = fallbackWorklets(await ensureWorklets(ctx, ids)); if (fb.length) await ensureWorklets(ctx, fb); }   // P17b: stft → pitch
   if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
+  if (planNeedsWaveShaperProbe(plan)) await ensureWaveShaperLatency(ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
 }
 
 /**

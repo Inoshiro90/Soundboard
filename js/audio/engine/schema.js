@@ -14,7 +14,8 @@
 
 import {
   MODULES, MODULE_KEYS, MODULE_BY_KEY, NUM_RANGES, REMOVED_KEYS, CURRENT_REV, EXCLUSIVE_GROUPS,
-  defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP, DELAY_TAP_RANGES, DELAY_TAPS_MAX_KEEP
+  defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP, DELAY_TAP_RANGES, DELAY_TAPS_MAX_KEEP,
+  WS_POINTS_MAX, WS_POINT_RANGES
 } from './registry.js';
 
 export const MAX_X_BYTES = 262144;
@@ -121,6 +122,14 @@ export function normalizeDelayTap(t) {
   };
 }
 
+/** Ein Kurvenpunkt des Waveshapers (15b): x, y geklemmt auf −1 … +1, unbekannte Felder bleiben (AE-18), Prototyp-Schlüssel nie. */
+export function normalizeShaperPoint(q) {
+  const s = isObj(q) ? q : {};
+  const o = {};
+  for (const [k, v] of Object.entries(s)) if (!['x', 'y'].includes(k) && !['__proto__', 'constructor', 'prototype'].includes(k)) o[k] = v;
+  return { ...o, x: _num(s.x, WS_POINT_RANGES.x, 0), y: _num(s.y, WS_POINT_RANGES.y, 0) };
+}
+
 export function normalizeModule(key, raw) {
   const m = MODULE_BY_KEY[key];
   if (!m) return null;
@@ -160,6 +169,9 @@ export function normalizeModule(key, raw) {
     } else if (spec.tapList) {
       // Tap-Liste (14b): bis DELAY_TAPS_MAX_KEEP Objekte bleiben erhalten (die Engine baut die ersten DELAY_TAPS_MAX_BUILD); Nicht-Objekte entfallen.
       o[field] = (Array.isArray(s[field]) ? s[field] : d[field]).filter(isObj).slice(0, DELAY_TAPS_MAX_KEEP).map(normalizeDelayTap);
+    } else if (spec.pointList) {
+      // Kurvenpunkte (15b): bis WS_POINTS_MAX Objekte bleiben erhalten (Reihenfolge wie gespeichert; die Engine sortiert); Nicht-Objekte entfallen.
+      o[field] = (Array.isArray(s[field]) ? s[field] : d[field]).filter(isObj).slice(0, WS_POINTS_MAX).map(normalizeShaperPoint);
     } else {
       o[field] = s[field] ?? d[field];            // raw: wie bisher ohne Klemmung
     }

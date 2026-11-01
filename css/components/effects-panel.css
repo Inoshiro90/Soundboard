@@ -861,6 +861,12 @@
   .fx-taps__row input[type="checkbox"] { width: 24px; height: 24px; }
 }
 
+/* ── Waveshaper-Kurvenpunkte (P15b): Tabelle wie die Taps, darüber die Vorschau der Kennlinie ── */
+.fx-points__preview { display: block; width: 120px; height: 120px; margin: 4px 0 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-surface); }
+.fx-points__grid { fill: none; stroke: currentColor; stroke-opacity: 0.2; stroke-width: 0.75; stroke-dasharray: 2 2; }
+.fx-points__curve { fill: none; stroke: var(--color-accent); stroke-width: 2; }
+.fx-points__dots circle { fill: var(--color-accent); }
+
 /* ── 10-Band-EQ: Frequenzen anpassen (P10e) ──────────────────────────────── */
 .fx-eq10-freqs { margin-top: 6px; }
 .fx-eq10-freqs > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; font-size: 0.8rem; }

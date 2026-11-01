@@ -29,10 +29,11 @@
 
 import { buildPitchNode, buildLayerChain, buildTerminalPanner } from '../effect-graph.js';
 import { ensureWorklets } from '../context.js';
-import { workletsForPlan } from './worklets.js';
+import { workletsForPlan, fallbackWorklets } from './worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './compressor-probe.js';
+import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './waveshaper-probe.js';
 import { effectiveActiveKeys } from './schema.js';
-import { moduleTail, moduleCost } from './registry.js';
+import { moduleTail, moduleCost, pitchActive, pitchValues } from './registry.js';
 import { makeTiming, planHorizon } from './timebase.js';
 
 /** Vorgabewerte der Überblendung. */
@@ -62,7 +63,7 @@ function _waitAudioTime(ctx, t, isDisposed, maxMs) {
   });
 }
 
-const _pitchActive = ps => !!(ps && ps.enabled && ps.semitones);
+const _pitchActive = pitchActive;   // P17b: eine Regel (registry.js), für `legacy` mit Cent 0 wie bisher „Halbtöne ≠ 0“
 /** Module einer gebauten Kette, die eine Zeitbasis brauchen (13d). */
 const _armable = inner => inner.steps.flatMap(r => r.modules.filter(m => typeof m.arm === 'function'));
 /** Offline-Context (Export, Tests): kein Wanduhr-Timer, Loops gibt es dort nicht. */
@@ -102,12 +103,12 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
   for (const step of plan.steps) {
     const rec = { layerId: step.layerId, pitch: null, modules: [] };
     const ps = step.params.pitchShift;
-    if (ps.enabled && ps.semitones) {
+    if (_pitchActive(ps)) {
       if (caps.pitch === 'worklet') {
         const n = buildPitchNode(ctx, ps, numChannels);
         if (n) { link(n); rec.pitch = n; track.push({ stop() { n.dispose?.(); } }); }
         else {
-          detuneSemitones += ps.semitones;
+          detuneSemitones += pitchValues(ps).semitones;   // P17b: Halbtöne (+ Cent außer bei legacy); Mix/Formant entfallen im Notbehelf (Entscheidung E)
           console.warn('[pipeline] Pitch-Worklet nicht verfügbar — Notbehelf über detune (Reihenfolge nicht garantiert)');
         }
       } else skippedPitch++;
@@ -187,8 +188,9 @@ export class PipelineRuntime {
   /** Vorbereitung eines Plans im Context (Pitch-Worklet laden). */
   async prepare(plan) {
     const ids = workletsForPlan(plan, this.caps);
-    if (ids.length) await ensureWorklets(this.ctx, ids);
+    if (ids.length) { const fb = fallbackWorklets(await ensureWorklets(this.ctx, ids)); if (fb.length) await ensureWorklets(this.ctx, fb); }   // P17b: stft → pitch
     if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(this.ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
+    if (planNeedsWaveShaperProbe(plan)) await ensureWaveShaperLatency(this.ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
   }
 
   /**
@@ -356,6 +358,7 @@ export class PipelineRuntime {
     this.plan.steps.forEach((s, i) => {
       let t = 0;
       for (const m of (this.cur.steps[i]?.modules || [])) t = Math.max(t, moduleTail(m.key, s.params[m.key]));
+      if (this.cur.steps[i]?.pitch) t += moduleTail('pitchShift', s.params.pitchShift);   // P17b: Latenz verschiebt die Kette (wie planTailSeconds)
       sum += t;
     });
     return Math.min(30, sum);

@@ -16,6 +16,7 @@
  *   { def:null, impulse:true }              IR-Name (IR_IMPULSE_NAMES) oder null
  *   { def:[0×10], bands:true }              10 EQ-Bänder: Zahl (Gain) oder {freq, gain, Q}
  *   { def:[…], tapList:true }               Tap-Liste des Multi-Tap-Delays (14b): {on, time, level, panorama, feedback} je Tap (schema.js normalizeDelayTap)
+ *   { def:[…], pointList:true }             Kurvenpunkte des Waveshapers (15b): {x, y} je Punkt (schema.js normalizeShaperPoint)
  *
  * `ui` (Modul): `{ generated: true }` — das Formular erzeugt das Modul aus dieser Registry (ui/effects/, Phase 8); es gibt kein handgeschriebenes
  *   Effekt-HTML mehr. (`enabledId` entfiel mit dem Abbau des alten Formulars; Suite 09 prüft, dass jedes Modul `generated` ist.)
@@ -38,6 +39,9 @@
  */
 
 import { IR_IMPULSE_NAMES, getIRDuration } from '../ir-data.js';
+import { DISTORTION_LEGACY_MODES, DISTORTION_V2_MODES, DIST_DRIVE_RANGE, DIST_BIAS_RANGE, WS_DEFAULT_POINTS, TAPE_BASE_DELAY_S, TAPE_WOW_MAX_S, TAPE_FLUTTER_MAX_S } from './distortion-curves.js';
+export { WS_POINTS_MAX, WS_POINT_RANGES, WS_DEFAULT_POINTS } from './distortion-curves.js';
+import { CRUSHER_BITS_RANGE, CRUSHER_RATE_RANGE } from '../dsp-lib/crusher.js';
 
 /** Schlüssel, die frühere Versionen kannten und das Pipeline-Modell bewusst NICHT mehr trägt (Backup: `…:pre-pipeline`). */
 export const REMOVED_KEYS = ['envelope', 'pan', 'output', 'analyzer'];
@@ -222,6 +226,115 @@ const delayCost = p => {
   if (m === 'multitap') return { base: 3 + 7 * delayActiveTaps(p).length, measured: false, estimate: 'delay' };   // Hochmischer/Summe + je Tap Delay, 2 Biquads, Pegel, Panner, Rückkopplung, Sättigung
   return { base: m === 'mono' ? 8 : m === 'stereo' ? 16 : 15, measured: false, estimate: 'delay' };
 };
+/**
+ * Verzerrung v2 (Phase 15a) — eine Wahrheit für Registry, Engine und Tests.
+ * Bisherige Modi (softClip/hardClip/bitcrush) mit neutralen neuen Feldern (Ton 20 kHz = offen, Ausgang 0 dB, Mix 100 %) = bisherige Verzerrung
+ * (ein WaveShaper, bit-gleich). Drive und Bias gelten nur für die neuen Modi; in den bisherigen Modi wirkt weiter „Stärke“ (amount).
+ */
+export const DISTORTION_MODES = [...DISTORTION_LEGACY_MODES, ...DISTORTION_V2_MODES];
+export const DISTORTION_MODE_LABELS = {
+  softClip: 'Weich (Sättigung)', hardClip: 'Hart (Clipping)', bitcrush: 'Bitcrush (Lo-Fi)',
+  saturation: 'Sättigung (warm, symmetrisch)', tube: 'Röhre (gerade Obertöne)', overdrive: 'Overdrive (Knie)', fuzz: 'Fuzz (fast Rechteck)', fold: 'Foldback (Faltung)',
+  tape: 'Tape (Band, Wow/Flutter)', waveshaper: 'Waveshaper (eigene Kurve)'
+};
+export const DISTORTION_TONE_OFF = 20000;
+/** Gültiger Modus (unbekannt → softClip, wie die Schemaklemmung und der switch-default der bisherigen Kurve). */
+export const distortionMode = p => (DISTORTION_MODES.includes(p?.mode) ? p.mode : 'softClip');
+/** true = bisherige Verzerrung: bisheriger Modus und Ton/Ausgang/Mix neutral. */
+export function distortionIsLegacy(p) {
+  return DISTORTION_LEGACY_MODES.includes(distortionMode(p)) && !(_fin(p?.tone, DISTORTION_TONE_OFF) < DISTORTION_TONE_OFF)
+    && _fin(p?.output, 0) === 0 && !(_fin(p?.mix, 1) < 1);
+}
+const OS_POINTS = { none: 1, '2x': 5, '4x': 10 };
+/** Kosten: bisherige Verzerrung gemessen (je Oversampling); erweitert Schätzwert: WaveShaper + Ton-Tiefpass + DC-Blocker + Dry-Verzögerung + Gains. */
+const distortionCost = p => {
+  const os = OS_POINTS[p?.oversample ?? '4x'] ?? 10;
+  if (distortionIsLegacy(p)) return { base: os, measured: true };
+  // Tape (15b) zusätzlich: Höhen-Tiefpass, modulierte Verzögerung, 2 Oszillatoren, 2 Gains
+  return { base: os + 4 + (distortionMode(p) === 'tape' ? 4 : 0), measured: false, estimate: 'distortion' };
+};
+/**
+ * Crusher (Phase 15c): Werte für Worklet und Ersatzgraph, geklemmt — eine Wahrheit für Engine und Tests.
+ * bits ganzzahlig 1–16; rate = Zielrate in Hz (≥ Samplerate: keine Reduktion); jitter, mix 0…1.
+ */
+export const crusherValues = q => ({
+  bits: Math.round(_clamp(CRUSHER_BITS_RANGE[0], CRUSHER_BITS_RANGE[1], _fin(q?.bits, 8))),
+  rate: _clamp(CRUSHER_RATE_RANGE[0], CRUSHER_RATE_RANGE[1], _fin(q?.targetRate, 8000)),
+  jitter: _clamp(0, 1, _fin(q?.jitter, 0)),
+  mix: _clamp(0, 1, _fin(q?.mix, 1))
+});
+/**
+ * Frequenzschieber (Phase 16): Werte für den Graphen, geklemmt — eine Wahrheit für Engine und Tests.
+ * shift in Hz (−1000 … +1000; negativ = nach unten), mix 0…1.
+ */
+export const FREQ_SHIFT_RANGE = [-1000, 1000];
+/** Phase 16b: Stereo-Spreizung (Hz; links +, rechts −) und Rückkopplung (Anteil, ≤ 0,9 — die Schleife hat Verstärkung 1, s. effect-graph.js). */
+export const FREQ_SHIFT_SPREAD_RANGE = [0, 200];
+export const FREQ_SHIFT_FEEDBACK_MAX = 0.9;
+/** Verzögerung in der Rückkopplungsschleife: genau ein Render-Quantum (128 Samples; Mindestwert für Zyklen in Chromium, Entscheidung A aus P14). */
+export const FREQ_SHIFT_LOOP_SAMPLES = 128;
+/** Schutzfilter in der Schleife (Hz): Hoch-/Tiefpass 2. Ordnung, weil das Hilbert-Paar nahe 0 Hz und Nyquist versagt (Verstärkung bis √2). */
+export const FREQ_SHIFT_LOOP_HP = 25;
+export const FREQ_SHIFT_LOOP_LP = 18000;
+/** Einblendung der Rückkopplung beim Aufbau (Zeitkonstante, s; Phasenende 16): Die Einsatz-Transiente der Hilbert-Filter läuft so nicht voll durch die Schleife (20 ms: Klickmaß 1,27, 40 ms: 1,16 [S Chromium 153]). */
+export const FREQ_SHIFT_LOOP_FADE_S = 0.04;
+export const freqShiftValues = q => ({
+  shift: _clamp(FREQ_SHIFT_RANGE[0], FREQ_SHIFT_RANGE[1], _fin(q?.shift, 100)),
+  mix: _clamp(0, 1, _fin(q?.mix, 1)),
+  spread: _clamp(FREQ_SHIFT_SPREAD_RANGE[0], FREQ_SHIFT_SPREAD_RANGE[1], _fin(q?.stereoSpread, 0)),
+  feedback: _clamp(0, FREQ_SHIFT_FEEDBACK_MAX, _fin(q?.feedback, 0))
+});
+/** Strukturelle Signatur (16b): Spreizung > 0 (zweikanalig, vier Oszillatoren) und Rückkopplung > 0 (Schleife) — Wechsel = Neubau mit Überblendung. */
+export const freqShiftSig = q => { const v = freqShiftValues(q); return `${v.spread > 0 ? 's' : '-'}${v.feedback > 0 ? 'f' : '-'}`; };
+/**
+ * Nachklang (16b): Umläufe der Schleife bis −60 dB plus das Ausschwingen des Hilbert-Paars nahe 0 Hz (Pole bis |z| = 0,9988 → FREQ_SHIFT_RING_S).
+ * Je Umlauf 2 × 128 Samples bei 44,1 kHz (längster Fall): Chromium verzögert jeden nativen Rückkopplungszyklus um weitere 128 Samples (bekannt,
+ * Entscheidung A P14, nicht ausgeglichen). Gemessen bei 90 % [S]: −60 dB nach ≤ 0,34 s (Node) bzw. ≤ 0,41 s (Chromium 153). Ohne Rückkopplung 0 (wie 16a).
+ */
+export const FREQ_SHIFT_RING_S = 0.25;
+const freqShiftTail = p => { const g = freqShiftValues(p).feedback; return g > 0 ? Math.ceil(3 / -Math.log10(g)) * 2 * FREQ_SHIFT_LOOP_SAMPLES / 44100 + FREQ_SHIFT_RING_S : 0; };
+/** Kosten (16b, Schätzwerte bis M-1): Kern 4 (2 IIR 8. Ordnung, 2 Oszillatoren, Gains); Spreizung +2 (2 Oszillatoren, Gains, Splitter/Merger); Rückkopplung +2,5 (Dry-Pfad-IIR, Delay, 2 Schutz-Biquads). */
+const freqShiftCost = p => { const v = freqShiftValues(p); return { base: 4 + (v.spread > 0 ? 2 : 0) + (v.feedback > 0 ? 2.5 : 0), measured: false, estimate: 'freqShift' }; };
+/**
+ * Tonhöhe v2 (Phase 17b): Algorithmen. `legacy` = bisheriges Grain-Worklet `pitch` (Standard, Entscheidung C: `defaultEffects()` und alle
+ * Altdaten klingen unverändert), `music` = Phasenvocoder im Worklet `stft`,
+ * `voice` (17c) = WSOLA im selben Worklet (Zeitbereich, geringere Latenz und CPU).
+ */
+export const PITCH_ALGORITHMS = ['legacy', 'music', 'voice'];
+export const PITCH_ALGORITHM_LABELS = { legacy: 'Klassisch (Grain)', music: 'Musik (Phasenvocoder)', voice: 'Stimme (WSOLA)' };
+/** Latenz des Phasenvocoders in Samples (FFT-Größe, fest unabhängig von der Abtastrate, Entscheidung F; dsp-lib/pitch-pv.js PV_SIZE). */
+export const PITCH_PV_LATENCY = 2048;
+/** Latenz von `voice` in Samples (dsp-lib/pitch-wsola.js WSOLA_LATENCY = 1024 + 256 + 64, fest unabhängig von Faktor und Abtastrate). */
+export const PITCH_VOICE_LATENCY = 1344;
+export const pitchAlgorithm = q => (PITCH_ALGORITHMS.includes(q?.algorithm) ? q.algorithm : 'legacy');
+/**
+ * Halbtöne + Cent (geklemmt wie das Schema: ±24 Halbtöne, ±100 Cent). Bei `legacy` zählen Cent NICHT (Nutzer 2026-10-31, ersetzt D für Cent):
+ * das Grain-Verfahren setzt kleine Faktoren kaum um, Cent ist dort ausgeblendet — ein verdeckter Wert soll nicht wirken.
+ */
+export const pitchSemitonesTotal = q => _clamp(-24, 24, _fin(q?.semitones, 0)) + (pitchAlgorithm(q) === 'legacy' ? 0 : _clamp(-100, 100, _fin(q?.cents, 0)) / 100);
+/**
+ * Werte für Worklet und Notbehelf: factor = 2^(Halbtöne/12), mix 0…1 (Cent und Mix bei `legacy` ohne Wirkung).
+ * Phase 17d: `formantFactor` = 2^(Formant/12), nur bei `music` (Phasenvocoder; bei `legacy` und `voice` ausgeblendet und ohne Wirkung → 1).
+ * Der Formant wirkt zusätzlich zur Mitführung der Hüllkurve durch die Tonhöhe: Formant 0 = Klang wie in 17b/17c.
+ */
+export const pitchValues = q => {
+  const st = pitchSemitonesTotal(q);
+  return { algorithm: pitchAlgorithm(q), semitones: st, factor: Math.pow(2, st / 12), mix: _clamp(0, 1, _fin(q?.mix, 1)), formantFactor: pitchAlgorithm(q) === 'music' ? Math.pow(2, _clamp(-12, 12, _fin(q?.formant, 0)) / 12) : 1 };
+};
+/**
+ * Baut die Runtime einen Pitch-Knoten? EINE Regel für fx-pipeline (hasPitch, klingende Module), runtime (Signatur, Aufbau) und cost.js:
+ * eingeschaltet UND (Halbtöne + Cent ≠ 0 ODER Algorithmus ≠ `legacy`). Für `legacy` genau die bisherige Bedingung (Halbtöne ≠ 0; Cent zählen dort nicht).
+ * Ein v2-Algorithmus läuft auch bei Faktor 1 (Mix und später Formant wirken; Latenz bleibt beim Durchfahren von 0 gleich).
+ */
+export const pitchActive = q => !!(q && q.enabled && (pitchSemitonesTotal(q) !== 0 || pitchAlgorithm(q) !== 'legacy'));
+/** Latenz (Samples) je Algorithmus: `music` 2048, `voice` 1344; das Legacy-Worklet deklariert keine. */
+const pitchLatency = q => (!pitchActive(q) ? 0 : pitchAlgorithm(q) === 'music' ? PITCH_PV_LATENCY : pitchAlgorithm(q) === 'voice' ? PITCH_VOICE_LATENCY : 0);
+/** Kosten: `legacy` gemessen 28 (P0/M-1); `music` und `voice` Schätzwert gleicher Höhe bis zur Messung in 17e (`voice` ≈ 1 % Echtzeit je Kanal [S Node, Prototyp]). */
+const pitchCost = q => (pitchAlgorithm(q) === 'music' ? { base: 28, measured: false, estimate: 'stft' } : pitchAlgorithm(q) === 'voice' ? { base: 28, measured: false, estimate: 'wsola' } : { base: 28, measured: true });
+/** Ringmodulation (15c): Trägerformen; `sine` = bisheriger Graph. */
+export const RINGMOD_WAVEFORMS = ['sine', 'square', 'triangle', 'sawtooth'];
+/** Nachklang: nur Tape (Vibrato-Verzögerung, Grund + größte Auslenkung); sonst 0 wie bisher. */
+const distortionTail = p => (distortionMode(p) === 'tape' ? TAPE_BASE_DELAY_S + TAPE_WOW_MAX_S + TAPE_FLUTTER_MAX_S : 0);
 /** Doppler (13f): Schallgeschwindigkeit (m/s) und größte Verzögerung (s, Entscheidung B; weiter weg „parkt“ die Quelle). */
 export const DOPPLER_C = 343;
 export const DOPPLER_MAX_DELAY_S = 2;
@@ -377,21 +490,46 @@ export const MODULES = [
       lookahead: { def: 5, range: [1, 20], unit: 'ms', label: 'Lookahead (Latenz)', ui: { min: 1, max: 20, step: 0.5 } }
     } },
   { key: 'distortion', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'distortion', label: 'Verzerrung', layerOrder: 70, consumers: ALL_CONSUMERS,
-    cost: p => ({ base: ({ none: 1, '2x': 5, '4x': 10 })[p?.oversample ?? '4x'] ?? 10, measured: true }), degrade: { oversample: true },
+    cost: distortionCost, degrade: { oversample: true }, tail: p => distortionTail(p),
     // mode: softClip (Standard), hardClip oder bitcrush. Presets ohne „mode“-Feld fallen über den switch-default in
     // _buildDistortionCurve() auf softClip zurück — kein Migrationsschritt nötig.
+    // Phase 15a (additiv): neue Modi saturation/tube/overdrive/fuzz/fold (Kurven: engine/distortion-curves.js) mit Drive und Bias; für alle Modi
+    // Ton (Tiefpass nach der Kurve), Ausgang und Mix. Standardwerte der neuen Felder = bisheriges Verhalten (distortionIsLegacy).
     params: {
-      mode: { def: 'softClip', enum: ['softClip', 'hardClip', 'bitcrush'], label: 'Modus', ui: { options: { softClip: 'Weich (Sättigung)', hardClip: 'Hart (Clipping)', bitcrush: 'Bitcrush (Lo-Fi)' } } },
-      amount: { def: 40, range: [0, 100], label: 'Stärke', ui: { min: 0, max: 100, step: 1 } },
-      oversample: { def: '4x', enum: ['none', '2x', '4x'], label: 'Oversampling', ui: { options: { none: 'Kein', '2x': '2×', '4x': '4×' } } }
+      mode: { def: 'softClip', enum: DISTORTION_MODES, label: 'Modus', ui: { options: DISTORTION_MODE_LABELS, suggest: { when: DISTORTION_V2_MODES, set: { oversample: '2x' }, onlyIf: { oversample: ['4x'] } } } },
+      amount: { def: 40, range: [0, 100], label: 'Stärke', ui: { min: 0, max: 100, step: 1, showIf: { mode: DISTORTION_LEGACY_MODES } } },
+      oversample: { def: '4x', enum: ['none', '2x', '4x'], label: 'Oversampling', ui: { options: { none: 'Kein', '2x': '2×', '4x': '4×' } } },
+      drive: { def: 12, range: DIST_DRIVE_RANGE, unit: 'dB', label: 'Drive', ui: { min: 0, max: 40, step: 0.5, showIf: { mode: DISTORTION_V2_MODES } } },
+      bias: { def: 0, range: DIST_BIAS_RANGE, label: 'Asymmetrie (Bias)', ui: { min: -1, max: 1, step: 0.01, percent: true, signed: true, showIf: { mode: DISTORTION_V2_MODES } } },
+      tone: { def: DISTORTION_TONE_OFF, range: [500, DISTORTION_TONE_OFF], unit: 'Hz', label: 'Ton (Höhen)', ui: { min: 500, max: 20000, step: 50, scale: 'log', digits: 0 } },
+      output: { def: 0, range: [-24, 12], unit: 'dB', label: 'Ausgang', ui: { min: -24, max: 12, step: 0.5, signed: true } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // Phase 15b (additiv): Tape — Wow (langsames Leiern, 0,7 Hz) und Flutter (schnelles Flattern, 7,3 Hz) als Anteil der größten Auslenkung; live.
+      wow: { def: 0.2, range: [0, 1], label: 'Wow (Leiern)', ui: { min: 0, max: 1, step: 0.01, percent: true, showIf: { mode: ['tape'] } } },
+      flutter: { def: 0.15, range: [0, 1], label: 'Flutter (Flattern)', ui: { min: 0, max: 1, step: 0.01, percent: true, showIf: { mode: ['tape'] } } },
+      // Phase 15b: Kurvenpunkte des Waveshapers (Punkt-Tabelle mit Vorschau, ui/effects/distortion-points.js)
+      curvePoints: { def: WS_DEFAULT_POINTS, pointList: true, label: 'Kurvenpunkte', ui: { showIf: { mode: ['waveshaper'] } } }
     } },
   { key: 'ringmod', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'distortion', label: 'Ringmodulation', layerOrder: 80, consumers: ALL_CONSUMERS, cost: c(2.5),
     params: {
       frequency: { def: 440, range: [20, 5000], unit: 'Hz', label: 'Trägerfrequenz', ui: { min: 20, max: 5000, step: 1, scale: 'log', digits: 0 } },
-      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // Phase 15c (additiv): Trägerform; Standard Sinus = bisheriger Graph. Wechsel = Neubau mit Überblendung (die Form springt sonst hörbar).
+      waveform: { def: 'sine', enum: RINGMOD_WAVEFORMS, label: 'Trägerform', ui: { options: { sine: 'Sinus', square: 'Rechteck', triangle: 'Dreieck', sawtooth: 'Sägezahn' } } }
     } },
-  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch'], cost: c(28),
-    params: { semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne', ui: { min: -12, max: 12, step: 1, signed: true } } } },
+  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch', 'stft'], cost: pitchCost,
+    // Phase 17b/17c: Nachklang = Latenz des Algorithmus bei 22,05 kHz (längster Fall), damit der Export das verzögerte Ende nicht abschneidet.
+    tail: p => pitchLatency(p) / 22050,
+    latencySamples: p => pitchLatency(p),
+    params: {
+      semitones: { def: 0, range: [-24, 24], unit: 'Halbtöne', label: 'Halbtöne', ui: { min: -12, max: 12, step: 1, signed: true } },
+      // Phase 17b (additiv): Feinstimmung und Mix (beide nur v2-Algorithmen, bei `legacy` ausgeblendet und ohne Wirkung) und Algorithmus (Standard `legacy`, Entscheidung C).
+      cents: { def: 0, range: [-100, 100], unit: 'Cent', label: 'Cent', ui: { min: -100, max: 100, step: 1, signed: true, showIf: { algorithm: ['music', 'voice'] } } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true, showIf: { algorithm: ['music', 'voice'] } } },
+      algorithm: { def: 'legacy', enum: PITCH_ALGORITHMS, label: 'Algorithmus', ui: { options: PITCH_ALGORITHM_LABELS } },
+      // Phase 17d (additiv): Formant (Spektralhüllkurve) in Halbtönen, nur bei `music`; 0 = Hüllkurve wandert wie bisher mit der Tonhöhe.
+      formant: { def: 0, range: [-12, 12], unit: 'Halbtöne', label: 'Formant', ui: { min: -12, max: 12, step: 0.5, signed: true, showIf: { algorithm: ['music'] } } }
+    } },
   { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { generated: true }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(getIRDuration(p?.impulse ?? null)), measured: true }), degrade: { irLength: true },
     tail: p => getIRDuration(p?.impulse ?? null),
@@ -625,6 +763,31 @@ export const MODULES = [
       highFeedback: { def: 0.2, range: [0, 0.95], label: 'Höhen: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       highLevel: { def: 1, range: [0, 1], label: 'Höhen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } }
+    } },
+  // Phase 15c: Bitcrusher mit echter Sample-Rate-Reduktion im Worklet `crusher` (B-21; Rechenkern audio/dsp-lib/crusher.js). Ohne Worklet: native
+  // Quantisierungskurve OHNE Sample-Rate-Reduktion (Fallback 'native', Ereignis sb:fx-fallback). Sitzt hinter der Verzerrung, vor der Ringmodulation
+  // (layerOrder 75). Alle Regler live. Die bisherige Verzerrung im Modus `bitcrush` bleibt unverändert (Entscheidung B, P15).
+  { key: 'crusher', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'distortion', label: 'Bitcrusher / Sample-Rate', layerOrder: 75, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['crusher'], cost: () => ({ base: 3, measured: false, estimate: 'crusher' }),
+    params: {
+      bits: { def: 8, range: CRUSHER_BITS_RANGE, unit: 'Bit', label: 'Bittiefe', ui: { min: 1, max: 16, step: 1, digits: 0 } },
+      targetRate: { def: 8000, range: CRUSHER_RATE_RANGE, unit: 'Hz', label: 'Sample-Rate (Ziel)', ui: { min: 200, max: 48000, step: 10, scale: 'log', digits: 0 } },
+      jitter: { def: 0, range: [0, 1], label: 'Jitter', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 16a: Frequenzschieber (Einseitenband, nativ, AE-06): IIR-Hilbert-Paar (engine/hilbert.js, je Pfad ein IIRFilterNode 8. Ordnung) liefert I/Q,
+  // zwei Oszillatoren (cos/sin) mit gemeinsamer Frequenz = `shift` (negativ = nach unten, live auch durch 0) und zwei Multiplikatoren.
+  // Dry-Pfad = I-Pfad (Entscheidung B, P16): bei Shift 0 sind Dry und Wet deckungsgleich, Mix ohne Auslöschung; Betrag flach, Phase allpassverschoben.
+  // Sitzt direkt hinter der Ringmodulation (layerOrder 82, Entscheidung A). Shift/Mix live; 16b: Spreizung/Rückkopplung live, nur 0 ↔ > 0 = Neubau.
+  { key: 'freqShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'distortion', label: 'Frequenzverschiebung', layerOrder: 82, consumers: ALL_CONSUMERS,
+    cost: p => freqShiftCost(p), tail: p => freqShiftTail(p),
+    params: {
+      shift: { def: 100, range: FREQ_SHIFT_RANGE, unit: 'Hz', label: 'Verschiebung', ui: { min: -1000, max: 1000, step: 1, signed: true, digits: 0 } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      // Phase 16b (additiv): Spreizung — links Verschiebung + Spreizung, rechts − Spreizung; > 0 macht eine Mono-Quelle zweikanalig. Rückkopplung über 128 Samples
+      // (Mindestverzögerung, ≈ 2,7 ms bei 48 kHz): jeder Umlauf verschiebt erneut (Barber-Pole/Spiralklang). 0 ↔ > 0 jeweils Neubau, sonst live.
+      stereoSpread: { def: 0, range: FREQ_SHIFT_SPREAD_RANGE, unit: 'Hz', label: 'Stereo-Spreizung', ui: { min: 0, max: 200, step: 1, digits: 0 } },
+      feedback: { def: 0, range: [0, FREQ_SHIFT_FEEDBACK_MAX], label: 'Rückkopplung', ui: { min: 0, max: FREQ_SHIFT_FEEDBACK_MAX, step: 0.01, percent: true } }
     } }
 ];
 

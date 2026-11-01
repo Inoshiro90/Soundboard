@@ -6,12 +6,18 @@
 
 import { makeDynamicsNode } from './engine/dynamics-node.js';
 import { makeFlangerNode, makePhaserNode, phaserStages } from './engine/delayline-node.js';
+import { makeCrusherNode } from './engine/crusher-node.js';
+import { crushQuantize } from './dsp-lib/crusher.js';
 import { compressorLatencySamples } from './engine/compressor-probe.js';
+import { waveShaperLatencySamples } from './engine/waveshaper-probe.js';
+import { buildDistortionCurveV2, distortionDrive, distortionBias, distortionNeedsDcBlock, waveshaperKnots,
+  TAPE_HF_HZ, TAPE_BASE_DELAY_S, TAPE_WOW_HZ, TAPE_WOW_MAX_S, TAPE_FLUTTER_HZ, TAPE_FLUTTER_MAX_S } from './engine/distortion-curves.js';
+import { hilbertPath } from './engine/hilbert.js';
 import { buildCrossover2, buildCrossover3, LR4_Q, LR4_Q_DB } from './engine/crossover.js';
-import { _pitchWorkletReadyContexts } from './context.js';
+import { isWorkletReady } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
 import { defaultModules, peqActiveBands, chorusVoices, chorusIsMulti, vibratoSwing, WIDTH_DECOR_DELAY_S, MS_EQ_DEF, DOPPLER_C, DOPPLER_MAX_DELAY_S,
-  delayIsLegacy, delayMode, delayLoopGains, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS } from './engine/registry.js';
+  delayIsLegacy, delayMode, delayLoopGains, crusherValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
 import { makeEnvelopeFollower, makePhasedWave } from './engine/modsources.js';
 import { motionWindows } from './engine/timebase.js';
 
@@ -82,7 +88,7 @@ function _inst(key, seg, p, { apply, sig = null, hot = null }) {
  * `fadeSec` lang überblendet, danach wird der alte entsorgt. Anfragen werden gedrosselt (Leading + Trailing, `throttleMs`): ein Regler
  * erzeugt so höchstens ca. 1000/throttleMs Austausche pro Sekunde, und der zuletzt angefragte Wert gewinnt immer.
  * Beim Bau ist der Graph bis auf die Einsen-Gains identisch zum bisherigen (Gain 1 ist verlustfrei → Goldens unverändert).
- * `make(q)` → {input, output, dispose?()}. `tr` = dispose()-Liste der Pipeline.
+ * `make(q)` → {input, output, dispose?(), startDelay?}. `tr` = dispose()-Liste der Pipeline.
  */
 export const MODULE_SWAP_STATS = { swaps: 0, requests: 0 };
 function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, power = true } = {}) {
@@ -110,14 +116,17 @@ function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, po
   const run = q => {
     if (dead) return;
     last = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    const nu = mount(q), old = cur, t0 = ctx.currentTime;
+    const nu = mount(q), old = cur;
+    // `startDelay` (s, Phase 15a): Latenz des neuen Kerns (Oversampling der Verzerrung). Die Überblendung beginnt erst, wenn sein Signal anliegt —
+    // sonst setzt es mitten in der Rampe ein (bei Gleichanteil hinter dem DC-Blocker als Sprung messbar). Fehlt das Feld: wie bisher sofort.
+    const t0 = ctx.currentTime + Math.max(0, Number(nu.core.startDelay) || 0);
     nu.fade.gain.value = 0;
     nu.fade.gain.setValueCurveAtTime(curveUp, t0, fadeSec);
-    old.fade.gain.cancelScheduledValues(t0);
+    old.fade.gain.cancelScheduledValues(ctx.currentTime);
     old.fade.gain.setValueCurveAtTime(curveDn, t0, fadeSec);
     cur = nu; curSig = sig(q); MODULE_SWAP_STATS.swaps++;
     retiring.add(old);
-    setTimeout(() => { if (retiring.delete(old)) drop(old); }, fadeSec * 1000 + 80);
+    setTimeout(() => { if (retiring.delete(old)) drop(old); }, (t0 - ctx.currentTime + fadeSec) * 1000 + 80);
   };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const request = q => {
@@ -338,17 +347,83 @@ function _buildDistortionCurve(mode, amount) {
   return curve;
 }
 
-/** Verzerrung: Kurve und Oversampling sind nicht glättbar → Modul-Austausch mit Überblendung (P10f), kein Pipeline-Neubau. */
+/**
+ * Verzerrung: Kurve und Oversampling sind nicht glättbar → Modul-Austausch mit Überblendung (P10f), kein Pipeline-Neubau.
+ * Phase 15a: Derselbe Austausch-Slot trägt zwei Kernformen:
+ *   bisherig (distortionIsLegacy): ein WaveShaper — exakt der bisherige Graph (bit-gleich, Goldens 03/04);
+ *   erweitert: input → WaveShaper (Kurve aus Modus/Drive/Bias bzw. bisherige Kurve) → [DC-Blocker] → Ton-Tiefpass → Wet(Mix · Ausgang) → output
+ *              input → Dry-Verzögerung (= Latenz des Oversamplings, engine/waveshaper-probe.js) → Dry(1 − Mix) → output.
+ * Strukturell (Austausch): Modus, bisherig ↔ erweitert, Oversampling, Stärke (bisherige Modi), Drive und Bias (neue Modi; Kurve und Kompensation
+ * hängen davon ab). Live (ohne Austausch): Ton, Ausgang, Mix — sie wirken auf alle laufenden erweiterten Kerne.
+ * Phase 15b: Tape hängt hinter die Kennlinie einen festen Höhen-Tiefpass (TAPE_HF_HZ) und ein Mikro-Vibrato (Verzögerung TAPE_BASE_DELAY_S, moduliert
+ *   von zwei Sinus-LFOs: Wow 0,7 Hz, Flutter 7,3 Hz; Tiefe live). Der Dry-Pfad wartet die Grundverzögerung mit ab. Waveshaper: Kurve aus `curvePoints`,
+ *   jede Punktänderung ist strukturell (neue Kurve, Austausch). Die Oszillatoren eines Kerns stoppt dessen dispose (beim Austausch und beim Abbau).
+ */
+const _distOs = q => (['none', '2x', '4x'].includes(q.oversample) ? q.oversample : '4x');
+const _distSig = q => {
+  if (distortionIsLegacy(q)) return `L|${q.mode}|${q.amount ?? 40}|${q.oversample}`;
+  const m = distortionMode(q);
+  if (['softClip', 'hardClip', 'bitcrush'].includes(m)) return `V|${m}|${q.amount ?? 40}|${_distOs(q)}`;
+  return `V|${m}|${distortionDrive(q)}|${distortionBias(q)}|${_distOs(q)}${m === 'waveshaper' ? '|' + JSON.stringify(waveshaperKnots(q.curvePoints)) : ''}`;
+};
 function _buildDistortion(ctx, p, tr) {
-  const sig = q => `${q.mode}|${q.amount ?? 40}|${q.oversample}`;
+  const cores = new Set();
   const make = q => {
     const s = ctx.createWaveShaper();
-    s.curve = _buildDistortionCurve(q.mode, q.amount ?? 40);
-    s.oversample = ['none', '2x', '4x'].includes(q.oversample) ? q.oversample : '4x';
-    return { input: s, output: s };
+    if (distortionIsLegacy(q)) {
+      s.curve = _buildDistortionCurve(q.mode, q.amount ?? 40);
+      s.oversample = ['none', '2x', '4x'].includes(q.oversample) ? q.oversample : '4x';
+      return { input: s, output: s };
+    }
+    const mode = distortionMode(q), os = _distOs(q), legacyCurve = ['softClip', 'hardClip', 'bitcrush'].includes(mode);
+    s.curve = legacyCurve ? _buildDistortionCurve(mode, q.amount ?? 40) : buildDistortionCurveV2(mode, distortionDrive(q), distortionBias(q), q.curvePoints);
+    s.oversample = os;
+    const input = ctx.createGain(), output = ctx.createGain(), wet = ctx.createGain(), dry = ctx.createGain();
+    const tone = ctx.createBiquadFilter(); tone.type = 'lowpass'; tone.Q.value = LR4_Q_DB;          // Butterworth (Q in dB)
+    const dryDelay = ctx.createDelay(0.05);
+    const tape = mode === 'tape';
+    const tapeBase = Math.round(TAPE_BASE_DELAY_S * ctx.sampleRate) / ctx.sampleRate;               // ganze Samples: Dry-Pfad exakt deckungsgleich
+    dryDelay.delayTime.value = (waveShaperLatencySamples(ctx.sampleRate, os) + (tape ? Math.round(TAPE_BASE_DELAY_S * ctx.sampleRate) : 0)) / ctx.sampleRate;
+    input.connect(s);
+    let last = s;
+    if (!legacyCurve && distortionNeedsDcBlock(mode, distortionBias(q), q.curvePoints)) {
+      const dc = ctx.createBiquadFilter(); dc.type = 'highpass'; dc.frequency.value = 10; dc.Q.value = LR4_Q_DB;
+      s.connect(dc); last = dc;
+    }
+    let tapeMod = null;
+    if (tape) {
+      const hf = ctx.createBiquadFilter(); hf.type = 'lowpass'; hf.frequency.value = TAPE_HF_HZ; hf.Q.value = LR4_Q_DB;
+      const vib = ctx.createDelay(TAPE_BASE_DELAY_S + TAPE_WOW_MAX_S + TAPE_FLUTTER_MAX_S + 0.001); vib.delayTime.value = tapeBase;
+      const wowO = ctx.createOscillator(), flO = ctx.createOscillator(), wowG = ctx.createGain(), flG = ctx.createGain();
+      wowO.frequency.value = TAPE_WOW_HZ; flO.frequency.value = TAPE_FLUTTER_HZ;
+      wowO.connect(wowG); flO.connect(flG); wowG.connect(vib.delayTime); flG.connect(vib.delayTime);
+      last.connect(hf); hf.connect(vib); last = vib;
+      wowO.start(); flO.start();
+      tapeMod = { wowG, flG, stop: () => { for (const o of [wowO, flO]) { try { o.stop(); } catch (e) { /* schon gestoppt */ } } } };
+    }
+    last.connect(tone); tone.connect(wet); wet.connect(output);
+    input.connect(dryDelay); dryDelay.connect(dry); dry.connect(output);
+    const core = {
+      update(v, sm) {
+        const set = _setter(ctx, sm);
+        const tc = Number.isFinite(v.tone) ? v.tone : DISTORTION_TONE_OFF;
+        // Neutral = exakt durchlässig: Tiefpass bei Nyquist (Biquad-Sonderfall der Web-Audio-Spezifikation, wie im Delay v2)
+        set(tone.frequency, tc < DISTORTION_TONE_OFF ? _cl(500, DISTORTION_TONE_OFF, tc) : ctx.sampleRate / 2);
+        const mix = _cl(0, 1, Number.isFinite(v.mix) ? v.mix : 1), out = 10 ** (_cl(-24, 12, Number.isFinite(v.output) ? v.output : 0) / 20);
+        set(wet.gain, mix * out); set(dry.gain, 1 - mix);
+        if (tapeMod) {
+          set(tapeMod.wowG.gain, TAPE_WOW_MAX_S * _cl(0, 1, Number.isFinite(v.wow) ? v.wow : 0.2));
+          set(tapeMod.flG.gain, TAPE_FLUTTER_MAX_S * _cl(0, 1, Number.isFinite(v.flutter) ? v.flutter : 0.15));
+        }
+      }
+    };
+    core.update(q, false);
+    cores.add(core);
+    return { input, output, startDelay: dryDelay.delayTime.value, dispose: () => { cores.delete(core); tapeMod?.stop(); } };
   };
-  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.04, throttleMs: 80, power: false });
-  return _inst('distortion', { input: slot.input, output: slot.output }, p, { apply: () => {}, sig, hot: slot });
+  const slot = _hotSlot(ctx, tr, make, p, _distSig, { fadeSec: 0.04, throttleMs: 80, power: false });
+  const apply = (q, sm) => { for (const c of cores) c.update(q, sm); };
+  return _inst('distortion', { input: slot.input, output: slot.output }, p, { apply, sig: _distSig, hot: slot });
 }
 
 /**
@@ -1077,13 +1152,45 @@ function _buildAutoFilter(ctx, p, tr) {
 }
 
 /**
+ * Bitcrusher (Phase 15c): Worklet `crusher` (Sample-and-Hold mit Zielrate + Quantisierung + Mix, alles live). Ohne geladenes Worklet: Ersatz
+ * aus einer nativen Quantisierungskurve (WaveShaper, 65 537 Punkte, gleiche Quantisierungsformel) mit Dry/Wet — OHNE Sample-Rate-Reduktion,
+ * Marke `seg.fallback = 'native'` und Ereignis `sb:fx-fallback` (wie die Hüllkurve, P10c). Bits sind im Ersatz strukturell (neue Kurve → Neubau).
+ */
+const _crushCurves = new Map();
+function _crushCurve(bits) {
+  if (_crushCurves.has(bits)) return _crushCurves.get(bits);
+  const n = 65537, h = (n - 1) / 2, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) c[i] = crushQuantize((i - h) / h, bits);
+  _crushCurves.set(bits, c);
+  return c;
+}
+function _buildCrusher(ctx, p, tr) {
+  const node = makeCrusherNode(ctx, p);
+  if (node) {
+    if (tr) tr.push({ stop() { node.dispose(); } });
+    return _inst('crusher', { input: node.input, output: node.output }, p, { apply: q => node.update(q) });
+  }
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sb:fx-fallback', { detail: { module: 'crusher', reason: 'crusher' } })); } catch (e) { /* ohne Fenster */ }
+  const input = ctx.createGain(), output = ctx.createGain(), wet = ctx.createGain(), dry = ctx.createGain(), ws = ctx.createWaveShaper();
+  ws.curve = _crushCurve(crusherValues(p).bits);
+  input.connect(ws); ws.connect(wet); wet.connect(output); input.connect(dry); dry.connect(output);
+  const apply = (q, sm) => { const set = _setter(ctx, sm), v = crusherValues(q); set(wet.gain, v.mix); set(dry.gain, 1 - v.mix); };
+  apply(p, false);
+  const seg = _inst('crusher', { input, output }, p, { apply, sig: q => String(crusherValues(q).bits) });
+  seg.fallback = 'native';
+  return seg;
+}
+
+/**
  * Ring Modulation — Träger-Oszillator moduliert direkt den Gain des Eingangssignals
  * (Web-Audio-Parameter-Modulation: bei Oszillator-Amplitude ±1 und Gain-Basiswert 0 entspricht das einer
- * echten Multiplikation Input×Träger; nur Sinusform, 20–5000 Hz).
+ * echten Multiplikation Input×Träger; 20–5000 Hz). Phase 15c: Trägerform Sinus (Standard), Rechteck, Dreieck oder Sägezahn (native,
+ * bandbegrenzte Oszillatorformen; Spitze ±1 wie der Sinus, der Effektivwert also je Form verschieden).
  */
+const _ringSig = q => (['square', 'triangle', 'sawtooth'].includes(q.waveform) ? q.waveform : 'sine');
 function _buildRingMod(ctx, p, tr) {
   const carrier = ctx.createOscillator();
-  carrier.type = 'sine';
+  carrier.type = _ringSig(p);                          // 15c: Trägerform; Standard/fehlend/unbekannt = Sinus (bisheriger Graph)
   const ringGain = ctx.createGain(); ringGain.gain.value = 0; // Träger moduliert direkt den Gain
   const wet = ctx.createGain();
   const dry = ctx.createGain();
@@ -1103,7 +1210,104 @@ function _buildRingMod(ctx, p, tr) {
   input.connect(dry).connect(output);
   input.connect(ringGain).connect(wet).connect(output);
 
-  return _inst('ringmod', { input, output }, p, { apply });
+  return _inst('ringmod', { input, output }, p, { apply, sig: _ringSig });   // Formwechsel = Neubau mit Überblendung (15c)
+}
+
+/**
+ * Frequenzschieber (Phase 16a, Einseitenband, nativ): Das IIR-Hilbert-Paar (engine/hilbert.js, je Pfad EIN IIRFilterNode 8. Ordnung) liefert
+ * I und Q (90° Phasendifferenz), zwei Oszillatoren aus PeriodicWave liefern cos und sin mit derselben Frequenz = `shift`.
+ *   Wet = I·cos + Q·sin → jede Frequenz f wird zu f + shift (negativ: nach unten). Eine negative Oszillatorfrequenz kehrt die Richtung um,
+ *   `shift` gleitet daher live auch durch 0 (bei 0 Hz stehen die Oszillatoren auf cos = 1, sin = 0 → Wet = I).
+ *   Dry = I-Pfad (Entscheidung B, P16): Betrag flach, Phase allpassverschoben; bei Shift 0 sind Dry und Wet deckungsgleich (keine Auslöschung).
+ *   Die Multiplikation läuft wie bei der Ringmodulation über einen Gain mit Basiswert 0, dessen Parameter der Oszillator ansteuert.
+ *   Kanäle: IIR-Filter und Gains arbeiten kanalweise → eine Mono-Quelle bleibt mono, Stereo bleibt stereo.
+ * Phase 16b:
+ *   Spreizung > 0: zweikanalig (Mono-Quelle über StereoPanner pan 0 hochgemischt, −3,01 dB je Kanal wie am terminalen Panner, vgl. _stereoSplit);
+ *   je Kanal ein eigenes cos/sin-Paar: links shift + Spreizung, rechts shift − Spreizung.
+ *   Rückkopplung > 0: Summe vor dem Hilbert-Paar ← Wet über DelayNode (FREQ_SHIFT_LOOP_SAMPLES = 128 Samples), Hochpass 25 Hz, Tiefpass 18 kHz
+ *   und Gain `feedback`. Jeder Umlauf verschiebt erneut. Im Nutzband hat der Schieber Verstärkung 1 (Einseitenband: Leistung bleibt erhalten);
+ *   nahe 0 Hz und Nyquist dagegen bis √2 (I = Q) — die beiden Filter halten die Schleifenverstärkung dort unter 1 (stabil bis 0,9). Der Dry-Pfad bekommt dann ein
+ *   EIGENES I-Filter auf dem Eingang (ohne Rückkopplungsanteil), damit Mix 0 weiterhin der I-Pfad des Eingangs ist.
+ *   Signatur (freqShiftSig): Spreizung 0 ↔ > 0 und Rückkopplung 0 ↔ > 0 bauen neu (Überblendung); alle Werte innerhalb sind live.
+ */
+const _fsWaves = new WeakMap();
+function _fsWave(ctx, kind) {
+  let m = _fsWaves.get(ctx);
+  if (!m) {
+    const mk = (re, im) => ctx.createPeriodicWave(new Float32Array(re), new Float32Array(im), { disableNormalization: true });
+    m = { cos: mk([0, 1], [0, 0]), sin: mk([0, 0], [0, 1]) };
+    _fsWaves.set(ctx, m);
+  }
+  return m[kind];
+}
+const _fsIIR = (ctx, path) => { const h = hilbertPath(path); return ctx.createIIRFilter(Array.from(h.feedforward), Array.from(h.feedback)); };
+function _buildFreqShift(ctx, p, tr) {
+  const v0 = freqShiftValues(p), spread = v0.spread > 0, fb = v0.feedback > 0;
+  const input = ctx.createGain(), output = ctx.createGain();
+  const fI = _fsIIR(ctx, 'i'), fQ = _fsIIR(ctx, 'q');
+  const wet = ctx.createGain(), dry = ctx.createGain();
+  // Eingang (16b: bei Spreizung zweikanalig hochgemischt)
+  let src = input;
+  if (spread) { const up = ctx.createStereoPanner(); up.pan.value = 0; input.connect(up); src = up; }
+  // Hilbert-Eingang: ohne Rückkopplung direkt, mit Rückkopplung über eine Summe
+  let sum = src, loopDelay = null, loopGain = null;
+  if (fb) {
+    sum = ctx.createGain(); src.connect(sum);
+    loopDelay = ctx.createDelay(0.1); loopDelay.delayTime.value = FREQ_SHIFT_LOOP_SAMPLES / ctx.sampleRate;
+    loopGain = ctx.createGain();
+    // Schutz in der Schleife: Nahe 0 Hz und Nyquist versagt das Hilbert-Paar (I = Q, Verstärkung bis √2) → dort Hoch-/Tiefpass, damit die
+    // Schleifenverstärkung überall < 1 bleibt (sonst schaukeln sich Anteile nahe 0 Hz/Nyquist auf, gemessen 16b).
+    const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter();
+    // Butterworth ohne Resonanzspitze: Q bei Hoch-/Tiefpass in dB (Web Audio) → 20·log10(1/√2) = LR4_Q_DB. Eine Spitze > 0 dB würde die Schleife
+    // bei 90 % über 1 heben.
+    hp.type = 'highpass'; hp.frequency.value = FREQ_SHIFT_LOOP_HP; hp.Q.value = LR4_Q_DB;
+    lp.type = 'lowpass'; lp.frequency.value = Math.min(FREQ_SHIFT_LOOP_LP, 0.42 * ctx.sampleRate); lp.Q.value = LR4_Q_DB;
+    wet.connect(loopDelay); loopDelay.connect(hp); hp.connect(lp); lp.connect(loopGain); loopGain.connect(sum);
+  }
+  sum.connect(fI); sum.connect(fQ);
+  // Träger: ein cos/sin-Paar je Kanalgruppe (ohne Spreizung eins für alle Kanäle, mit Spreizung je Kanal eins)
+  const pairs = [];
+  const pair = () => {
+    const oCos = ctx.createOscillator(), oSin = ctx.createOscillator();
+    oCos.setPeriodicWave(_fsWave(ctx, 'cos')); oSin.setPeriodicWave(_fsWave(ctx, 'sin'));
+    const mI = ctx.createGain(), mQ = ctx.createGain();
+    mI.gain.value = 0; mQ.gain.value = 0;                 // Träger moduliert den Gain direkt (echte Multiplikation)
+    oCos.connect(mI.gain); oSin.connect(mQ.gain);
+    const pr = { oCos, oSin, mI, mQ }; pairs.push(pr); return pr;
+  };
+  if (!spread) {
+    const pr = pair();
+    fI.connect(pr.mI); fQ.connect(pr.mQ); pr.mI.connect(wet); pr.mQ.connect(wet);
+  } else {
+    const sI = ctx.createChannelSplitter(2), sQ = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(2);
+    fI.connect(sI); fQ.connect(sQ);
+    for (const c of [0, 1]) {
+      const pr = pair();
+      sI.connect(pr.mI, c); sQ.connect(pr.mQ, c);
+      pr.mI.connect(merge, 0, c); pr.mQ.connect(merge, 0, c);
+    }
+    merge.connect(wet);
+  }
+  // Dry = I-Pfad des Eingangs (Entscheidung B); mit Rückkopplung eigenes Filter ohne Schleifenanteil
+  let dryI = fI;
+  if (fb) { dryI = _fsIIR(ctx, 'i'); src.connect(dryI); }
+  dryI.connect(dry);
+  wet.connect(output); dry.connect(output);
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm), v = freqShiftValues(q);
+    const fr = spread ? [v.shift + v.spread, v.shift - v.spread] : [v.shift];
+    pairs.forEach((pr, i) => { set(pr.oCos.frequency, fr[i]); set(pr.oSin.frequency, fr[i]); });   // gleiche Werte, gleiche Glättung → exakt 90°
+    set(wet.gain, v.mix); set(dry.gain, 1 - v.mix);
+    if (loopGain) set(loopGain.gain, v.feedback);
+  };
+  apply(p, false);
+  const t0 = ctx.currentTime;
+  // Phasenende 16: Rückkopplung beim Aufbau einblenden (τ = FREQ_SHIFT_LOOP_FADE_S). Bekommt die neue Kette ein laufendes Signal (Einschalten,
+  // Neubau), antworten die Hilbert-Filter mit einer Einsatz-Transiente; ohne Einblendung liefe sie sofort voll durch die Schleife und fiele in die
+  // Überblendung der Runtime (gemessen [S] Klickmaß bis 2,1 in Chromium). Live-Änderungen setzen danach wie gewohnt per setTargetAtTime auf.
+  if (loopGain) { loopGain.gain.value = 0; loopGain.gain.setTargetAtTime(v0.feedback, t0, FREQ_SHIFT_LOOP_FADE_S); }
+  for (const pr of pairs) { pr.oCos.start(t0); pr.oSin.start(t0); if (tr) tr.push(pr.oCos, pr.oSin); }   // gemeinsamer Start → feste Phasenbeziehung
+  return _inst('freqShift', { input, output }, p, { apply, sig: freqShiftSig });
 }
 
 /** Gemeinsame Hall-Hülle: Dry/Wet um einen Convolver. `wetOf(p)` liefert den Anteil; die IR ist nicht glättbar → Modul-Austausch (P10f). */
@@ -1362,47 +1566,57 @@ function _buildDynamicsModule(ctx, p, tr, kind) {
 
 /**
  * Baut einen Pitch-Shift-Node für GENAU den übergebenen Context.
- * Prüft die Context-spezifische Worklet-Readiness (`_pitchWorkletReadyContexts`) statt des
- * globalen, nur für den Live-Context gültigen `APP.pitchWorkletReady`-Flags. Damit liefert
- * dieselbe Funktion für Live-AudioContext UND OfflineAudioContext (Export) ein konsistentes
- * Ergebnis, sofern der Aufrufer zuvor `ensurePitchWorkletFor(ctx)` ausgeführt hat.
- * Exportiert, damit export.js denselben Baustein wiederverwenden kann.
+ * Prüft die Context-spezifische Worklet-Bereitschaft (`isWorkletReady(ctx, id)`) statt des globalen, nur für den Live-AudioContext
+ * gültigen `APP.pitchWorkletReady`-Flags. Damit liefert dieselbe Funktion für Live-AudioContext UND OfflineAudioContext (Export) ein
+ * konsistentes Ergebnis, sofern der Aufrufer zuvor die Worklets des Plans geladen hat (preparePipelineContext / runtime.prepare).
+ *
+ * Phase 17b: Algorithmus je `registry.pitchValues`:
+ *   legacy  Grain-Worklet `pitch` (unverändert; Faktor = 2^(Halbtöne/12); `cents` und `mix` ohne Wirkung und in der UI ausgeblendet)
+ *   music   Worklet `stft` (Phasenvocoder, Latenz 2048 Samples, Mix im Worklet mit deckungsgleich verzögertem Dry-Anteil; Formant seit 17d)
+ *   voice   Worklet `stft` mit `processorOptions.algorithm = 'voice'` (WSOLA, Latenz 1344 Samples, Mix wie `music`)
+ * Ist `stft` nicht geladen, aber `pitch`: Legacy-Worklet als Ersatz (Entscheidung E, Konsolenwarnung; Mix entfällt). Sonst null → Detune.
+ * Ob überhaupt ein Knoten gebaut wird, entscheidet `registry.pitchActive` (Runtime); hier null bei inaktiven Parametern.
  *
  * @param {number} [numChannels=2] Kanalzahl der Quelle (buffer.numberOfChannels).
- *   Stereo-fähiger Worklet: `channelCountMode:'explicit'` +
- *   `channelInterpretation:'discrete'` verhindert, dass der Browser bei
- *   Mono-Quellen automatisch hoch- bzw. bei Multi-Channel-Quellen
- *   heruntermischt, BEVOR der Worklet die Kanäle sieht — jeder Kanal
- *   bekommt im Prozessor eine eigene, unabhängige Overlap-Add-Instanz.
+ *   Stereo-fähige Worklets: `channelCountMode:'explicit'` + `channelInterpretation:'discrete'` verhindert, dass der Browser bei
+ *   Mono-Quellen automatisch hoch- bzw. bei Multi-Channel-Quellen heruntermischt, BEVOR das Worklet die Kanäle sieht — jeder Kanal
+ *   bekommt im Prozessor eine eigene, unabhängige Engine.
  */
 export function buildPitchNode(ctx, p, numChannels = 2) {
-  const semitones = p.semitones ?? 0;
-  if (semitones === 0) return null;
-  if (_pitchWorkletReadyContexts.has(ctx)) {
-    try {
-      const ch = Math.max(1, Math.min(2, numChannels || 2));
-      const n = new AudioWorkletNode(ctx, 'pitch-shifter-processor', {
-        numberOfInputs: 1, numberOfOutputs: 1,
-        channelCount: ch,
-        channelCountMode: 'explicit',
-        channelInterpretation: 'discrete',
-        outputChannelCount: [ch]
-      });
-      const pf = n.parameters.get('pitchFactor');
-      pf.setValueAtTime(Math.pow(2, semitones / 12), ctx.currentTime);
-      // Live-Update: nur die Tonhöhe selbst ist glättbar. Ob der Knoten überhaupt existiert (Halbtöne ≠ 0), entscheidet
-      // die Runtime (Strukturvergleich) — deshalb liefert update() bei Halbtönen = 0 false (Neubau/Überblendung nötig).
-      const seg = { input: n, output: n, key: 'pitchShift' };
-      seg.dispose = () => { try { n.port.postMessage('dispose'); } catch (e) { /* Port schon zu */ } };   // Prozessor beenden (Fix A)
-      seg.update = np => {
-        const st = np?.semitones ?? 0;
-        if (!st) return false;
-        pf.setTargetAtTime(Math.pow(2, st / 12), ctx.currentTime, SMOOTH_TC);
-        return true;
-      };
-      return seg;
-    } catch (e) { console.warn('[audio] PitchWorklet node failed:', e.message); }
+  if (!pitchActive({ ...p, enabled: true })) return null;
+  const v = pitchValues(p);
+  const ch = Math.max(1, Math.min(2, numChannels || 2));
+  const opts = { numberOfInputs: 1, numberOfOutputs: 1, channelCount: ch, channelCountMode: 'explicit', channelInterpretation: 'discrete', outputChannelCount: [ch] };
+  let kind = v.algorithm === 'legacy' ? 'legacy' : 'stft';
+  if (kind === 'stft' && !isWorkletReady(ctx, 'stft')) {
+    if (!isWorkletReady(ctx, 'pitch')) return null;
+    console.warn('[audio] Worklet "stft" nicht verfügbar — Tonhöhe über das Legacy-Worklet (ohne Mix)');
+    kind = 'legacy';
   }
+  if (kind === 'legacy' && !isWorkletReady(ctx, 'pitch')) return null; // caller uses src.detune as fallback
+  try {
+    const n = kind === 'stft'
+      ? new AudioWorkletNode(ctx, 'stft-pitch-processor', { ...opts, processorOptions: { algorithm: v.algorithm }, parameterData: { pitchFactor: v.factor, mix: v.mix, formantFactor: v.formantFactor } })
+      : new AudioWorkletNode(ctx, 'pitch-shifter-processor', opts);
+    const pf = n.parameters.get('pitchFactor'), mx = kind === 'stft' ? n.parameters.get('mix') : null, fmt = kind === 'stft' ? n.parameters.get('formantFactor') : null;
+    if (kind === 'legacy') pf.setValueAtTime(v.factor, ctx.currentTime);
+    // Live-Update: Faktor (und bei `stft` Mix) sind glättbar. Wechsel des Algorithmus oder aktiv ↔ inaktiv ⇒ false (Neubau/Überblendung
+    // durch die Runtime). Ein Ersatz-Legacy-Knoten bleibt bei `music`/`voice` (Algorithmus unverändert), damit kein Dauer-Neubau entsteht.
+    const builtAlg = v.algorithm;
+    const seg = { input: n, output: n, key: 'pitchShift', algorithm: kind === 'stft' ? v.algorithm : 'legacy', latency: kind === 'stft' ? (v.algorithm === 'voice' ? PITCH_VOICE_LATENCY : PITCH_PV_LATENCY) : 0 };
+    seg.dispose = () => { try { n.port.postMessage('dispose'); } catch (e) { /* Port schon zu */ } };   // Prozessor beenden (Fix A)
+    seg.update = np => {
+      if (!pitchActive({ ...np, enabled: true })) return false;
+      const w = pitchValues(np);
+      if (w.algorithm !== builtAlg) return false;
+      const t = ctx.currentTime;
+      pf.setTargetAtTime(w.factor, t, SMOOTH_TC);
+      if (mx) mx.setTargetAtTime(w.mix, t, SMOOTH_TC);
+      if (fmt) fmt.setTargetAtTime(w.formantFactor, t, SMOOTH_TC);
+      return true;
+    };
+    return seg;
+  } catch (e) { console.warn('[audio] PitchWorklet node failed:', e.message); }
   return null; // caller uses src.detune as fallback
 }
 
@@ -1837,7 +2051,11 @@ function _collectSegments(ctx, effects, tr, omit) {
   if (effects.multiband?.enabled)  segs.push(_buildMultiband(ctx, effects.multiband));
 
   if (effects.distortion?.enabled) segs.push(_buildDistortion(ctx, effects.distortion, tr));
+  // Bitcrusher (Phase 15c, layerOrder 75): hinter der Verzerrung, vor der Ringmodulation.
+  if (effects.crusher?.enabled)    segs.push(_buildCrusher(ctx, effects.crusher, tr));
   if (effects.ringmod?.enabled)    segs.push(_buildRingMod(ctx, effects.ringmod, tr));
+  // Frequenzschieber (Phase 16a, layerOrder 82): direkt hinter der Ringmodulation, vor der Modulationsfamilie.
+  if (effects.freqShift?.enabled)  segs.push(_buildFreqShift(ctx, effects.freqShift, tr));
 
   // Chorus/Flanger: Modulationseffekte, bewusst vor Reverb/Delay platziert
   // (typische Effektketten-Reihenfolge: Filter → Verzerrung → Modulation →

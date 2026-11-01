@@ -14,7 +14,7 @@
  * Degradation (`degrade`, AE-16): { oversample: 'none'|'2x'|'4x' (Obergrenze), equalPower: bool (HRTF → Equal-Power), irMax: Sekunden }.
  * Sie senkt nur die SCHÄTZUNG; angewandt wird sie im Graph-Aufbau (spätere Schritte von P3a).
  */
-import { moduleCost, convolverPoints } from './registry.js';
+import { moduleCost, convolverPoints, pitchActive } from './registry.js';
 import { effectiveActiveKeys } from './schema.js';
 import { getIRDuration } from '../ir-data.js';
 
@@ -26,9 +26,9 @@ export const EQUALPOWER_POINTS = 1;
 const OVERSAMPLE_ORDER = ['none', '2x', '4x'];
 const OVERSAMPLE_POINTS = { none: 1, '2x': 5, '4x': 10 };
 
-/** Klingende Module eines Schritts (wie fx-pipeline `_soundingKeys`): aktiv, nicht überlagert, Pitch nur mit Halbtönen ≠ 0. */
+/** Klingende Module eines Schritts (wie fx-pipeline `_soundingKeys`): aktiv, nicht überlagert, Pitch nur laut registry.pitchActive (P17b). */
 export function soundingKeys(params) {
-  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || (params.pitchShift.enabled && params.pitchShift.semitones));
+  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || pitchActive(params.pitchShift));
 }
 
 /** IR-Länge (s) des Hall-Moduls `key` mit den Parametern `p`. */

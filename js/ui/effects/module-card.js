@@ -2,14 +2,16 @@
  * ui/effects/module-card.js — Karte eines Effektmoduls (Phase 8): Schalter + Regler aus der Registry.
  * Schalter = `role="switch"`; ein ausgeschaltetes Modul macht seinen Reglerbereich `inert` (nicht fokussier-/bedienbar, für
  * Screenreader ausgeblendet) statt nur `opacity`/`pointer-events` (B-17). Jeder Parameter-Typ bekommt hier sein Control;
- * unterstützt: Zahlen (createNumberControl), Aufzählungen und Impulsantwort-Namen (createSelectControl), EQ-Bänder (createBandsControl), Delay-Taps (createDelayTapsControl, 14b). Andere Typen werfen — kein stilles Weglassen.
+ * unterstützt: Zahlen (createNumberControl), Aufzählungen und Impulsantwort-Namen (createSelectControl), EQ-Bänder (createBandsControl), Delay-Taps (createDelayTapsControl, 14b), Waveshaper-Kurvenpunkte (createDistortionPointsControl, 15b). Andere Typen werfen — kein stilles Weglassen.
  * Bedingte Regler (Phase 13e): `ui.showIf = { feld: [Werte…] }` — der Regler ist nur sichtbar, wenn alle genannten Felder desselben Moduls einen der
  * Werte haben (sonst `hidden`, der Wert bleibt in den Daten). Geprüft beim Laden (sync) und nach jeder Änderung in dieser Karte.
+ * Vorschlagswerte (Phase 15a): `ui.suggest` an einer Aufzählung, siehe `suggest()`.
  */
 import { el, createNumberControl, createSelectControl } from './controls.js';
 import { createBandsControl } from './eq10-bands.js';
 import { createParamEqControl } from './param-eq.js';
 import { createDelayTapsControl } from './delay-taps.js';
+import { createDistortionPointsControl } from './distortion-points.js';
 import { IR_IMPULSE_NAMES } from '../../audio/engine/registry.js';
 
 /**
@@ -33,7 +35,22 @@ export function createModuleCard(def, api) {
   const controls = [], conditional = [];
   const shown = cond => Object.entries(cond).every(([f, vals]) => vals.includes(api.get(f)));
   const refresh = () => { for (const { root: r, cond } of conditional) r.hidden = !shown(cond); };
-  const setAndRefresh = (param, v) => { api.set(param, v); if (conditional.length) refresh(); };
+  // Vorschlag (Phase 15a, `ui.suggest = { when: [Werte…], set: { feld: wert }, onlyIf?: { feld: [Werte…] } }`): wechselt der Nutzer in einen der Werte
+  // `when` (von einem Wert außerhalb), werden die Felder `set` mitgesetzt, sofern `onlyIf` zutrifft (Verzerrung: neue Modi → Oversampling 2× statt 4×).
+  // Nur echte Nutzeraktionen in dieser Karte; Laden (sync) und gespeicherte Daten ändern nichts.
+  const suggest = (param, prev, v) => {
+    const sg = def.params[param]?.ui?.suggest;
+    if (!sg || !sg.when.includes(v) || sg.when.includes(prev)) return false;
+    if (sg.onlyIf && !shown(sg.onlyIf)) return false;
+    for (const [f, val] of Object.entries(sg.set)) api.set(f, val);
+    return true;
+  };
+  const setAndRefresh = (param, v) => {
+    const prev = api.get(param);
+    api.set(param, v);
+    if (suggest(param, prev, v)) for (const c of controls) c.sync();
+    if (conditional.length) refresh();
+  };
   for (const [param, spec] of Object.entries(def.params)) {
     if (spec.ui?.hidden) continue;
     if (spec.bandList) {                                               // Parametrischer EQ (P10d): Bandtabelle
@@ -43,6 +60,12 @@ export function createModuleCard(def, api) {
     }
     if (spec.tapList) {                                                // Multi-Tap-Delay (14b): Tap-Tabelle, sichtbar nach ui.showIf
       const c = createDelayTapsControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, getTaps: () => api.get(param), setTaps: v => api.set(param, v) });
+      controls.push(c); body.appendChild(c.root);
+      if (spec.ui?.showIf) { c.root.dataset.fxShowIf = Object.keys(spec.ui.showIf).join(','); conditional.push({ root: c.root, cond: spec.ui.showIf }); }
+      continue;
+    }
+    if (spec.pointList) {                                              // Waveshaper-Kurvenpunkte (15b): Tabelle + Vorschau, sichtbar nach ui.showIf
+      const c = createDistortionPointsControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, getPoints: () => api.get(param), setPoints: v => api.set(param, v) });
       controls.push(c); body.appendChild(c.root);
       if (spec.ui?.showIf) { c.root.dataset.fxShowIf = Object.keys(spec.ui.showIf).join(','); conditional.push({ root: c.root, cond: spec.ui.showIf }); }
       continue;

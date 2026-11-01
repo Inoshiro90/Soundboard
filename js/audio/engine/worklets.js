@@ -10,11 +10,12 @@
  *   imports    true, wenn das Modul per `import` Hilfsmodule lädt (dsp-lib). Browserabhängig: Chrome/Firefox/Node [S],
  *              Safari/iOS offen [H]; scheitert addModule(), meldet ensureWorklets() `false` (kein Absturz).
  *   fallback   was der Aufrufer bei `false` tut: 'detune' (Pitch ändert dann das Tempo), 'none' (Quelle/Signal fehlt,
- *              Aufrufer überspringt den Baustein), 'native' (Aufrufer baut die bisherige native Näherung, P12c: Flanger mit B-14-Klemmung)
+ *              Aufrufer überspringt den Baustein), 'native' (Aufrufer baut die bisherige native Näherung, P12c: Flanger mit B-14-Klemmung),
+ *              'legacy' (P17b, Entscheidung E: Tonhöhe über das Legacy-Worklet `pitch`, ohne Mix; scheitert auch das: Detune)
  *   cost       Kostenpunkte je Instanz (AE-13′). `measured:false` ⇒ noch NICHT gemessen (M-1-Methode, Suite 13);
  *              der Wert `null` heißt „unbekannt“, nicht „kostenlos“ (gilt für `noise`, nur Quelle). Pitch: Zahl steht in der Modul-Registry (pitchShift).
  */
-import { MODULES } from './registry.js';
+import { MODULES, pitchActive, pitchAlgorithm } from './registry.js';
 
 export const WORKLETS = {
   pitch: {
@@ -40,6 +41,16 @@ export const WORKLETS = {
   delayline: {
     url: './js/worklets/delayline.js', processor: 'delayline-processor', imports: true, fallback: 'native',
     cost: { base: 7, measured: false, estimate: 'delayline' }   // Schätzwert (Hermite-Interpolation je Sample und Kanal); M-1 steht aus
+  },
+  // Phase 17b/17c: Tonhöhe v2 (Algorithmus `music` = Phasenvocoder, pitch-pv.js auf stft.js/fft.js; `voice` = WSOLA, pitch-wsola.js).
+  stft: {
+    url: './js/worklets/stft.js', processor: 'stft-pitch-processor', imports: true, fallback: 'legacy',
+    cost: { base: null, measured: false, see: 'registry.pitchShift' }
+  },
+  // Phase 15c: Bitcrusher mit Sample-Rate-Reduktion (Rechenkern audio/dsp-lib/crusher.js); ohne Worklet native Quantisierung ohne Reduktion.
+  crusher: {
+    url: './js/worklets/crusher.js', processor: 'crusher-processor', imports: true, fallback: 'native',
+    cost: { base: 3, measured: false, estimate: 'crusher' }     // Schätzwert (Sample-and-Hold + Quantisierung je Sample); M-1 steht aus
   }
 };
 
@@ -53,12 +64,18 @@ export function workletsOfModule(key) {
 
 /**
  * Worklets, die vor dem Bau eines Plans im Ziel-Context geladen sein müssen.
- * Verhalten wie bisher: nur Pitch (aktiv, Halbtöne ≠ 0) und nur, wenn das Ziel Worklets nutzt (caps.pitch === 'worklet').
+ * Pitch: aktiv laut registry.pitchActive, nur wenn das Ziel Worklets nutzt (caps.pitch === 'worklet'); das Worklet je Algorithmus.
  * Künftige Module (P10 ff.) ergänzen ihre Bedingung hier.
  */
 export function workletsForPlan(plan, caps) {
   const ids = new Set();
-  if (plan?.hasPitch && caps?.pitch === 'worklet') for (const id of workletsOfModule('pitchShift')) ids.add(id);
+  // Pitch: je aktivem Schritt das Worklet seines Algorithmus (P17b: `legacy` → `pitch`, sonst `stft`).
+  if (plan?.hasPitch && caps?.pitch === 'worklet') {
+    for (const s of plan.steps || []) {
+      const ps = s.params?.pitchShift;
+      if (pitchActive(ps)) ids.add(pitchAlgorithm(ps) === 'legacy' ? 'pitch' : 'stft');
+    }
+  }
   // P10c: Hüllkurvenfolger, wenn Wah-Wah/Auto-Filter aktiv von der Hüllkurve gesteuert werden.
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
     for (const id of workletsOfModule('autoFilter')) ids.add(id);
@@ -72,5 +89,19 @@ export function workletsForPlan(plan, caps) {
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.flanger?.enabled || s.params?.phaser?.enabled)) {
     for (const id of workletsOfModule('flanger')) ids.add(id);
   }
+  // P15c: Bitcrusher im Worklet `crusher`; ohne Worklet baut der Graph die native Quantisierung (ohne Sample-Rate-Reduktion).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.crusher?.enabled)) {
+    for (const id of workletsOfModule('crusher')) ids.add(id);
+  }
   return [...ids];
+}
+
+/**
+ * Ersatz-Worklets für nicht geladene (P17b, Entscheidung E): Ergebnis von ensureWorklets → IDs, die zusätzlich geladen werden sollen.
+ * Heute nur `stft` → `pitch` (Fallback 'legacy'). Rein, damit beide Vorbereitungsstellen (fx-pipeline, runtime) dieselbe Regel nutzen.
+ */
+export function fallbackWorklets(res) {
+  const out = [];
+  for (const [id, ok] of Object.entries(res || {})) if (ok === false && WORKLETS[id]?.fallback === 'legacy') out.push('pitch');
+  return [...new Set(out)];
 }
