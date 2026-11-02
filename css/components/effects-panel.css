@@ -751,6 +751,7 @@
 .fx-card[hidden], .disclosure-section[hidden] { display: none !important; }
 .fx-card__note { margin: var(--space-1) 0 var(--space-2); padding: var(--space-1) var(--space-2); font-size: var(--text-badge); color: var(--text-primary);
   background: var(--bg-surface); border-left: 3px solid var(--border-color); border-radius: var(--radius-micro); }
+.fx-card__info { margin: var(--space-1) 0 0; font-size: var(--text-badge); color: var(--text-secondary); }
 .fx-card.is-shadowed .fx-group__head { opacity: 0.75; }
 
 /* ═════ Phase 8 · Mobil und Barrierefreiheit der generierten Controls ═════ */

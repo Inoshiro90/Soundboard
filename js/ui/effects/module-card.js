@@ -5,6 +5,9 @@
  * unterstützt: Zahlen (createNumberControl), Aufzählungen und Impulsantwort-Namen (createSelectControl), EQ-Bänder (createBandsControl), Delay-Taps (createDelayTapsControl, 14b), Waveshaper-Kurvenpunkte (createDistortionPointsControl, 15b). Andere Typen werfen — kein stilles Weglassen.
  * Bedingte Regler (Phase 13e): `ui.showIf = { feld: [Werte…] }` — der Regler ist nur sichtbar, wenn alle genannten Felder desselben Moduls einen der
  * Werte haben (sonst `hidden`, der Wert bleibt in den Daten). Geprüft beim Laden (sync) und nach jeder Änderung in dieser Karte.
+ * Hinweiszeile (Phase 17e): `def.ui.info(werte) → Text|null` wird unter den Reglern gezeigt und nach jeder Änderung neu berechnet (Tonhöhe: Verzögerung).
+ * Vorwahl beim Einschalten (Phase 17e): `def.ui.enableSet = { feld: wert }` — nur wenn der Nutzer das Modul einschaltet und alle Felder noch dem Standard
+ * entsprechen (neu eingeschaltetes Modul); gespeicherte Daten und ein erneutes Einschalten bereits eingestellter Module bleiben unberührt.
  * Vorschlagswerte (Phase 15a): `ui.suggest` an einer Aufzählung, siehe `suggest()`.
  */
 import { el, createNumberControl, createSelectControl } from './controls.js';
@@ -34,7 +37,12 @@ export function createModuleCard(def, api) {
   const body = el('div', 'fx-controls fx-card__body', { 'data-fx-body': true });
   const controls = [], conditional = [];
   const shown = cond => Object.entries(cond).every(([f, vals]) => vals.includes(api.get(f)));
-  const refresh = () => { for (const { root: r, cond } of conditional) r.hidden = !shown(cond); };
+  const infoEl = typeof def.ui?.info === 'function' ? el('p', 'fx-card__info', { id: idBase + '-info', hidden: true }) : null;
+  const values = () => Object.fromEntries(Object.keys(def.params).map(k => [k, api.get(k)]));
+  const refresh = () => {
+    for (const { root: r, cond } of conditional) r.hidden = !shown(cond);
+    if (infoEl) { const t = def.ui.info(values()); infoEl.textContent = t || ''; infoEl.hidden = !t; }
+  };
   // Vorschlag (Phase 15a, `ui.suggest = { when: [Werte…], set: { feld: wert }, onlyIf?: { feld: [Werte…] } }`): wechselt der Nutzer in einen der Werte
   // `when` (von einem Wert außerhalb), werden die Felder `set` mitgesetzt, sofern `onlyIf` zutrifft (Verzerrung: neue Modi → Oversampling 2× statt 4×).
   // Nur echte Nutzeraktionen in dieser Karte; Laden (sync) und gespeicherte Daten ändern nichts.
@@ -87,8 +95,16 @@ export function createModuleCard(def, api) {
   }
 
   const applyEnabled = on => { sw.checked = on; body.toggleAttribute('inert', !on); root.classList.toggle('is-off', !on); };
-  sw.addEventListener('change', () => { api.setEnabled(sw.checked); applyEnabled(sw.checked); });
+  const isDefault = () => Object.entries(def.params).every(([k, sp]) => !('def' in sp) || JSON.stringify(api.get(k)) === JSON.stringify(sp.def));
+  sw.addEventListener('change', () => {
+    if (sw.checked && def.ui?.enableSet && isDefault()) {           // 17e: Vorwahl für ein neu eingeschaltetes Modul
+      for (const [f, val] of Object.entries(def.ui.enableSet)) api.set(f, val);
+      for (const c of controls) c.sync();
+    }
+    api.setEnabled(sw.checked); applyEnabled(sw.checked); refresh();
+  });
 
+  if (infoEl) body.appendChild(infoEl);
   root.append(head, note, body);
   const sync = () => { applyEnabled(api.getEnabled()); for (const c of controls) c.sync(); refresh(); };
   const setNote = text => {

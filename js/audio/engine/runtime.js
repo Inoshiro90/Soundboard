@@ -33,17 +33,34 @@ import { workletsForPlan, fallbackWorklets } from './worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './waveshaper-probe.js';
 import { effectiveActiveKeys } from './schema.js';
-import { moduleTail, moduleCost, pitchActive, pitchValues } from './registry.js';
+import { moduleTail, moduleCost, moduleLatency, pitchActive, pitchValues } from './registry.js';
 import { makeTiming, planHorizon } from './timebase.js';
 
 /** Vorgabewerte der Überblendung. */
 export const XFADE_SECONDS = 0.04;           // Addendum A: 30–50 ms
 /** Mindestabstand zwischen den Starts zweier struktureller Austausche (Wanduhr, ms). Erster sofort, letzter gewinnt (Fix B, Befund 3A). */
 export const MIN_SWAP_INTERVAL_MS = 200;
+/** Obergrenze der Wartezeit (s) vor der Überblendung (17e, Entscheidung B): schützt vor unplausiblen Latenzwerten. */
+export const MAX_SWAP_DELAY_S = 0.12;
 const FADE_POINTS = 32;
 const _up   = new Float32Array(FADE_POINTS), _down = new Float32Array(FADE_POINTS);
 for (let i = 0; i < FADE_POINTS; i++) { const a = (i / (FADE_POINTS - 1)) * Math.PI / 2; _up[i] = Math.sin(a); _down[i] = Math.cos(a); }
 
+
+/**
+ * 17e (Entscheidung B): Latenz (s) der neu gebauten Kette = Summe der Modul-Latenzen je Schritt (Pitch-Knoten + Module mit `latencySamples`).
+ * Erst nach dieser Zeit liegt das Signal der neuen Kette an; die Überblendung beginnt dann erst — sonst bricht der Pegel beim Umschalten ein.
+ * Ketten ohne Latenz: 0 (Verhalten und Klang bit-gleich zu vorher).
+ */
+export function chainLatencySeconds(inner, plan, sampleRate) {
+  let n = 0;
+  plan.steps.forEach((st, i) => {
+    const rec = inner.steps[i]; if (!rec) return;
+    n += Number(rec.pitch?.latency) || 0;
+    for (const m of rec.modules) n += moduleLatency(m.key, st.params[m.key], sampleRate) || 0;
+  });
+  return Math.min(MAX_SWAP_DELAY_S, n / sampleRate);
+}
 
 /** Kreuzblenden-Kurve planen. Überlappt sie mit einer noch laufenden Kurve (Audio-Uhr hinkt hinterher), wird hart auf den Endwert gesetzt statt zu werfen. */
 function _ramp(param, curve, t0, d, endValue) {
@@ -272,7 +289,7 @@ export class PipelineRuntime {
     nu.fade.connect(this.wetBus);
     // Zeitbasis (13d): die neue Kette übernimmt die laufende Bewegung (gleicher Start, ab jetzt geplant) — sonst begänne sie von vorn.
     if (this.timing && !this.held) this._armInner(nu, ctx.currentTime, Math.max(this._armedTo, planHorizon(this.timing, ctx.currentTime)), true);
-    const t0 = ctx.currentTime, d = Math.max(0.005, fade);
+    const t0 = ctx.currentTime + chainLatencySeconds(nu, plan, ctx.sampleRate), d = Math.max(0.005, fade);   // 17e (B): erst wenn das Signal der neuen Kette anliegt
     _ramp(nu.fade.gain, _up, t0, d, 1);
     _ramp(old.fade.gain, _down, t0, d, 0);
     this.cur = nu; this.plan = plan; this.sig = planSignature(plan);

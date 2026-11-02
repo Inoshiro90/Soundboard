@@ -328,6 +328,14 @@ export const pitchValues = q => {
  */
 export const pitchActive = q => !!(q && q.enabled && (pitchSemitonesTotal(q) !== 0 || pitchAlgorithm(q) !== 'legacy'));
 /** Latenz (Samples) je Algorithmus: `music` 2048, `voice` 1344; das Legacy-Worklet deklariert keine. */
+/**
+ * Phase 17e: Hinweiszeile der Karte „Tonhöhe“ (`ui.info`): Verzögerung des gewählten Algorithmus; bei `legacy` keine. Angabe in Samples
+ * mit Spanne für 48/44,1 kHz (die Abtastrate des Audiokontexts ist der Oberfläche nicht bekannt).
+ */
+const pitchInfo = q => {
+  const n = pitchAlgorithm(q) === 'music' ? PITCH_PV_LATENCY : pitchAlgorithm(q) === 'voice' ? PITCH_VOICE_LATENCY : 0;
+  return n ? `Verzögerung: ${n} Samples (≈ ${Math.round(n / 48)}–${Math.round(n / 44.1)} ms)` : null;
+};
 const pitchLatency = q => (!pitchActive(q) ? 0 : pitchAlgorithm(q) === 'music' ? PITCH_PV_LATENCY : pitchAlgorithm(q) === 'voice' ? PITCH_VOICE_LATENCY : 0);
 /** Kosten: `legacy` gemessen 28 (P0/M-1); `music` und `voice` Schätzwert gleicher Höhe bis zur Messung in 17e (`voice` ≈ 1 % Echtzeit je Kanal [S Node, Prototyp]). */
 const pitchCost = q => (pitchAlgorithm(q) === 'music' ? { base: 28, measured: false, estimate: 'stft' } : pitchAlgorithm(q) === 'voice' ? { base: 28, measured: false, estimate: 'wsola' } : { base: 28, measured: true });
@@ -517,7 +525,7 @@ export const MODULES = [
       // Phase 15c (additiv): Trägerform; Standard Sinus = bisheriger Graph. Wechsel = Neubau mit Überblendung (die Form springt sonst hörbar).
       waveform: { def: 'sine', enum: RINGMOD_WAVEFORMS, label: 'Trägerform', ui: { options: { sine: 'Sinus', square: 'Rechteck', triangle: 'Dreieck', sawtooth: 'Sägezahn' } } }
     } },
-  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch', 'stft'], cost: pitchCost,
+  { key: 'pitchShift', stageHint: { stage: 'source', weight: 2 }, ui: { generated: true, info: pitchInfo, enableSet: { algorithm: 'voice' } }, family: 'voice', label: 'Tonhöhe', layerOrder: 0, consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['pitch', 'stft'], cost: pitchCost,
     // Phase 17b/17c: Nachklang = Latenz des Algorithmus bei 22,05 kHz (längster Fall), damit der Export das verzögerte Ende nicht abschneidet.
     tail: p => pitchLatency(p) / 22050,
     latencySamples: p => pitchLatency(p),
@@ -526,9 +534,9 @@ export const MODULES = [
       // Phase 17b (additiv): Feinstimmung und Mix (beide nur v2-Algorithmen, bei `legacy` ausgeblendet und ohne Wirkung) und Algorithmus (Standard `legacy`, Entscheidung C).
       cents: { def: 0, range: [-100, 100], unit: 'Cent', label: 'Cent', ui: { min: -100, max: 100, step: 1, signed: true, showIf: { algorithm: ['music', 'voice'] } } },
       mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true, showIf: { algorithm: ['music', 'voice'] } } },
-      algorithm: { def: 'legacy', enum: PITCH_ALGORITHMS, label: 'Algorithmus', ui: { options: PITCH_ALGORITHM_LABELS } },
-      // Phase 17d (additiv): Formant (Spektralhüllkurve) in Halbtönen, nur bei `music`; 0 = Hüllkurve wandert wie bisher mit der Tonhöhe.
-      formant: { def: 0, range: [-12, 12], unit: 'Halbtöne', label: 'Formant', ui: { min: -12, max: 12, step: 0.5, signed: true, showIf: { algorithm: ['music'] } } }
+      // Phase 17d (additiv): Formant (Spektralhüllkurve) in Halbtönen, nur bei `music`; seit 17e in der Anzeige zwischen Mix und Algorithmus; 0 = Hüllkurve wandert wie bisher mit der Tonhöhe.
+      formant: { def: 0, range: [-12, 12], unit: 'Halbtöne', label: 'Formant', ui: { min: -12, max: 12, step: 0.5, signed: true, showIf: { algorithm: ['music'] } } },
+      algorithm: { def: 'legacy', enum: PITCH_ALGORITHMS, label: 'Algorithmus', ui: { options: PITCH_ALGORITHM_LABELS } }
     } },
   { key: 'irReverb', stageHint: { stage: 'environment', weight: 3 }, ui: { generated: true }, family: 'space', label: 'Hall (Impulsantwort)', layerOrder: 110, consumers: ALL_CONSUMERS,
     cost: p => ({ base: convolverPoints(getIRDuration(p?.impulse ?? null)), measured: true }), degrade: { irLength: true },
