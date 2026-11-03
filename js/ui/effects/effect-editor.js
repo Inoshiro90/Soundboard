@@ -80,12 +80,16 @@ export function createEffectEditor() {
   const sectionMap = {};                 // Sektions-ID → Modulschlüssel (aus der Lage der Hosts im HTML abgeleitet)
   const sectionWrap = {};                // Sektions-ID → .disclosure-section
   let onlyActive = false, hintEl = null, liveEl = null, prevShadowed = [];
+  // P17f: Kontext des Aufrufers (Layer-Dialog): zusätzliche Hinweise je Modul aus dem Rest der Pipeline (Tempo „unwirksam“) und ein Hook
+  // beim Ein-/Ausschalten durch den Nutzer. Ohne Kontext unverändertes Verhalten.
+  let ctx = null;
   for (const d of defs) state[d.key] = defaultModule(d.key);
 
   /** `announce`: nur bei einer Nutzeraktion (Schalter), nie beim Laden eines Layers — sonst Lärm für Screenreader. */
   const refreshHints = (announce = false) => {
     const notes = shadowNotes(state);
-    for (const c of cards) c.setNote(notes[c.key] || null);
+    const extra = ctx?.notes ? (ctx.notes(state) || {}) : {};
+    for (const c of cards) c.setNote(notes[c.key] || extra[c.key] || null);
     if (announce && liveEl) { const msg = shadowAnnouncement(prevShadowed, state); if (msg) liveEl.textContent = msg; }
     prevShadowed = Object.keys(notes);
   };
@@ -106,6 +110,13 @@ export function createEffectEditor() {
     },
     /** Abschnitts-Aktivität für Punkt-Anzeigen/Überblick (`fx` = flacher Layerstand). Vor dem Mounten leer. */
     activeSections(fx) { return activeSectionsOf(sectionMap, fx); },
+    /**
+     * P17f: Kontext setzen/entfernen (`null`). `notes(state)` → { modulSchlüssel: Text } (Vorrang haben Hinweise der Exklusivgruppen);
+     * `onToggle(key, on, state)` nach einer Nutzeraktion am Schalter, bevor die Hinweise neu berechnet werden.
+     */
+    setContext(c) { ctx = c || null; refreshHints(); },
+    /** Hinweise neu berechnen (z. B. nachdem der Kontext sich geändert hat). */
+    refreshNotes() { refreshHints(); },
     /** Kopie des Zustands aller generierten Module: { lowpass: {enabled, frequency, Q}, … }. */
     getValues() {
       return JSON.parse(JSON.stringify(state));
@@ -122,7 +133,7 @@ export function createEffectEditor() {
           if (!def) throw new Error(`Effekt-UI: Modul „${key}“ ist nicht als generiert markiert (Registry ui.generated)`);
           const card = createModuleCard(def, {
             get: p => state[key][p], set: (p, v) => { state[key][p] = v; },
-            getEnabled: () => state[key].enabled, setEnabled: on => { state[key].enabled = on; refreshHints(true); }
+            getEnabled: () => state[key].enabled, setEnabled: on => { state[key].enabled = on; ctx?.onToggle?.(key, on, state); refreshHints(true); }
           });
           host.appendChild(card.root); cards.push(card); card.sync();
         }

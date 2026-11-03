@@ -33,7 +33,7 @@ export function mkSound(d, order) {
     tileColor: '', tileW: null, tileH: null,
     vol: 1, pitch: 1, loop: false, fade: false, random: false,
     hotkey: '', category: '', locked: false,
-    slots: [{ data: null, name: 'Leer', trimStart: 0, trimEnd: null }],
+    slots: [{ id: uid(), data: null, name: 'Leer', trimStart: 0, trimEnd: null }],   // P18a: stabile Slot-Kennung
     curSlot: 0, effects: defaultPipelineEffects(), playback: defaultPlayback()
   };
 }

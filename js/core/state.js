@@ -37,7 +37,7 @@ export const APP = {
     soundId: null, slotIdx: null,
     src: null, masterGain: null,
     runtime: null,            // PipelineRuntime (live:true) der laufenden Vorschau — Live-Update, A/B (Phase 7)
-    kind: null,          // 'buffer' | 'noise' | null — bestimmt, wie die Quelle beendet wird
+    kind: null,          // 'buffer' | 'noise' | 'media' (P17g Musik) | null — bestimmt, wie die Quelle beendet wird
     loop: false,         // Phase 7: Vorschau loopt (wirkt ab dem nächsten Start)
     bypass: false,       // Phase 7: A/B — Effekte umgangen
     ending: false,       // Phase 7: Quelle zu Ende, Nachklang läuft noch (endTimer)

@@ -11,7 +11,6 @@
 
 import { APP }      from './core/state.js';
 import { toast }    from './notifications.js';
-import { bk }       from './utils.js';
 import { actx }     from './audio/context.js';
 import { idbSet, idbGet, audioKey, IDB_SENTINEL } from './db.js';
 import { historyPush } from './history.js';
@@ -19,6 +18,7 @@ import { fft, hannWindow } from './dsp/fft.js';
 import { reduceNoiseSpectral } from './dsp/noiseReduction.js';
 import { getPeakDb, getRmsDb, getWeightedRmsDb, findSilenceRegions } from './analysis.js';
 import { findAmbientTrack } from './ambient/ambient-model.js';
+import { slotCacheKey, ambientFileCacheKey, cachedBuffer, setCachedBuffer, bumpRev } from './audio/engine/source-registry.js';   // P18b
 
 const P4 = 'p4_'; // IDB key prefix for undo snapshots
 
@@ -102,6 +102,20 @@ function _slotKeyParts(sound, soundId, slotIdx) {
 }
 
 /**
+ * P18b: Cache-Schlüssel der Bearbeitungsquelle. Sound-Slots über die Slot-Identität (`id@rev`, Rückfall Position),
+ * Ambient-Dateivarianten unverändert über (file.id, 0).
+ */
+function _editCacheKey(sound, soundId, slotIdx) {
+  const [keyId, keyIdx] = _slotKeyParts(sound, soundId, slotIdx);
+  return sound?._isAmbientTrack ? ambientFileCacheKey(keyId) : slotCacheKey(keyId, keyIdx, sound?.slots?.[slotIdx]);
+}
+
+/** Gecachter Buffer der Bearbeitungsquelle. */
+function _editBuffer(sound, soundId, slotIdx) {
+  return cachedBuffer(_editCacheKey(sound, soundId, slotIdx));
+}
+
+/**
  * Core: persist a new AudioBuffer as the slot's audio.
  * Saves undo snapshot to IDB, stores new audio, updates slot.
  * Returns the new IDB key.
@@ -122,14 +136,19 @@ async function persistEdit(sound, slotIdx, newBuf, label) {
   await idbSet(currentKey, newB64);
 
   // Update slot sentinel
-  if (sound.slots[slotIdx]) sound.slots[slotIdx].data = IDB_SENTINEL;
+  const slot = sound.slots[slotIdx];
+  if (slot) slot.data = IDB_SENTINEL;
+
+  // P18b: Audioinhalt geändert → Revision +1 (alter Cache-Eintrag entfällt). Ambient-Dateien behalten den Schlüssel (file.id, 0).
+  if (slot && !sound._isAmbientTrack) bumpRev(slot);
 
   // Update live AudioBuffer cache
-  APP.audioBuffers[bk(keyId, keyIdx)] = newBuf;
+  setCachedBuffer(_editCacheKey(sound, sound.id, slotIdx), newBuf);
 
-  // Push undo entry
+  // Push undo entry (P18b, E1: Verweis über die Slot-Kennung, Index als Rückfall)
   historyPush(label, 'sound_audio', {
     soundId:  sound.id,
+    slotId:   slot?.id ?? null,
     slotIdx,
     prevKey:  undoKey,
     nextKey:  currentKey
@@ -155,7 +174,7 @@ export async function editTrimApply(soundId, slotIdx, overrideStart, overrideEnd
   const slot  = sound?.slots[slotIdx];
   if (!sound || !slot) return;
 
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr  = buf.sampleRate;
@@ -186,7 +205,7 @@ export async function editTrimApply(soundId, slotIdx, overrideStart, overrideEnd
 export async function editNormalize(soundId, slotIdx, targetDb = 0) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   let peak = 0;
@@ -224,7 +243,7 @@ export async function editNormalize(soundId, slotIdx, targetDb = 0) {
 export async function editLoudnessNormalize(soundId, slotIdx, opts = {}) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const { targetRmsDb = -18, weighted = true, peakCeilingDb = -1 } = opts;
@@ -257,7 +276,7 @@ export async function editLoudnessNormalize(soundId, slotIdx, opts = {}) {
 export async function editReverse(soundId, slotIdx) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr = buf.sampleRate;
@@ -282,7 +301,7 @@ export async function editReverse(soundId, slotIdx) {
 export async function editFadeIn(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr = buf.sampleRate;
@@ -306,7 +325,7 @@ export async function editFadeIn(soundId, slotIdx, durationSec, curve = 'linear'
 export async function editFadeOut(soundId, slotIdx, durationSec, curve = 'linear') {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr  = buf.sampleRate;
@@ -364,7 +383,7 @@ function _scheduleFadeCurve(gainNode, curve, startVal, endVal, t0, duration) {
 export async function editGainApply(soundId, slotIdx, gainDb) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const linear = Math.pow(10, gainDb / 20);
@@ -385,7 +404,7 @@ export async function editGainApply(soundId, slotIdx, gainDb) {
 export async function editInsertSilence(soundId, slotIdx, atSec, durationSec) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const sr       = buf.sampleRate;
@@ -413,7 +432,7 @@ export async function editInsertSilence(soundId, slotIdx, atSec, durationSec) {
 export async function editRemoveSilence(soundId, slotIdx, thresholdDb = -60) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const threshold = Math.pow(10, thresholdDb / 20);
@@ -453,7 +472,7 @@ export async function editRemoveSilence(soundId, slotIdx, thresholdDb = -60) {
 export async function editTruncateSilence(soundId, slotIdx, opts = {}) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const { thresholdDb = -50, minSilenceDurationSec = 0.5, targetSilenceDurationSec = 0.3 } = opts;
@@ -512,7 +531,7 @@ export async function editTruncateSilence(soundId, slotIdx, opts = {}) {
 export async function editNoiseGate(soundId, slotIdx, thresholdDb = -40, attackMs = 5, releaseMs = 50) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const threshold  = Math.pow(10, thresholdDb / 20);
@@ -559,7 +578,7 @@ export async function editNoiseGate(soundId, slotIdx, thresholdDb = -40, attackM
  */
 export async function learnNoiseProfile(soundId, slotIdx, startSec = 0, durationSec = 0.5) {
   const sound = findSound(soundId);
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   const fftSize = 2048;
@@ -627,7 +646,7 @@ export async function learnNoiseProfile(soundId, slotIdx, startSec = 0, duration
 export async function editNoiseReduce(soundId, slotIdx, opts = {}) {
   const sound = findSound(soundId);
   if (!sound) return;
-  const buf = APP.audioBuffers[bk(..._slotKeyParts(sound, soundId, slotIdx))];
+  const buf = _editBuffer(sound, soundId, slotIdx);
   if (!buf) { toast('Audio nicht geladen', 'err'); return; }
 
   // Rückwärtskompatibel: bisheriger Aufrufer übergibt eine einzelne

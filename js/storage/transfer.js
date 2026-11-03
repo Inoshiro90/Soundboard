@@ -38,7 +38,10 @@ const _fail = error => ({ ok: false, error });
 /** Alle im State vorkommenden IDs (Items, Tracks, Ambient-Dateien) — für kollisionsfreie neue IDs. */
 function _collectIds() {
   const ids = new Set();
-  APP.profiles.forEach(p => { ids.add(p.id); (p.items || []).forEach(i => ids.add(i.id)); });
+  APP.profiles.forEach(p => {
+    ids.add(p.id);
+    (p.items || []).forEach(i => { ids.add(i.id); (i.slots || []).forEach(sl => { if (sl?.id) ids.add(sl.id); }); });   // P18a: Slot-Kennungen
+  });
   (APP.ambient?.profiles || []).forEach(p => {
     ids.add(p.id);
     (p.tracks || []).forEach(t => { ids.add(t.id); (t.files || []).forEach(f => ids.add(f.id)); });
@@ -143,7 +146,8 @@ export async function duplicateSoundToProfile(soundId, targetProfileId) {
   if (!target) return _fail('Zielprofil nicht gefunden');
 
   const copy = _clone(src.item);            // keine Referenz auf das Original
-  copy.id    = _newId(_collectIds());
+  const taken = _collectIds();
+  copy.id    = _newId(taken);
   copy.order = _maxOrder(target.items) + 1;
   if (src.container.id === target.id) copy.name = (copy.name || 'SOUND') + COPY_SUFFIX;
 
@@ -153,6 +157,7 @@ export async function duplicateSoundToProfile(soundId, targetProfileId) {
       const sl = copy.slots[i];
       if (!sl) continue;
       delete sl._idbSlot; delete sl._tempId; delete sl._loading; // reine Editor-Felder
+      sl.id = _newId(taken);   // P18a: Kopie = eigene Quelle mit eigener Slot-Kennung
       sl.data = await _cloneAudioEntry(audioKey(src.item.id, i), audioKey(copy.id, i), sl.data, written);
     }
   } catch (err) {

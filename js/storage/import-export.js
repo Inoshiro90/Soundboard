@@ -11,7 +11,7 @@ import { getPresetById, validatePresetShape, importSinglePresetData, importPrese
 import { CURRENT_REV } from '../audio/engine/registry.js';
 import { mkProfile, mkAmbientProfile, mkMusicProfile } from './factories.js';
 import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
-import { migrateEffects, migratePlaybackSettings, migrateProfileColors, runIdbMigrationIfNeeded } from './migration.js';
+import { migrateEffects, migratePlaybackSettings, migrateProfileColors, migrateSlotIdentity, runIdbMigrationIfNeeded } from './migration.js';
 import { _saveRaw }                        from './persistence.js';
 
 // ─── EXPORT / IMPORT ─────────────────────────────────────────
@@ -311,6 +311,7 @@ async function _importProfileBundle(profileData) {
     if (it.type !== 'sound') continue;
     for (let i = 0; i < (it.slots || []).length; i++) {
       const sl = it.slots[i];
+      if (sl && typeof sl === 'object') delete sl.id;   // P18a: frische Slot-Kennung (vergibt migrateSlotIdentity)
       if (sl && sl.data && !isIdbRef(sl.data)) {
         await idbSet(audioKey(it.id, i), sl.data);
         sl.data = IDB_SENTINEL;
@@ -386,6 +387,7 @@ async function _importSoundItemBundle(itemData) {
   clone.order = items.length ? Math.max(...items.map(x => x.order || 0)) + 1 : 0;
   for (let i = 0; i < (clone.slots || []).length; i++) {
     const sl = clone.slots[i];
+    if (sl && typeof sl === 'object') delete sl.id;   // P18a: frische Slot-Kennung (vergibt migrateSlotIdentity)
     if (sl && sl.data && !isIdbRef(sl.data)) {
       await idbSet(audioKey(newId, i), sl.data);
       sl.data = IDB_SENTINEL;
@@ -467,6 +469,7 @@ export async function importData(file, { onSuccess }) {
           default: toast('Unbekannter Import-Typ', 'err'); return;
         }
         migrateEffects();   // importierte Sounds/Tracks (auch Alt-Exporte mit flachen Effekten) → Pipeline v2
+        migrateSlotIdentity();   // P18a: Slot-Kennungen ergänzen
         await runIdbMigrationIfNeeded();
         _saveRaw();
         onSuccess();
@@ -491,6 +494,7 @@ export async function importData(file, { onSuccess }) {
       migrateEffects();
       migratePlaybackSettings();
       migrateProfileColors();
+      migrateSlotIdentity();   // P18a: Slot-Kennungen ergänzen
       await runIdbMigrationIfNeeded();
       onSuccess();
     } catch(err) { console.error('[storage] import error:', err); toast('Import fehlgeschlagen', 'err'); }

@@ -6,7 +6,7 @@
 import { APP } from '../core/state.js';
 import { toast } from '../notifications.js';
 import { actx, hasAudioContext } from '../audio/context.js';
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, planTempoRate, TARGET_CAPS } from '../audio/fx-pipeline.js';
 import { outputFor, connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
 import { attachSend } from '../audio/engine/reverb-hub.js';               // Phase 4: geteilter Hall auch für Ambient/Rauschen
 import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
@@ -176,7 +176,7 @@ async function _playGeneratorTrack(trackId) {
   _active.set(trackId, { kind: 'generator', src: null, gain: null, timerId: null });
   const ctx = actx();
   const node = await buildNoiseGenerator(ctx, _find(trackId)?.generatorType || 'pink');
-  await _prepareFx(ctx, _find(trackId)?.effects);
+  await _prepareFx(ctx, _find(trackId)?.effects, TARGET_CAPS.noise);   // P17f-3: Generatoren ohne Tempo (keine Rate)
 
   // Re-Check: Track könnte während des (async) Worklet-Ladens gestoppt
   // worden sein.
@@ -207,8 +207,8 @@ async function _playGeneratorTrack(trackId) {
 }
 
 /** Lädt vor dem (synchronen) Graph-Bau das Pitch-Worklet des Contexts — nach jedem await-Re-Check kein weiteres await. */
-async function _prepareFx(ctx, effects) {
-  try { await preparePipelineContext(ctx, resolvePlan(asPipelineEffects(effects)), TARGET_CAPS.ambient); }
+async function _prepareFx(ctx, effects, caps = TARGET_CAPS.ambient) {
+  try { await preparePipelineContext(ctx, resolvePlan(asPipelineEffects(effects)), caps); }
   catch (e) { console.warn('[ambient] FX-Vorbereitung fehlgeschlagen:', e); }
 }
 
@@ -220,20 +220,28 @@ async function _prepareFx(ctx, effects) {
  * Phase 4: der Ausgang von `gainNode` wird HIER verbunden (einziger Ausgang: engine/output.js). Ist der Hall des Plans sendfähig
  * (sendEligibility, Einstellung „Hall: Geteilt“), zweigt Dry/Send HINTER dem gainNode ab (Lautstärke/Fades/Duck wirken auf beides,
  * wie bei Sounds, AE-17) und der Nachhall liegt im geteilten Hub; sonst wie bisher ein eigener Hall pro Stimme.
+ *
+ * Phase 17f-3 (Tempo, Entscheidungen M/O/P): Pufferquellen (Clips) nutzen das Ziel `ambient` mit Tempo — Rate der Quelle =
+ * `runtime.tempoRate` (beim Bau eingefroren), Gegen-Pitch in der Kette. Da jeder Clip seine Kette neu baut, wirkt eine Änderung ab
+ * dem nächsten Clip (Kette, zeitversetzt) bzw. nach Neustart (einzelne Datei im Loop). Generatoren (kein Puffer, keine Rate) nutzen
+ * das Ziel `noise` ohne Tempo. Rate 1 setzt nichts (bisheriger Zustand).
  */
 function _connectWithFx(ctx, src, effects, gainNode, rec = null) {
   const plan  = resolvePlan(asPipelineEffects(effects));
+  const isGen = src.buffer === undefined;
+  const caps  = isGen ? TARGET_CAPS.noise : TARGET_CAPS.ambient;   // P17f-3
   const share = APP.globalSettings?.reverbShare !== false;
   initVoiceBudget(ctx);
   // Phase 3a: geschützte Voice — wird gezählt (verdrängt bei Überlast Sounds), nie degradiert oder entfernt. Kosten mit Send, wenn sendfähig (Phase 4).
   const adm = makeAdmit({ kind: src.buffer === undefined ? 'noise' : 'ambient', share, noDegrade: true })(plan);
   const channels = src.buffer?.numberOfChannels || 2;
   let graph;
-  try { graph = buildPipelineGraph(ctx, plan, { numChannels: channels, caps: TARGET_CAPS.ambient, shareReverb: share }); }
+  try { graph = buildPipelineGraph(ctx, plan, { numChannels: channels, caps, shareReverb: share }); }
   catch (e) { adm.release(); throw e; }
   let sendHandle = null;
   const dispose = () => { try { sendHandle?.dispose(); } finally { try { graph.dispose(); } finally { adm.release(); } } };
   if (graph.detuneSemitones) { try { src.detune.value = graph.detuneSemitones * 100; } catch (e) {} }
+  if (!isGen && graph.runtime.tempoRate !== 1) { try { src.playbackRate.value = graph.runtime.tempoRate; } catch (e) {} }   // P17f-3
   if (graph.input) { src.connect(graph.input); graph.output.connect(gainNode); }
   else src.connect(gainNode);
   if (graph.send) sendHandle = attachSend(ctx, gainNode, { send: graph.send, channels, destination: outputFor(ctx, 'ambient'), scope: 'main' });
@@ -340,7 +348,9 @@ async function _playChainCycle(trackId) {
   const ts = file.trimStart || 0;
   let   te = file.trimEnd ?? buf.duration;
   if (te <= ts) te = buf.duration;
-  const dur = te - ts;
+  const dur = te - ts;                                   // Clip-Länge im Material (Argument von src.start)
+  // P17f-3: Crossfade-Zeiten in Echtzeit — wirksame Clip-Dauer = Material ÷ Tempo (dieselbe Rate wie die Kette, Regel N).
+  const ct  = ambientChainTimes(dur, useCrossfade ? cf.duration : 0, planTempoRate(resolvePlan(asPipelineEffects(t.effects))));
 
   const gainNode = ctx.createGain();
   // Neuer Clip der Kette → neuer Zufallswert. Bewusst erst NACH dem asynchronen Decode und
@@ -359,8 +369,7 @@ async function _playChainCycle(trackId) {
   if (useCrossfade && prevSrc) {
     // Überlappender Wechsel: neue Variante blendet ein, während die alte
     // (separat, parallel) ausblendet — beide über dieselbe Crossfade-Dauer/-Kurve.
-    const d = Math.min(cf.duration, dur);
-    scheduleFadeCurve(gainNode, cf.curve || 'linear', 0, target, now, d);
+    scheduleFadeCurve(gainNode, cf.curve || 'linear', 0, target, now, ct.d);
   } else {
     // Kein Crossfade (aus, oder allererste Variante der Kette): bisheriges
     // Verhalten — nur beim allerersten Clip einblenden, danach nahtlos voll.
@@ -384,7 +393,7 @@ async function _playChainCycle(trackId) {
     // technisch noch bis zu ihrem eigenen geplanten Ende weiter, wird aber
     // durch die Rampe schon vorher unhörbar; explizites stop() danach
     // räumt den Knoten zuverlässig auf (analog audio/playback.js Sound-Crossfade).
-    const d = Math.min(cf.duration, dur);
+    const d = ct.d;
     try {
       prevGain.gain.cancelScheduledValues(now);
       prevGain.gain.setValueAtTime(prevGain.gain.value, now);
@@ -398,7 +407,7 @@ async function _playChainCycle(trackId) {
     // Nächste Variante VOR dem natürlichen Ende dieser hier anstoßen, statt
     // erst in onended (das wäre zu spät für einen Overlap) — Vorlaufzeit =
     // Klip-Dauer minus Crossfade-Dauer (min. 0, falls Klip kürzer ist).
-    const leadMs = Math.max(0, dur - Math.min(cf.duration, dur)) * 1000;
+    const leadMs = ct.leadMs;
     rec.timerId = setTimeout(() => {
       const cur = _active.get(trackId);
       if (!cur || cur.kind !== 'chain' || cur.src !== src) return; // inzwischen gestoppt/ersetzt
@@ -425,6 +434,17 @@ async function _playChainCycle(trackId) {
 
   src.start(0, ts, dur);
   _updateRowPlayState(trackId, true);
+}
+
+/**
+ * P17f-3: Zeiten des Crossfades in der Kette (Echtzeit). `dur` = Clip im Material, `cfDur` = Crossfade-Dauer, `rate` = Tempo-Rate.
+ * d = Blenddauer (höchstens die wirksame Clip-Dauer), leadMs = Start der nächsten Variante. Rate 1 = bisherige Werte. Rein, für Tests.
+ */
+export function ambientChainTimes(dur, cfDur, rate = 1) {
+  const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
+  const eff = r === 1 ? dur : dur / r;
+  const d = Math.min(Math.max(0, cfDur || 0), eff);
+  return { eff, d, leadMs: Math.max(0, eff - d) * 1000 };
 }
 
 /** Plays one shot of an interval-mode track (picking a file variant), then schedules the next one after a random/fixed delay. */

@@ -60,7 +60,7 @@ export function makeAdmit({ kind = 'sound', id = null, loop = false, ref = {}, s
     const r = vm.requestVoice({ kind, id, loop, costFor, noDegrade, fadeOut: ms => fadeOutVoice(ref, ms) });
     const finalPlan = r.degrade ? applyDegrade(plan, r.degrade) : plan;
     const points = vm.voices.get(r.voiceId)?.cost.points ?? 0;
-    return { plan: finalPlan, release: r.release, degraded: !!r.degrade, overBudget: r.overBudget, points, heavy: points > 40 || !!plan.hasPitch };
+    return { plan: finalPlan, release: r.release, degraded: !!r.degrade, overBudget: r.overBudget, points, heavy: points > 40 || !!plan.hasPitch || !!plan.tempo?.counter };   // P17f: Gegen-Pitch = Worklet-Aufbau
   };
 }
 

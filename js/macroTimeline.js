@@ -14,7 +14,7 @@
 import { APP }    from './core/state.js';
 import { CItems, resolveItemById } from './core/state.js';
 import './notifications.js';
-import { bk } from './utils.js';
+import { bufferFor } from './audio/engine/source-registry.js';   // P18b
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const TRACK_H    = 36;   // px per row
@@ -228,7 +228,7 @@ export function previewPlay(audioCtx) {
     const sound = resolveItemById(targetId);
     if (!sound) return;
     const slotIdx = sound.curSlot || 0;
-    const buf   = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
+    const buf   = bufferFor(sound, slotIdx) || bufferFor(sound, 0);
     if (!buf)   return;
 
     // Respect trim — same as playSound() in audio/playback.js
@@ -413,7 +413,7 @@ function _stepDuration(step) {
     const sound = resolveItemById(step.targetId);
     if (sound) {
       const slotIdx = sound.curSlot || 0;
-      const buf     = APP.audioBuffers[bk(sound.id, slotIdx)] || APP.audioBuffers[bk(sound.id, 0)];
+      const buf     = bufferFor(sound, slotIdx) || bufferFor(sound, 0);
       if (buf) {
         // Respect trimming — same logic as playSound() in audio/playback.js
         const slot = sound.slots?.[slotIdx] || sound.slots?.[0];

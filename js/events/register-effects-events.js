@@ -5,16 +5,20 @@
  */
 
 import { APP, CItems } from '../core/state.js';
-import { uid, bk } from '../utils.js';
+import { uid } from '../utils.js';
 import { toast } from '../notifications.js';
 import { stopItem } from '../audio/playback.js';
-import { previewSound, previewNoiseGenerator, stopEffectPreview, setPreviewLoop, setPreviewBypass, schedulePreviewUpdate } from '../audio/preview.js';
+import { previewSound, previewNoiseGenerator, previewMusicTrack, stopEffectPreview, setPreviewLoop, setPreviewBypass, schedulePreviewUpdate } from '../audio/preview.js';
 import '../presets/effect-presets-data.js';
 import { invalidateBuffer } from '../audioCache.js';
 import { renderGrid } from '../ui/grid.js';
 import { getSlotEditIndex } from '../ui/slot-editor.js';
-import { idbDelete, audioKey, normalizeSlotAudioStorage } from '../db.js';
+import { idbDelete, idbGet, audioKey, normalizeSlotAudioStorage, IDB_SENTINEL } from '../db.js';
+import { _musicEditId, findMusicTrack } from '../dialogs/music-modal.js';   // P17g: Musik-Vorschau (Entwurf des Musik-Editors)
+import { musicBlob } from '../music/music-fx.js';
 import { exportSoundItem } from '../storage/import-export.js';
+import { collectEntityIds, collectSlotIds, ensureSlotIdentity } from '../storage/normalization.js';   // P18a
+import { positionKey, sourceKey, cachedBuffer, dropCachedBuffer, draftBuffer, syncLiveCacheAfterSave } from '../audio/engine/source-registry.js';   // P18b
 import '../export.js';
 import '../audio/playback.js';
 import '../history.js';
@@ -306,27 +310,29 @@ export function registerEffectsEvents() {
       const { _tempId, _idbSlot, _loading, ...rest } = sl; // remove temporary editor-only fields
       return rest;
     });
+    // P18a: jeder Slot hat eine stabile Kennung `id`. Neue Slots erhalten eine; vorhandene bleiben, sofern sie nicht
+    // mit einer Kennung außerhalb dieses Sounds kollidieren. Kennungen der Slots des bearbeiteten Sounds sind frei.
+    {
+      const taken = collectEntityIds(APP);
+      collectSlotIds(APP, APP.editId).forEach(id => taken.add(id));
+      ensureSlotIdentity(cleanSlots, taken);
+    }
 
     if (APP.editId) {
       const s = items.find(x => x.id === APP.editId);
       if (!s) { toast('Sound nicht gefunden', 'err'); return; }
-      const oldSlotCount = (s.slots || []).length;
+      const oldSlots = (s.slots || []).slice();
+      const oldSlotCount = oldSlots.length;
       Object.assign(s, { name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, effects, playback });
-      // Der Laufzeit-Cache (APP.audioBuffers, bk()-Keys) ist POSITIONSBEZOGEN. Da Slots
-      // reordert/ersetzt/entfernt worden sein können, wird er für den gesamten (alten UND
-      // neuen) Index-Bereich zunächst komplett invalidiert und danach NUR mit sicher
-      // korrekten Buffern (aus _ed_N, das ui/slot-editor.js bei jedem Reorder synchron zur
-      // jeweiligen Slot-Objekt-Identität hält) neu befüllt. Für alle übrigen Slots lädt
-      // getOrDecodeBuffer() beim nächsten Abspielen zuverlässig aus dem gerade
-      // normalisierten IndexedDB nach — dadurch kann kein veralteter positionaler
-      // Cache-Eintrag (z.B. von einer VOR dem Reorder an diesem Index liegenden Datei)
-      // mehr fälschlich weiterverwendet werden.
+      // P18b: Der Laufzeit-Cache ist über die Slot-Identität (`id@rev`) geschlüsselt, nicht mehr über die Position.
+      // Gezielt statt komplett: Ein Slot mit unveränderter Kennung UND Revision behält seinen Eintrag (Umordnen ändert
+      // den Schlüssel nicht; IndexedDB wurde oben mitverschoben). Entfernte Slots und alte Revisionen (Datei ersetzt)
+      // verlieren ihren Eintrag; neue Schlüssel werden verworfen und aus dem Entwurfspuffer neu befüllt. Ohne
+      // Entwurfspuffer lädt getOrDecodeBuffer() beim nächsten Abspielen aus IndexedDB nach.
+      syncLiveCacheAfterSave(s.id, oldSlots, cleanSlots, APP.editSlots);
+      // Positionsschlüssel (Altbestand ohne Kennung) im alten und neuen Bereich verwerfen — früheres Verhalten.
       const maxIdx = Math.max(oldSlotCount, cleanSlots.length);
-      for (let i = 0; i < maxIdx; i++) invalidateBuffer(s.id, i);
-      cleanSlots.forEach((sl, i) => {
-        const edBuf = APP.audioBuffers[`_ed_${i}`];
-        if (edBuf) APP.audioBuffers[bk(s.id, i)] = edBuf;
-      });
+      for (let i = 0; i < maxIdx; i++) dropCachedBuffer(positionKey(s.id, i));
     } else {
       // Use the pre-generated stable ID (so IDB audio keys already match)
       const id    = APP._pendingSoundId || uid();
@@ -340,12 +346,9 @@ export function registerEffectsEvents() {
         if (firstPH >= 0) { newS.order = items[firstPH].order; items.splice(firstPH, 1, newS); }
         else              { newS.order = items.length; items.push(newS); }
       }
-      // Copy edit-modal buffers into the main cache for immediate playback
-      cleanSlots.forEach((sl, i) => {
-        invalidateBuffer(id, i);
-        const edBuf = APP.audioBuffers[`_ed_${i}`];
-        if (edBuf) APP.audioBuffers[bk(id, i)] = edBuf;
-      });
+      // Copy edit-modal buffers into the main cache for immediate playback (P18b: unter der Slot-Identität)
+      syncLiveCacheAfterSave(id, [], cleanSlots, APP.editSlots);
+      cleanSlots.forEach((sl, i) => dropCachedBuffer(positionKey(id, i)));
     }
     // Erfolgreich gespeichert — Guard für dieses programmgesteuerte
     // Schließen deaktivieren, damit danach keine Verwerfen-Rückfrage erscheint.
@@ -383,6 +386,9 @@ export function registerEffectsEvents() {
     if (APP.audioPreview.playing || APP.audioPreview.loading) { stopEffectPreview(); return; }
 
     if (_fxEditContext.kind === 'ambient') { await _startAmbientPreview(); return; }
+    // P17g: Musik hat einen eigenen Quellpfad (Media-Element). Nie in den Sound-Pfad fallen: APP.editSlots gehört dort dem
+    // zuletzt bearbeiteten Sound bzw. Ambient-Track (Fehler aus Hörliste 17f-2, Punkt 2).
+    if (_fxEditContext.kind === 'music') { await _startMusicPreview(); return; }
 
     const slots = APP.editSlots;
     const hasData = slots.some(sl => sl && sl.data);
@@ -412,9 +418,11 @@ export function registerEffectsEvents() {
       vol, pitch, loop: !!APP.audioPreview.loop, fade: false, random: false, curSlot: 0, effects, playback
     };
 
-    // Quelle als Buffer-Referenz: ein in dieser Sitzung geladener/ersetzter Buffer (_ed_N) vor einem unveränderten, unter der
+    // Quelle als Buffer-Referenz: ein in dieser Sitzung geladener/ersetzter Entwurfspuffer vor einem unveränderten, unter der
     // ECHTEN Sound-ID gecachten Buffer. Fehlt beides, lädt `_loadEditBuffer` nach (innerhalb des Token-Schutzes).
-    const buffer = APP.audioBuffers[`_ed_${slotIdx}`] || (APP.editId ? APP.audioBuffers[bk(APP.editId, slotIdx)] : null) || null;
+    // P18b: Entwurfspuffer am Slot-Objekt, sonst der Live-Eintrag derselben Identität (`id@rev`; ersetzte Datei = neue Revision).
+    const draftSlot = slots[slotIdx];
+    const buffer = draftBuffer(draftSlot) || (APP.editId ? cachedBuffer(sourceKey(draftSlot)) : null) || null;
 
     try {
       await previewSound(tempSound, slotIdx, { buffer, loadBuffer: _loadEditBuffer });
@@ -425,14 +433,15 @@ export function registerEffectsEvents() {
   }
 
   /**
-   * Buffer des Editor-Entwurfs für Slot `i`: `_ed_N` wird beim Öffnen asynchron vorgeladen
+   * Buffer des Editor-Entwurfs für Slot `i`: der Entwurfspuffer wird beim Öffnen asynchron vorgeladen
    * (_preloadEditBuffers, Audio liegt nur als IDB-Verweis vor). Ein schneller Klick könnte vor
    * dem Abschluss kommen — dann hier nachladen (idempotent: bereits vorhandene Buffer werden
    * übersprungen). Läuft innerhalb des Token-Schutzes von startEffectPreview().
    */
   async function _loadEditBuffer(i) {
-    if (!APP.audioBuffers[`_ed_${i}`]) await _preloadEditBuffers();
-    return APP.audioBuffers[`_ed_${i}`] || null;
+    const sl = APP.editSlots[i];
+    if (!draftBuffer(sl)) await _preloadEditBuffers();
+    return draftBuffer(sl) || null;
   }
 
   /**
@@ -486,10 +495,38 @@ export function registerEffectsEvents() {
       }
     };
 
-    const buffer = APP.audioBuffers[`_ed_${slotIdx}`] || null;   // Entwurfs-Buffer als Referenz (kein Alias im Cache)
+    const buffer = draftBuffer(slots[slotIdx]) || null;   // Entwurfs-Buffer als Referenz (kein Alias im Cache)
 
     try {
-      await previewSound(tempSound, slotIdx, { buffer, loadBuffer: _loadEditBuffer });
+      await previewSound(tempSound, slotIdx, { buffer, loadBuffer: _loadEditBuffer });   // P17f-3: Ambient führt Tempo aus (Vorschau = Live; Neustart bei Tempo-Änderung wie bei Sounds)
+    } catch (e) {
+      console.error('Preview error:', e);
+      toast('Vorschau-Fehler: ' + e.message, 'err');
+    }
+  }
+  /**
+   * MUSIK-Vorschau (Phase 17g) — wie die Ambient-Vorschau isoliert von der normalen Wiedergabe (eigenes Media-Element in
+   * audio/preview.js; die Live-Player bleiben unberührt). Spielt den ENTWURF: die gespeicherte Audiodatei des Stücks (der
+   * Musik-Editor ersetzt keine Datei), die Effekte aus dem Dialog und die Lautstärke aus dem Musik-Editor. Master- und
+   * Musik-Master-Lautstärke gelten wie bei den anderen Vorschauen nicht.
+   */
+  async function _startMusicPreview() {
+    const t = findMusicTrack(_musicEditId);
+    if (!t || !t.data) { toast('Keine Audiodatei geladen', 'err'); return; }
+    const vol = parseFloat(document.getElementById('musicEditVol')?.value);
+    try {
+      await previewMusicTrack({
+        id:        '_musicpreview_' + t.id,
+        name:      t.name || 'Preview',
+        vol:       Number.isFinite(vol) ? vol : (t.vol ?? 1),
+        trimStart: t.trimStart || 0,
+        effects:   currentPreviewEffects(),
+        // Eigene Blob-URL der Vorschau (preview.js gibt sie frei) — nicht der Cache _blobUrls der Live-Wiedergabe.
+        loadUrl: async () => {
+          const b64 = t.data === IDB_SENTINEL ? await idbGet(audioKey(t.id, 0)) : t.data;
+          return b64 ? URL.createObjectURL(musicBlob(b64)) : null;
+        }
+      });
     } catch (e) {
       console.error('Preview error:', e);
       toast('Vorschau-Fehler: ' + e.message, 'err');

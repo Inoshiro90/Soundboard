@@ -339,6 +339,36 @@ const pitchInfo = q => {
 const pitchLatency = q => (!pitchActive(q) ? 0 : pitchAlgorithm(q) === 'music' ? PITCH_PV_LATENCY : pitchAlgorithm(q) === 'voice' ? PITCH_VOICE_LATENCY : 0);
 /** Kosten: `legacy` gemessen 28 (P0/M-1); `music` und `voice` Schätzwert gleicher Höhe bis zur Messung in 17e (`voice` ≈ 1 % Echtzeit je Kanal [S Node, Prototyp]). */
 const pitchCost = q => (pitchAlgorithm(q) === 'music' ? { base: 28, measured: false, estimate: 'stft' } : pitchAlgorithm(q) === 'voice' ? { base: 28, measured: false, estimate: 'wsola' } : { base: 28, measured: true });
+/**
+ * Tempo (Phase 17f, Entscheidungen M/N/O): Abspielrate der QUELLE mit optionalem Gegen-Pitch („Tonhöhe halten“, Time-Stretch).
+ * Das Modul darf in jeder Stufe stehen, wirkt aber immer auf die gesamte Wiedergabe (dokumentierte Ausnahme der Layer-Reihenfolge,
+ * fx-pipeline.js). Es baut KEINEN Knoten im Layer (`planLevel`); die Plan-Auflösung wählt das erste aktive Tempo-Modul (Regel N),
+ * die Runtime setzt den Gegen-Pitch (Algorithmus `voice`, Faktor 1/Rate) an den Kettenanfang.
+ */
+export const TEMPO_RANGE = [0.5, 2];
+/** Module, die auf Plan-Ebene wirken statt im Layer (zählen nicht als klingendes Modul eines Layers). */
+export const PLAN_LEVEL_KEYS = ['tempo'];
+export const isPlanLevelKey = k => PLAN_LEVEL_KEYS.includes(k);
+/** Rate (geklemmt 0,5 … 2, fehlend 1) und „Tonhöhe halten“ (Standard an; nur 'off' schaltet ab). */
+export const tempoValues = q => ({ rate: _clamp(TEMPO_RANGE[0], TEMPO_RANGE[1], _fin(q?.rate, 1)), keepPitch: q?.keepPitch !== 'off' });
+/** Parameter des Gegen-Pitch-Knotens zur Rate `rate`: `voice`, Faktor 1/Rate (über Halbtöne, exakt 2^(st/12) = 1/Rate). */
+export const tempoCounterParams = rate => ({ enabled: true, semitones: -12 * Math.log2(rate), cents: 0, mix: 1, formant: 0, algorithm: 'voice' });
+/** Nachklang des Gegen-Pitch (wie `pitchShift`: Latenz bei 22,05 kHz, längster Fall). */
+export const TEMPO_COUNTER_TAIL_S = PITCH_VOICE_LATENCY / 22050;
+/** Hinweiszeile der Karte „Tempo“ (`ui.info`): Wirkbereich, Dauer, Tonhöhe und Verzögerung des Gegen-Pitch. */
+const tempoInfo = q => {
+  const { rate, keepPitch } = tempoValues(q);
+  const scope = 'Wirkt auf die gesamte Wiedergabe, unabhängig von der Stufe.';
+  if (Math.abs(rate - 1) < 1e-9) return scope;
+  const f = (1 / rate).toFixed(2).replace('.', ',');
+  const dur = `Dauer × ${f} (${rate < 1 ? 'länger' : 'kürzer'})`;
+  const n = PITCH_VOICE_LATENCY;
+  const noWorklet = typeof globalThis.window !== 'undefined' && (globalThis.isSecureContext === false || typeof globalThis.AudioWorkletNode === 'undefined');
+  const pitch = !keepPitch ? 'die Tonhöhe ändert sich mit (wie ein Band)'
+    : noWorklet ? 'Tonhöhe halten ist hier nicht verfügbar (kein AudioWorklet) — die Tonhöhe ändert sich mit'
+      : `Tonhöhe gehalten (Verzögerung ${n} Samples ≈ ${Math.round(n / 48)}–${Math.round(n / 44.1)} ms)`;
+  return `${scope} ${dur}; ${pitch}.`;
+};
 /** Ringmodulation (15c): Trägerformen; `sine` = bisheriger Graph. */
 export const RINGMOD_WAVEFORMS = ['sine', 'square', 'triangle', 'sawtooth'];
 /** Nachklang: nur Tape (Vibrato-Verzögerung, Grund + größte Auslenkung); sonst 0 wie bisher. */
@@ -796,6 +826,14 @@ export const MODULES = [
       // (Mindestverzögerung, ≈ 2,7 ms bei 48 kHz): jeder Umlauf verschiebt erneut (Barber-Pole/Spiralklang). 0 ↔ > 0 jeweils Neubau, sonst live.
       stereoSpread: { def: 0, range: FREQ_SHIFT_SPREAD_RANGE, unit: 'Hz', label: 'Stereo-Spreizung', ui: { min: 0, max: 200, step: 1, digits: 0 } },
       feedback: { def: 0, range: [0, FREQ_SHIFT_FEEDBACK_MAX], label: 'Rückkopplung', ui: { min: 0, max: FREQ_SHIFT_FEEDBACK_MAX, step: 0.01, percent: true } }
+    } },
+  // Phase 17f: Tempo (Plan-Ebene, siehe tempoValues). Kein Stufenhinweis (in allen Stufen erlaubt), kein Knoten im Layer, eigene Kosten 0 —
+  // der Gegen-Pitch zählt einmal je Plan (cost.js planCost, runtime.cost). layerOrder −10: vor dem Pitch-Knoten (nur für Ordnungsprüfungen).
+  { key: 'tempo', ui: { generated: true, info: tempoInfo }, family: 'time', label: 'Tempo', layerOrder: -10, consumers: ALL_CONSUMERS, planLevel: true,
+    needsWorklet: true, workletModules: ['stft'], cost: { base: 0, measured: true },
+    params: {
+      rate: { def: 1, range: TEMPO_RANGE, unit: '×', label: 'Tempo', ui: { min: 0.5, max: 2, step: 0.01, scale: 'log', digits: 2 } },
+      keepPitch: { def: 'on', enum: ['on', 'off'], label: 'Tonhöhe', ui: { options: { on: 'halten (Time-Stretch)', off: 'folgt dem Tempo (wie ein Band)' } } }
     } }
 ];
 

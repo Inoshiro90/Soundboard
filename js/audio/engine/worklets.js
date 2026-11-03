@@ -76,6 +76,8 @@ export function workletsForPlan(plan, caps) {
       if (pitchActive(ps)) ids.add(pitchAlgorithm(ps) === 'legacy' ? 'pitch' : 'stft');
     }
   }
+  // P17f: Gegen-Pitch des Tempos (Tonhöhe halten) im Worklet `stft` (Algorithmus `voice`), nur bei Zielen mit caps.tempo.
+  if (plan?.tempo?.counter && caps?.tempo && caps?.pitch === 'worklet') ids.add('stft');
   // P10c: Hüllkurvenfolger, wenn Wah-Wah/Auto-Filter aktiv von der Hüllkurve gesteuert werden.
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => ['wahwah', 'autoFilter'].some(k => s.params?.[k]?.enabled && s.params[k].source === 'envelope'))) {
     for (const id of workletsOfModule('autoFilter')) ids.add(id);

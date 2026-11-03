@@ -10,7 +10,8 @@
  * Each entry: { label, type, snapshot }
  * Snapshot shapes:
  *   type 'sound_params'  → { soundId, before, after }   (effects/vol/pitch/name etc.)
- *   type 'sound_audio'   → { soundId, slotIdx, prevKey } (previous IDB audio key)
+ *   type 'sound_audio'   → { soundId, slotId, slotIdx, prevKey, nextKey } (previous IDB audio key)
+ *                           P18b (E1): aufgelöst über `slotId`; `slotIdx` nur Rückfall für Einträge ohne Kennung.
  *   type 'timeline'      → { tracks: [...] }
  *   type 'profile_items' → { profileId, items: [...] }   (add/remove/reorder)
  *
@@ -21,8 +22,8 @@ import { APP } from './core/state.js';
 import { toast } from './notifications.js';
 import { idbGet, idbSet, audioKey, IDB_SENTINEL } from './db.js';
 import { decodeAudio } from './audio/playback.js';
-import { bk } from './utils.js';
 import { findAmbientTrack } from './ambient/ambient-model.js';
+import { resolveSlotIndex, slotCacheKey, ambientFileCacheKey, dropCachedBuffer, bumpRev } from './audio/engine/source-registry.js';   // P18b
 
 const MAX = () => APP.history.maxSize || 50;
 
@@ -85,13 +86,16 @@ async function _apply(entry, direction) {
   }
 
   else if (type === 'sound_audio') {
-    const { soundId, slotIdx, prevKey, nextKey } = data;
+    const { soundId, slotId, prevKey, nextKey } = data;
     const restoreKey = isUndo ? prevKey : nextKey;
     if (!restoreKey) return;
     const b64 = await idbGet(restoreKey);
     if (!b64) { toast('Audio-Snapshot nicht mehr verfügbar', 'err'); return; }
     const sound = _findSound(soundId);
     if (!sound) return;
+    // P18b (E1): aktuelle Position des Slots über seine Kennung — nach Umordnen nicht mehr die gespeicherte.
+    const slotIdx = resolveSlotIndex(sound, slotId, data.slotIdx);
+    if (slotIdx < 0) { toast('Slot existiert nicht mehr', 'err'); return; }
     // Ambient-Dateivarianten werden unter ihrer EIGENEN id +
     // festem Index 0 abgelegt (s. editor.js: _slotKeyParts()), nicht unter
     // (trackId, slotIdx) — dieselbe Schlüsselbasis hier verwenden, sonst
@@ -101,8 +105,13 @@ async function _apply(entry, direction) {
       : [soundId, slotIdx];
     const currentKey = audioKey(keyId, keyIdx);
     await idbSet(currentKey, b64);
-    if (sound.slots[slotIdx]) sound.slots[slotIdx].data = IDB_SENTINEL;
-    decodeAudio(bk(keyId, keyIdx), b64);
+    const slot = sound.slots[slotIdx];
+    if (slot) slot.data = IDB_SENTINEL;
+    // P18b: Ambient-Dateien über (file.id, 0); Sound-Slots erhalten eine neue Revision (alter Cache-Eintrag entfällt).
+    let cacheKey;
+    if (sound._isAmbientTrack) { cacheKey = ambientFileCacheKey(keyId); dropCachedBuffer(cacheKey); }
+    else { if (slot) bumpRev(slot); cacheKey = slotCacheKey(keyId, keyIdx, slot); dropCachedBuffer(cacheKey); }
+    decodeAudio(cacheKey, b64);
     _triggerRender();
   }
 

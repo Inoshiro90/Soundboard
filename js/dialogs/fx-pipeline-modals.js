@@ -21,10 +21,10 @@
  * Kein innerHTML mit Nutzerdaten (Preset-/Layer-Namen können benutzerdefiniert sein): nur textContent und iconSvg().
  */
 
-import { _fxEditContext, readEffectsFromUI, loadLayerParamsToForm, readLayerParamsFromForm, isLayerFormDirty, resetLayerForm, wireLayerForm, updateEffectSectionVisibility } from './sound-modal.js';
+import { _fxEditContext, readEffectsFromUI, loadLayerParamsToForm, readLayerParamsFromForm, isLayerFormDirty, resetLayerForm, wireLayerForm, updateEffectSectionVisibility, getFxEditor } from './sound-modal.js';
 import { getDraft, commitStage, initFxPipelineEditor, layerLabel, render as renderOverview } from '../ui/fx-pipeline-editor.js';
 import {
-  STAGE_ORDER, PIPELINE_STAGES, findLayer, moveLayer, duplicateLayer, removeLayer, isLayerModified, fillLayerParams, sparsifyParams
+  STAGE_ORDER, PIPELINE_STAGES, findLayer, moveLayer, duplicateLayer, removeLayer, isLayerModified, fillLayerParams, sparsifyParams, tempoUsages
 } from '../audio/fx-pipeline.js';
 import { addPresetLayer, addManualLayer } from '../fx-model.js';
 import { getPresetById, getPresetsByStage, presetToLayerInit, PRESET_GROUPS, isUserPreset } from '../presets.js';
@@ -39,10 +39,11 @@ const clone = x => JSON.parse(JSON.stringify(x));
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-/** Stufen-Modal: Stufe + Arbeitskopie (M.eff = Kopie des GANZEN Drafts, damit die reinen Operationen laufen). */
-const M = { stage: null, eff: null, baseline: '', dragId: null };
-/** Layer-Modal: bearbeiteter Layer (Kopie) + Änderungsmerker. */
-const L = { id: null, stage: null, draft: null, touched: false };
+/** Stufen-Modal: Stufe + Arbeitskopie (M.eff = Kopie des GANZEN Drafts, damit die reinen Operationen laufen).
+ *  `tempoStages` (P17f): ANDERE Stufen, in denen „Dieses Tempo verwenden“ Tempo-Module ausgeschaltet hat — werden mit „Übernehmen“ mit übernommen. */
+const M = { stage: null, eff: null, baseline: '', dragId: null, tempoStages: new Set() };
+/** Layer-Modal: bearbeiteter Layer (Kopie) + Änderungsmerker. `tempoTakeover` (P17f): Nutzer hat „Dieses Tempo verwenden“ gewählt. */
+const L = { id: null, stage: null, draft: null, touched: false, tempoTakeover: false };
 let _wired = false, _stageGuard = null, _layerGuard = null, _macroBar = null;
 
 // ─── KONTEXT ─────────────────────────────────────────────────
@@ -69,12 +70,12 @@ function _hide(id) { bootstrap.Modal.getInstance($(id))?.hide(); }
 // ─── EBENE 2 · STUFE VERWALTEN ───────────────────────────────
 
 const _stageObj = () => M.eff?.stages[M.stage];
-const _stageDirty = () => !!M.eff && JSON.stringify(_stageObj()) !== M.baseline;
+const _stageDirty = () => !!M.eff && (JSON.stringify(_stageObj()) !== M.baseline || M.tempoStages.size > 0);
 
 export function openStageModal(stage) {
   const draft = getDraft();
   if (!draft || !STAGE_ORDER.includes(stage)) return;
-  M.stage = stage; M.eff = clone(draft); M.baseline = JSON.stringify(M.eff.stages[stage]);
+  M.stage = stage; M.eff = clone(draft); M.baseline = JSON.stringify(M.eff.stages[stage]); M.tempoStages = new Set();
   _renderStageModal();
   _stageGuard?.arm();
   _show('fxStageModal');
@@ -86,7 +87,7 @@ function _iconBtn(icon, label, act, { disabled = false } = {}) {
   return b;
 }
 
-function _layerRow(layer, idx, count) {
+function _layerRow(layer, idx, count, tempoIdle = null) {
   const label = layerLabel(layer);
   const li = el('li', 'fx-layer' + (layer.enabled ? '' : ' is-off'));
   li.dataset.id = layer.id; li.draggable = true;
@@ -103,6 +104,7 @@ function _layerRow(layer, idx, count) {
   if (layer.presetId && !preset) name.appendChild(el('span', 'fx-layer__tag fx-layer__tag--warn', 'Preset fehlt'));
   else if (preset && isLayerModified(layer, preset.effects)) name.appendChild(el('span', 'fx-layer__tag', 'angepasst'));
   if (layer.stageAuto) { const t = el('span', 'fx-layer__tag fx-layer__tag--warn', 'Stufe prüfen'); t.title = 'Die Stufe wurde automatisch zugeordnet — bitte prüfen'; name.appendChild(t); }
+  if (tempoIdle?.has(layer.id)) { const t = el('span', 'fx-layer__tag fx-layer__tag--warn', 'Tempo unwirksam'); t.title = 'Ein anderes Tempo-Modul wirkt (es gilt das erste aktive in der Reihenfolge Quelle → Hörer)'; name.appendChild(t); }
 
   const acts = el('span', 'fx-layer__actions');
   acts.append(
@@ -126,7 +128,8 @@ function _renderStageModal(focusId) {
   $('fxStageEnabledText').textContent = st.enabled ? 'Stufe aktiv' : 'Stufe deaktiviert — Layer bleiben gespeichert, werden aber nicht verarbeitet';
 
   const list = $('fxStageLayers');
-  const rows = st.layers.map((l, i) => _layerRow(l, i, st.layers.length));
+  const idle = new Set(tempoUsages(M.eff).filter(u => u.counted && !u.effective).map(u => u.layerId));   // P17f
+  const rows = st.layers.map((l, i) => _layerRow(l, i, st.layers.length, idle));
   if (!rows.length) rows.push(el('li', 'fx-layers__empty u-text-muted u-text-badge', 'Keine Layer — diese Stufe wird übersprungen. Preset oder manuellen Layer hinzufügen.'));
   list.replaceChildren(...rows);
   if (focusId) list.querySelector(`[data-id="${focusId}"] [data-act="edit"]`)?.focus();
@@ -161,6 +164,7 @@ function _moveTo(srcId, dstId) {
 
 function _applyStage() {
   commitStage(M.stage, _stageObj());
+  for (const s of M.tempoStages) if (s !== M.stage) commitStage(s, M.eff.stages[s]);   // P17f: im Layer-Dialog ausgeschaltete Tempo-Module anderer Stufen
   _stageGuard?.disarm();
   _hide('fxStageModal');
 }
@@ -250,8 +254,87 @@ export function currentPreviewEffects() {
   if (L.draft) {
     const f = findLayer(fx, L.id);
     if (f) f.layer.params = sparsifyParams(_layerParamsNow());
+    if (f && L.tempoTakeover && fillLayerParams(f.layer.params).tempo?.enabled) disableOtherTempos(fx, L.id);   // P17f: Vorschau folgt der Wahl
   }
   return fx;
+}
+
+// ─── TEMPO (Phase 17f, Regel N) ──────────────────────────────
+
+/** Schaltet in `fx` alle Tempo-Module außer dem des Layers `keepId` aus. REIN bis auf `fx`. Rückgabe: betroffene Stufen. */
+export function disableOtherTempos(fx, keepId) {
+  const touched = new Set();
+  for (const u of tempoUsages(fx)) {
+    if (u.layerId === keepId) continue;
+    const f = findLayer(fx, u.layerId); if (!f) continue;
+    const full = fillLayerParams(f.layer.params);
+    full.tempo = { ...full.tempo, enabled: false };
+    f.layer.params = sparsifyParams(full);
+    touched.add(u.stage);
+  }
+  return touched;
+}
+
+/** Beschriftung einer Tempo-Fundstelle, z. B. „Medium · Layer 2 („Radio“)“. */
+function _tempoWhere(fx, u) {
+  const f = findLayer(fx, u.layerId);
+  return `${PIPELINE_STAGES[u.stage].label} · Layer ${u.layerIndex + 1}${f ? ` („${layerLabel(f.layer)}“)` : ''}`;
+}
+
+/** Arbeitskopie (M.eff) mit dem Tempo-Zustand des Formulars für den bearbeiteten Layer. */
+function _effWithForm(state) {
+  const fx = clone(M.eff); const f = findLayer(fx, L.id);
+  if (f) { const full = fillLayerParams(f.layer.params); full.tempo = { ...state.tempo }; f.layer.params = sparsifyParams(full); }
+  return fx;
+}
+
+/**
+ * Hinweise zum Tempo für die Karte im Layer-Dialog: unwirksam (anderes Tempo wirkt) oder die vorgemerkte Übernahme; bei Musik
+ * (17f-2) und Ambient (17f-3) zusätzlich der Zeitpunkt der Wirkung (Regel P). Rückgabe { tempo: Text } oder {}.
+ */
+export function tempoNote({ kind, fx, layerId, takeover }) {
+  if (kind && !TEMPO_KINDS.includes(kind)) return {};
+  const n = _tempoRuleNote(fx, layerId, takeover);
+  // P17f-2/17f-3 (Regel P): Musik und Ambient frieren das Tempo beim Laden bzw. je Clip ein — Hinweis immer, Regel-N-Hinweis davor.
+  const hint = TEMPO_HINTS[kind];
+  if (hint) return { tempo: n.tempo ? `${n.tempo} ${hint}` : hint };
+  return n;
+}
+
+/** P17f-2/17f-3: Arten, deren Wiedergabe Tempo ausführt, und der Zeitpunkt, ab dem eine Änderung wirkt. */
+const TEMPO_KINDS = ['sound', 'music', 'ambient'];
+const MUSIC_TEMPO_HINT = 'Bei Musik wirkt eine Tempo-Änderung ab dem nächsten Laden des Stücks (Titelwechsel oder nach Stopp); Pause, Fortsetzen und „Wiederholen: eins“ behalten das bisherige Tempo.';
+const AMBIENT_TEMPO_HINT = 'Bei Ambient wirkt eine Tempo-Änderung ab dem nächsten Clip (mehrere Dateien, zeitversetzte Wiedergabe) bzw. nach einem Neustart des Tracks (einzelne Datei im Loop); Pausen und Blenden bleiben in Echtzeit. Rauschgeneratoren führen Tempo nicht aus.';
+const TEMPO_HINTS = { music: MUSIC_TEMPO_HINT, ambient: AMBIENT_TEMPO_HINT };
+
+/** Regel N (Hinweis zur Wirksamkeit) — unverändert aus 17f-1, für alle Arten mit Tempo. */
+function _tempoRuleNote(fx, layerId, takeover) {
+  const us = tempoUsages(fx), me = us.find(u => u.layerId === layerId);
+  if (!me) return {};
+  if (takeover) return us.length > 1 ? { tempo: 'Beim Übernehmen werden die anderen Tempo-Module ausgeschaltet; dieses wirkt dann.' } : {};
+  if (!me.counted) return {};
+  const win = us.find(u => u.effective);
+  if (win && win.layerId !== layerId) return { tempo: `Unwirksam: Das Tempo aus ${_tempoWhere(fx, win)} wirkt. Es gilt immer das erste aktive Tempo-Modul in der Reihenfolge Quelle → Hörer.` };
+  return {};
+}
+
+/** Kontext für die Effekt-Karten des Layer-Dialogs (Hinweise und Rückfrage beim Einschalten von Tempo). */
+function _tempoContext() {
+  return {
+    notes: state => (state.tempo?.enabled ? tempoNote({ kind: _fxEditContext?.kind || 'sound', fx: _effWithForm(state), layerId: L.id, takeover: L.tempoTakeover }) : {}),
+    onToggle: (key, on, state) => {
+      if (key !== 'tempo') return;
+      if (!on) { L.tempoTakeover = false; return; }
+      if (!TEMPO_KINDS.includes(_fxEditContext?.kind || 'sound')) return;   // P17f-2/17f-3: auch Musik und Ambient
+      const fx = _effWithForm(state);
+      const others = tempoUsages(fx).filter(u => u.layerId !== L.id && u.counted);
+      if (!others.length) return;
+      const where = others.map(u => `• ${_tempoWhere(fx, u)}`).join('\n');
+      L.tempoTakeover = confirm(`Tempo ist bereits aktiv:\n${where}\n\nEs wirkt immer nur ein Tempo-Modul (das erste in der Reihenfolge Quelle → Hörer).\n\nOK = Dieses verwenden: die anderen Tempo-Module werden beim Übernehmen ausgeschaltet.\nAbbrechen = Beide behalten (es gilt die Reihenfolge).`);
+      L.touched = true;
+      pushPreviewUpdate();
+    }
+  };
 }
 
 /** Vorschau (falls sie läuft) auf den aktuellen Effektstand bringen; mehrere Ereignisse pro Frame werden zusammengefasst. */
@@ -260,7 +343,8 @@ export function pushPreviewUpdate() { schedulePreviewUpdate(currentPreviewEffect
 export function openLayerModal(layerId) {
   const f = M.eff ? findLayer(M.eff, layerId) : null;
   if (!f) return;
-  L.id = layerId; L.stage = f.stage; L.draft = clone(f.layer); L.touched = false;
+  L.id = layerId; L.stage = f.stage; L.draft = clone(f.layer); L.touched = false; L.tempoTakeover = false;
+  getFxEditor().setContext(_tempoContext());   // P17f: vor dem Laden, damit die Hinweise gleich stimmen
   const count = M.eff.stages[f.stage].layers.length;
   _setTitle('fxLayerModalIcon', 'fxLayerModalTitleText', f.stage, 'Layer bearbeiten');
   $('fxLayerContext').textContent = `${contextLabel(f.stage)} · Layer ${f.index + 1} von ${count}: ${layerLabel(L.draft)}`;
@@ -358,6 +442,8 @@ function _applyLayer() {
     f.layer.params = sparsifyParams(_layerParamsNow());
     f.layer.presetId = L.draft.presetId || null;
     if (L.draft.stageAuto) f.layer.stageAuto = true; else delete f.layer.stageAuto;
+    // P17f: „Dieses Tempo verwenden“ — erst jetzt die anderen Tempo-Module ausschalten (Abbrechen verwirft auch das).
+    if (L.tempoTakeover && fillLayerParams(f.layer.params).tempo?.enabled) for (const s of disableOtherTempos(M.eff, L.id)) if (s !== M.stage) M.tempoStages.add(s);
   }
   _layerGuard?.disarm();
   _hide('fxLayerModal');
@@ -396,7 +482,7 @@ export function initFxPipelineModals() {
     _renderStageModal(layer.id);
   });
   $('btnFxStageApply')?.addEventListener('click', _applyStage);
-  $('fxStageModal')?.addEventListener('hidden.bs.modal', () => { M.eff = null; M.stage = null; M.baseline = ''; M.dragId = null; });
+  $('fxStageModal')?.addEventListener('hidden.bs.modal', () => { M.eff = null; M.stage = null; M.baseline = ''; M.dragId = null; M.tempoStages = new Set(); });
 
   // Drag&Drop (Maus/Stift) + Touch-Long-Press, nur innerhalb der Stufe
   const list = $('fxStageLayers');
@@ -432,5 +518,5 @@ export function initFxPipelineModals() {
   $('btnFxLayerApply')?.addEventListener('click', _applyLayer);
   $('btnFxLayerRestore')?.addEventListener('click', _restorePreset);
   $('btnFxReset')?.addEventListener('click', () => { resetLayerForm(); _renderLayerInfo(); });
-  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; _macroBar?.clear(); updateFxPresetActionButtons(''); pushPreviewUpdate(); });   // Abbrechen/Übernehmen: Vorschau zurück auf den Draft
+  $('fxLayerModal')?.addEventListener('hidden.bs.modal', () => { L.id = null; L.stage = null; L.draft = null; L.touched = false; L.tempoTakeover = false; getFxEditor().setContext(null); _macroBar?.clear(); updateFxPresetActionButtons(''); pushPreviewUpdate(); });   // Abbrechen/Übernehmen: Vorschau zurück auf den Draft
 }

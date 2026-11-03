@@ -25,6 +25,11 @@
  * INVARIANTE (fx-pipeline.js): Layer-Reihenfolge = Benutzerreihenfolge. Die Runtime baut immer genau die Schritte des Plans
  * in dessen Reihenfolge (assertOrder); sie fasst nichts zusammen, ordnet nichts um, überspringt nichts.
  * Dieses Modul importiert fx-pipeline.js NICHT (Zirkel): Aufrufer übergeben einen aufgelösten Plan (resolvePlan).
+ *
+ * Tempo (Phase 17f, Entscheidungen M/N/P): Hat das Ziel `caps.tempo` und der Plan `tempo.counter` (Tonhöhe halten, Rate ≠ 1), sitzt ein
+ * Gegen-Pitch-Knoten (`voice`, Faktor 1/Rate) am Kettenanfang VOR allen Layern. Das Tempo wird beim Bau EINGEFROREN (`this.tempo`):
+ * Austausche und Live-Updates während der Wiedergabe ändern es nicht — die Rate der Quelle steht ebenfalls fest; ein geändertes
+ * Tempo wirkt beim nächsten Start (Regel P). Tempo-Module selbst zählen nicht zur Strukturunterschrift.
  */
 
 import { buildPitchNode, buildLayerChain, buildTerminalPanner } from '../effect-graph.js';
@@ -33,7 +38,7 @@ import { workletsForPlan, fallbackWorklets } from './worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './waveshaper-probe.js';
 import { effectiveActiveKeys } from './schema.js';
-import { moduleTail, moduleCost, moduleLatency, pitchActive, pitchValues } from './registry.js';
+import { moduleTail, moduleCost, moduleLatency, pitchActive, pitchValues, isPlanLevelKey, tempoCounterParams, TEMPO_COUNTER_TAIL_S } from './registry.js';
 import { makeTiming, planHorizon } from './timebase.js';
 
 /** Vorgabewerte der Überblendung. */
@@ -53,7 +58,7 @@ for (let i = 0; i < FADE_POINTS; i++) { const a = (i / (FADE_POINTS - 1)) * Math
  * Ketten ohne Latenz: 0 (Verhalten und Klang bit-gleich zu vorher).
  */
 export function chainLatencySeconds(inner, plan, sampleRate) {
-  let n = 0;
+  let n = Number(inner.counter?.latency) || 0;   // P17f: Gegen-Pitch am Kettenanfang
   plan.steps.forEach((st, i) => {
     const rec = inner.steps[i]; if (!rec) return;
     n += Number(rec.pitch?.latency) || 0;
@@ -90,7 +95,7 @@ const _isOffline = ctx => typeof ctx.startRendering === 'function';
 export function planSignature(plan) {
   return JSON.stringify({
     p: !!plan.needsPanner,
-    s: plan.steps.map(s => [s.layerId, _pitchActive(s.params.pitchShift) ? 1 : 0, effectiveActiveKeys(s.params).filter(k => k !== 'pitchShift').sort()])
+    s: plan.steps.map(s => [s.layerId, _pitchActive(s.params.pitchShift) ? 1 : 0, effectiveActiveKeys(s.params).filter(k => k !== 'pitchShift' && !isPlanLevelKey(k)).sort()])   // P17f: Tempo eingefroren, zählt nicht
   });
 }
 
@@ -104,11 +109,11 @@ export function assertOrder(plan, builtSteps) {
  * Baut die serielle Knotenkette eines Plans: [Pitch₁] → Kette₁ → [Pitch₂] → Kette₂ → … → [terminaler Panner].
  * (Bis Phase 2 stand dieser Code in fx-pipeline.js buildPipelineGraph; unverändert in der Verdrahtung.)
  */
-function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false, send = null } = {}) {
+function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false, send = null, tempo = null } = {}) {
   const track = [];      // gestartete Quellen (LFO/Träger) und Convolver → dispose() stoppt/leert sie
   const nodes = [];      // Verbindungsknoten → dispose() trennt sie
   const steps = [];
-  let input = null, tail = null, detuneSemitones = 0, skippedPitch = 0;
+  let input = null, tail = null, detuneSemitones = 0, skippedPitch = 0, counter = null, tempoFallback = false;
 
   const link = seg => {
     if (!seg) return;
@@ -116,6 +121,13 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
     if (!input) input = seg.input; else tail.connect(seg.input);
     tail = seg.output;
   };
+
+  // P17f: Gegen-Pitch des Tempos vor allen Layern (nur Ziele mit caps.tempo). Ohne Worklet: kein Knoten — die Rate wirkt trotzdem, die Tonhöhe ändert sich mit.
+  if (tempo?.counter && caps.tempo) {
+    const n = caps.pitch === 'worklet' ? buildPitchNode(ctx, tempoCounterParams(tempo.rate), numChannels) : null;
+    if (n) { link(n); counter = n; track.push({ stop() { n.dispose?.(); } }); }
+    else { tempoFallback = true; console.warn('[pipeline] Tempo: Gegen-Pitch nicht verfügbar — die Tonhöhe ändert sich mit der Rate'); }
+  }
 
   for (const step of plan.steps) {
     const rec = { layerId: step.layerId, pitch: null, modules: [] };
@@ -148,7 +160,7 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
     for (const n of nodes) { try { n.disconnect(); } catch (e) { /* bereits getrennt */ } }
     track.length = 0; nodes.length = 0;
   };
-  return { input, output: tail, steps, detuneSemitones, skippedPitch, dispose };
+  return { input, output: tail, steps, detuneSemitones, skippedPitch, counter, tempoFallback, dispose };
 }
 
 export class PipelineRuntime {
@@ -182,7 +194,9 @@ export class PipelineRuntime {
     this.send = (o.send && !this.live && !this.bypassable) ? o.send : null;
     this.sendSig = this.send ? JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) : null;
 
-    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, send: this.send });
+    // P17f: Tempo beim Bau einfrieren (Regel P) — nur Ziele, die Tempo ausführen.
+    this.tempo = this.caps.tempo ? (plan.tempo || null) : null;
+    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, send: this.send, tempo: this.tempo });
     this.cur = inner;
     if (this.live) {
       this.entry = ctx.createGain(); this.exit = ctx.createGain();
@@ -200,6 +214,10 @@ export class PipelineRuntime {
 
   get detuneSemitones() { return this.cur.detuneSemitones; }
   get skippedPitch() { return this.cur.skippedPitch; }
+  /** P17f: wirksame Tempo-Rate (eingefroren beim Bau; 1 ohne Tempo oder bei Zielen ohne caps.tempo). */
+  get tempoRate() { return this.tempo?.rate ?? 1; }
+  /** P17f: Tonhöhe halten war verlangt, aber der Gegen-Pitch konnte nicht gebaut werden (kein Worklet). */
+  get tempoFallback() { return !!this.cur.tempoFallback; }
   get sequence() { return this.plan.sequence; }
 
   /** Vorbereitung eines Plans im Context (Pitch-Worklet laden). */
@@ -282,7 +300,7 @@ export class PipelineRuntime {
 
   async _swapNow(plan, fade) {
     const ctx = this.ctx, old = this.cur, tSwap = (typeof performance !== 'undefined') ? performance.now() : 0;
-    const nu = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable });
+    const nu = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, tempo: this.tempo });   // P17f: eingefrorenes Tempo
     nu.fade = ctx.createGain(); nu.fade.gain.value = 0;
     if (nu.input) this.entry.connect(nu.input); else this.entry.connect(nu.fade);
     if (nu.output) nu.output.connect(nu.fade);
@@ -371,7 +389,7 @@ export class PipelineRuntime {
 
   /** Nachklingdauer (s) aus den TATSÄCHLICH gebauten Modulen (überlagerte Module zählen nicht). Je Schritt das Maximum, Summe über Schritte. */
   tailSeconds() {
-    let sum = 0;
+    let sum = this.cur.counter ? TEMPO_COUNTER_TAIL_S : 0;   // P17f: Gegen-Pitch (wie planTailSeconds)
     this.plan.steps.forEach((s, i) => {
       let t = 0;
       for (const m of (this.cur.steps[i]?.modules || [])) t = Math.max(t, moduleTail(m.key, s.params[m.key]));
@@ -384,6 +402,7 @@ export class PipelineRuntime {
   /** Kostenpunkte der gebauten Pipeline: { total, measured } (measured = alle Werte aus Messung, heute false). */
   cost() {
     let total = 0, measured = true;
+    if (this.cur.counter) { const c = moduleCost('pitchShift', tempoCounterParams(this.tempo.rate)); total += c.base || 0; if (!c.measured) measured = false; }   // P17f
     this.plan.steps.forEach((s, i) => {
       const rec = this.cur.steps[i];
       const keys = [...(rec?.pitch ? ['pitchShift'] : []), ...(rec?.modules || []).map(m => m.key)];

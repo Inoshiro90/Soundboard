@@ -9,7 +9,7 @@ import { APP } from '../core/state.js';
 import '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
-import { invalidateBuffer, getOrDecodeBuffer } from '../audioCache.js';
+import { getOrDecodeBuffer } from '../audioCache.js';
 import { renderSlotList, getSlotEditIndex, markTrimSaved } from '../ui/slot-editor.js';
 import { drawTrimWaveform, drawTrimSpectrogram, updateTrimDurLabel } from '../ui/trim-canvas.js';
 import { startPeakRmsMeter, stopPeakRmsMeter } from '../ui/meters.js';
@@ -23,6 +23,7 @@ import '../dialogs/ambient-modal.js';
 import { _fxEditContext } from '../dialogs/sound-modal.js';
 import './utils-modal.js';
 import { connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
+import { slotCacheKey, ambientFileCacheKey, dropCachedBuffer, setDraftBuffer, dropDraftBuffer, sourceRev } from '../audio/engine/source-registry.js';   // P18b
 
 export function registerSlotEvents() {
   // ── TRIM MODAL ─────────────────────────────────────────────
@@ -121,9 +122,12 @@ export function registerSlotEvents() {
   //     bereits VOR dem Öffnen der Dialogbox.
   //  2) "Trim anwenden" nutzt explizit die aktuell im Draft sichtbaren
   //     Trim-Werte (nicht die zuletzt gespeicherten), siehe editTrimApply().
-  //  3) Nach jeder Aktion werden Cache (_ed_N + bk()-Cache), Trim-Wellenform
+  //  3) Nach jeder Aktion werden Cache (Entwurfspuffer + Laufzeit-Cache), Trim-Wellenform
   //     und Slot-Edit-Felder aktualisiert, damit UI und Audiodaten wieder
   //     konsistent sind.
+  //  4) P18b: Der Slot der Arbeitskopie wird über seine Kennung (Ambient: _fileId) dem persistierten Slot
+  //     zugeordnet, nicht über die Listenposition — nach einem noch nicht gespeicherten Umordnen sind die beiden
+  //     verschieden. Ohne Kennung: Rückfall auf die Position (früheres Verhalten).
 
   /** Sucht einen Sound anhand der ID über alle Profile hinweg (nicht nur das aktive). */
   function _findSoundAnyProfile(soundId) {
@@ -157,10 +161,22 @@ export function registerSlotEvents() {
     return _findSoundAnyProfile(id);
   }
 
+  /** P18b: Index des persistierten Slots zum Slot `draftIdx` der Arbeitskopie (über die Kennung, Rückfall Position). */
+  function _persistedIndexFor(s, draftIdx) {
+    const draft = APP.editSlots?.[draftIdx];
+    const key = _fxEditContext.kind === 'ambient' ? draft?._fileId : draft?.id;
+    if (key) {
+      const i = (s?.slots || []).findIndex(sl => sl?.id === key);
+      if (i >= 0) return i;
+    }
+    return draftIdx;
+  }
+
   function _persistedSlotHasAudio(soundId, slotIdx) {
     if (!soundId || slotIdx == null) return false;
     const s = _findEditTargetAnyContext(soundId);
-    return !!(s && s.slots && s.slots[slotIdx] && s.slots[slotIdx].data);
+    const pIdx = _persistedIndexFor(s, slotIdx);
+    return !!(s && s.slots && s.slots[pIdx] && s.slots[pIdx].data);
   }
 
   function _refreshEditorActionsAvailability() {
@@ -176,36 +192,39 @@ export function registerSlotEvents() {
   }
 
   /** Nach einer destruktiven Editor-Aktion: Caches und UI-Anzeige neu synchronisieren. */
-  async function _refreshSlotAfterDestructiveEdit(soundId, slotIdx) {
+  async function _refreshSlotAfterDestructiveEdit(soundId, slotIdx, pIdx = slotIdx) {
     const s = _findEditTargetAnyContext(soundId);
-    const persistedSlot = s?.slots?.[slotIdx];
+    const persistedSlot = s?.slots?.[pIdx];
     // Ambient-Dateivarianten werden unter ihrer EIGENEN id + Index 0
     // gecacht/gespeichert (s. editor.js: _slotKeyParts()) — dieselbe
     // Schlüsselbasis hier verwenden, sonst wird der falsche Cache-Eintrag
-    // invalidiert/neu decodiert.
+    // invalidiert/neu decodiert. P18b: Sound-Slots über ihre Identität (id@rev).
     const isAmbient = _fxEditContext.kind === 'ambient';
     const keyId  = isAmbient ? (persistedSlot?.id || soundId) : soundId;
-    const keyIdx = isAmbient ? 0 : slotIdx;
+    const keyIdx = isAmbient ? 0 : pIdx;
+    const cacheSlot = isAmbient ? null : persistedSlot;
 
-    invalidateBuffer(keyId, keyIdx);
-    delete APP.audioBuffers[`_ed_${slotIdx}`];
+    dropCachedBuffer(isAmbient ? ambientFileCacheKey(keyId) : slotCacheKey(keyId, keyIdx, cacheSlot));
 
     const draftSlot = APP.editSlots?.[slotIdx];
+    dropDraftBuffer(draftSlot);
 
     // Trim wird von manchen Aktionen (v.a. Trim selbst) auf der persistierten
     // Seite zurückgesetzt — Arbeitskopie im offenen Modal muss das spiegeln,
     // sonst zeigt der Trim-Dialog weiter die alten (jetzt ungültigen) Werte.
+    // P18b: ebenso die Revision (editor.js persistEdit hat sie erhöht) — sonst setzte das Speichern des Sounds sie zurück.
     if (draftSlot && persistedSlot) {
       draftSlot.trimStart = persistedSlot.trimStart || 0;
       draftSlot.trimEnd   = persistedSlot.trimEnd ?? null;
+      if (!isAmbient && sourceRev(persistedSlot) > 0) draftSlot.rev = persistedSlot.rev;
     }
 
     let buf = null;
     if (s && persistedSlot?.data) {
-      try { buf = await getOrDecodeBuffer(keyId, keyIdx, persistedSlot.data, actx()); }
+      try { buf = await getOrDecodeBuffer(keyId, keyIdx, persistedSlot.data, actx(), cacheSlot); }
       catch (e) { console.error('[editor] Buffer-Refresh fehlgeschlagen', e); }
     }
-    if (buf) APP.audioBuffers[`_ed_${slotIdx}`] = buf;
+    if (buf) setDraftBuffer(draftSlot, buf);
 
     if (getSlotEditIndex() === slotIdx) {
       const durEl = document.getElementById('slotEditDuration');
@@ -240,13 +259,18 @@ export function registerSlotEvents() {
       return;
     }
 
+    // P18b: editor.js arbeitet auf dem persistierten Slot — dessen Index über die Kennung, nicht die Entwurfsposition.
+    const draftIdx = slotIdx;
+    const pIdx = _persistedIndexFor(_findEditTargetAnyContext(soundId), draftIdx);
+
     const origHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = iconSvg('loader-circle', 'ui-icon--spin');
     try {
+      const slotIdx = pIdx;   // für die Editor-Aufrufe unten
       switch (action) {
         case 'trim': {
-          const sl = APP.editSlots?.[slotIdx];
+          const sl = APP.editSlots?.[draftIdx];
           await editTrimApply(soundId, slotIdx, sl?.trimStart, sl?.trimEnd);
           break;
         }
@@ -263,7 +287,7 @@ export function registerSlotEvents() {
         case 'noiseReduce':   await editNoiseReduce(soundId, slotIdx, num('editorNoiseReduceAmount', 0.6)); break;
         default: return;
       }
-      await _refreshSlotAfterDestructiveEdit(soundId, slotIdx);
+      await _refreshSlotAfterDestructiveEdit(soundId, draftIdx, pIdx);
     } catch (err) {
       console.error(`[editor] Aktion "${action}" fehlgeschlagen:`, err);
       toast(`Fehler bei "${action}": ${err.message}`, 'err');

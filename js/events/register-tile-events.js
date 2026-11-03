@@ -21,6 +21,7 @@ import { renderProfileTabs, applyProfileSettings } from '../ui/tabs.js';
 import { isTileEditMode, setTileEditMode } from '../ui/drag-drop.js';
 import { syncThemeIcon } from '../ui/icon-picker.js';
 import { renderSlotList } from '../ui/slot-editor.js';
+import { setDraftBuffer, inheritIdentity } from '../audio/engine/source-registry.js';   // P18b
 import { createModalDraftGuard } from '../modalGuards.js';
 import { IDB_SENTINEL, idbSet, audioKey } from '../db.js';
 import { exportProfile, exportMusicTrack, importData } from '../storage/import-export.js';
@@ -68,6 +69,7 @@ export function registerTileEvents() {
   // Audio über eine ggf. blockierende Rückfrage hinweg weiterläuft. Einmalig
   // hier registriert (registerEvents() läuft nur einmal, s. main.js).
   bindPreviewModalLifecycle(document.getElementById('soundModal'));
+  bindPreviewModalLifecycle(document.getElementById('musicTrackModal'));   // P17g: Musik-Vorschau endet spätestens mit dem Musik-Editor
 
   // Theme toggle
   document.getElementById('btnTheme')?.addEventListener('click', () => {
@@ -354,26 +356,28 @@ export function registerTileEvents() {
     r.onload = async e => {
       const b64 = e.target.result.split(',')[1];
       const idx = APP.loadingSlotIdx;
+      const prevSlot = APP.editSlots[idx];   // P18b: Kennung bleibt beim Ersetzen erhalten, Revision +1
+      let newSlot;
       if (_fxEditContext.kind === 'ambient') {
         const fileId = APP.editSlots[idx]?._fileId || uid();
         // Vor dem Überschreiben den bisherigen Wert dieses Keys
         // für diese Sitzung sichern (nur beim ersten Mal, s. _backupAudioKeyOnce).
         await _backupAudioKeyOnce(audioKey(fileId, 0));
         await idbSet(audioKey(fileId, 0), b64);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
+        newSlot = APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
       } else {
         // Use the pre-generated stable ID so IDB key matches the eventual sound ID.
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
         await _backupAudioKeyOnce(audioKey(stableId, idx));
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() };
+        newSlot = APP.editSlots[idx] = inheritIdentity({ data: IDB_SENTINEL, name: f.name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() }, prevSlot);
       }
       try {
         const bin = atob(b64); const arr = new Uint8Array(bin.length);
         for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
         const decoded = await actx().decodeAudioData(arr.buffer.slice(0));
-        APP.audioBuffers[`_ed_${idx}`] = decoded;
+        setDraftBuffer(newSlot, decoded);
       } catch (err) {
         console.warn('[events] slotFile decode error:', err?.message || err);
       } finally {
@@ -429,19 +433,21 @@ export function registerTileEvents() {
       // Gleicher Ziel-Slot-Schreibpfad wie beim Datei-Upload (#slotFile
       // oben) — der generierte Ton wird wie eine importierte Datei
       // behandelt, kein Sonderfall im restlichen Code nötig.
+      const prevSlot = APP.editSlots[idx];   // P18b: Kennung bleibt beim Ersetzen erhalten, Revision +1
+      let newSlot;
       if (_fxEditContext.kind === 'ambient') {
         const fileId = APP.editSlots[idx]?._fileId || uid();
         await _backupAudioKeyOnce(audioKey(fileId, 0));
         await idbSet(audioKey(fileId, 0), b64);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
+        newSlot = APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _fileId: fileId, _tempId: uid() };
       } else {
         const stableId = APP.editId || APP._pendingSoundId || uid();
         if (!APP._pendingSoundId && !APP.editId) APP._pendingSoundId = stableId;
         await _backupAudioKeyOnce(audioKey(stableId, idx));
         await saveSlotAudio(stableId, idx, b64, null);
-        APP.editSlots[idx] = { data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() };
+        newSlot = APP.editSlots[idx] = inheritIdentity({ data: IDB_SENTINEL, name, trimStart: 0, trimEnd: null, _idbSlot: idx, _tempId: uid() }, prevSlot);
       }
-      APP.audioBuffers[`_ed_${idx}`] = buf;
+      setDraftBuffer(newSlot, buf);
       renderSlotList();
       bootstrap.Modal.getInstance(document.getElementById('toneGeneratorModal'))?.hide();
       toast(`${name} erzeugt und eingesetzt ✓`, 'ok');
@@ -482,6 +488,8 @@ export function registerTileEvents() {
       const emptyIdx = APP.editSlots.findIndex(sl => !sl.data);
       const slotIdx  = emptyIdx >= 0 ? emptyIdx : APP.editSlots.length;
       const placeholder = { data: '__pending__', name: f.name, trimStart: 0, trimEnd: null, _loading: true, _tempId: uid() };
+      // P18b: belegt die Datei einen vorhandenen leeren Slot, bleibt dessen Kennung erhalten (Revision +1).
+      if (emptyIdx >= 0 && _fxEditContext.kind !== 'ambient') inheritIdentity(placeholder, APP.editSlots[emptyIdx]);
       if (emptyIdx >= 0) APP.editSlots[emptyIdx] = placeholder;
       else               APP.editSlots.push(placeholder);
       targets.push({ file: f, slotIdx, slotObj: placeholder });
@@ -517,12 +525,9 @@ export function registerTileEvents() {
           const bin = atob(b64); const arr = new Uint8Array(bin.length);
           for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
           const decoded = await actx().decodeAudioData(arr.buffer.slice(0));
-          // Slot könnte inzwischen per Drag-and-Drop verschoben worden
-          // sein — _ed_N folgt dem Slot-Objekt über ui/slot-editor.js' Reorder-Resync,
-          // daher hier bewusst weiterhin über den ursprünglich reservierten
-          // slotIdx schreiben: renderSlotList()/der Resync-Mechanismus
-          // hält _ed_N synchron zur aktuellen Position des Objekts.
-          APP.audioBuffers[`_ed_${slotIdx}`] = decoded;
+          // P18b: Der Entwurfspuffer hängt am reservierten Slot-Objekt, nicht an seiner Position — ein zwischenzeitliches
+          // Umordnen oder Entfernen per Drag-and-Drop ändert die Zuordnung nicht.
+          setDraftBuffer(slotObj, decoded);
           okCount++;
         } catch (err) {
           errCount++;

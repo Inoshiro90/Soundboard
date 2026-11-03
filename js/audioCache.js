@@ -13,8 +13,8 @@
  */
 
 import { APP }   from './core/state.js';
-import { bk }    from './utils.js';
 import { idbGet, audioKey, IDB_SENTINEL } from './db.js';
+import { slotCacheKey } from './audio/engine/source-registry.js';   // P18b: Schlüssel über die Slot-Identität
 
 /** In-flight decode promises: key → Promise<AudioBuffer|null> */
 const _pending = new Map();
@@ -26,10 +26,12 @@ const _pending = new Map();
  * @param {number}     slotIdx
  * @param {string}     slotData  — slot.data (base64, 'idb', or null)
  * @param {AudioContext} ctx     — must be provided (not auto-created here)
+ * @param {object|null} [slot]   — P18b: Slot-Objekt; mit Kennung liegt der Buffer unter `slot.id@rev`, sonst unter
+ *                                 dem Positionsschlüssel. Die IDB-Quelle bleibt (soundId, slotIdx).
  * @returns {Promise<AudioBuffer|null>}
  */
-export async function getOrDecodeBuffer(soundId, slotIdx, slotData, ctx) {
-  const key = bk(soundId, slotIdx);
+export async function getOrDecodeBuffer(soundId, slotIdx, slotData, ctx, slot = null) {
+  const key = slotCacheKey(soundId, slotIdx, slot);
 
   // 1. Already in cache
   const cached = APP.audioBuffers[key];
@@ -93,17 +95,18 @@ export function prewarmSound(sound, ctx) {
   if (!ctx || !sound?.slots) return;
   sound.slots.forEach((sl, i) => {
     if (!sl?.data) return;
-    const key = bk(sound.id, i);
+    const key = slotCacheKey(sound.id, i, sl);
     if (APP.audioBuffers[key]) return;
-    getOrDecodeBuffer(sound.id, i, sl.data, ctx).catch(() => {});
+    getOrDecodeBuffer(sound.id, i, sl.data, ctx, sl).catch(() => {});
   });
 }
 
 /**
  * Drop a specific buffer from cache (e.g. after destructive edit).
+ * P18b: mit `slot` (Kennung) wird dessen Eintrag `id@rev` entfernt, sonst der Positionsschlüssel.
  */
-export function invalidateBuffer(soundId, slotIdx) {
-  delete APP.audioBuffers[bk(soundId, slotIdx)];
+export function invalidateBuffer(soundId, slotIdx, slot = null) {
+  delete APP.audioBuffers[slotCacheKey(soundId, slotIdx, slot)];
 }
 
 /**

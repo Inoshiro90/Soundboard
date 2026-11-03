@@ -18,6 +18,7 @@ import { ensureEffectsV2 } from '../fx-model.js';
 import { getDraft, setDraft, render as renderPipelineEditor } from '../ui/fx-pipeline-editor.js';
 import { idbGet, idbSet, idbDelete, isIdbRef, audioKey } from '../db.js';
 import { renderSlotList } from '../ui/slot-editor.js';
+import { draftBuffer, setDraftBuffer, clearDraftBuffers } from '../audio/engine/source-registry.js';   // P18b: Entwurfspuffer je Slot-Objekt
 import { buildIconGrid, syncEntryCardPreview } from '../ui/icon-picker.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import { setDisclosureActive } from '../ui/disclosure.js';
@@ -511,20 +512,22 @@ export async function _preloadEditBuffers() {
   let changed = false;
   for (let i = 0; i < APP.editSlots.length; i++) {
     const sl = APP.editSlots[i];
-    if (!sl?.data || APP.audioBuffers[`_ed_${i}`]) continue;
+    if (!sl?.data || draftBuffer(sl)) continue;
     try {
       let b64 = sl.data;
       if (isIdbRef(b64)) {
+        // P18b: physische IDB-Position des Slots (_idbSlot), nicht seine aktuelle Listenposition (Umordnen während des Ladens).
+        const idbIdx = Number.isInteger(sl._idbSlot) ? sl._idbSlot : i;
         const key = _fxEditContext.kind === 'ambient'
           ? audioKey(sl._fileId, 0)
-          : audioKey(_fxEditContext.id || APP._pendingSoundId, i);
+          : audioKey(_fxEditContext.id || APP._pendingSoundId, idbIdx);
         b64 = await idbGet(key);
       }
       if (!b64) continue;
       const bin = atob(b64); const arr = new Uint8Array(bin.length);
       for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
-      APP.audioBuffers[`_ed_${i}`] = await ctx.decodeAudioData(arr.buffer.slice(0));
-      changed = true;
+      const decoded = await ctx.decodeAudioData(arr.buffer.slice(0));
+      if (!draftBuffer(sl)) { setDraftBuffer(sl, decoded); changed = true; }   // ein inzwischen ersetzter Puffer hat Vorrang
     } catch (e) { console.warn('[events] preload edit buffer failed:', e); }
   }
   if (changed) renderSlotList();
@@ -536,12 +539,8 @@ export function openSoundModal(id, placeholderId = null) {
   APP._phReplacingId  = placeholderId;
   APP._pendingSoundId = id ? null : uid();
 
-  // Clear any leftover _ed_N buffers from the previous modal session.
-  // Without this, editing Sound A after loading audio for Sound B would
-  // copy Sound B's buffer into Sound A's cache on save.
-  Object.keys(APP.audioBuffers).forEach(k => {
-    if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
-  });
+  // Entwurfspuffer der vorherigen Editorsitzung verwerfen (P18b: je Slot-Objekt, s. source-registry.js).
+  clearDraftBuffers();
   // Frische Audio-Rollback-Sicherung für diese Editiersitzung —
   // eine evtl. Sicherung der vorherigen Sitzung darf hier keinesfalls erben.
   _resetAudioRollback();

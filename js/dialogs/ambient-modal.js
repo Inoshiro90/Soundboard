@@ -9,6 +9,7 @@ import { uid } from '../utils.js';
 import { stopEffectPreview } from '../audio/preview.js';
 import { defaultEffects, defaultPlayback } from '../audio/effect-graph.js';
 import { renderSlotList } from '../ui/slot-editor.js';
+import { clearDraftBuffers } from '../audio/engine/source-registry.js';   // P18b
 import { buildIconGrid } from '../ui/icon-picker.js';
 import { buildColorOpts } from '../ui/color-picker.js';
 import { findAmbientTrack } from '../ambient/ambient-model.js';
@@ -25,9 +26,7 @@ export function openAmbientEffectsModal(trackId) {
   _setFxEditContext({ kind: 'ambient', id: trackId });
   APP.editId = null;
 
-  Object.keys(APP.audioBuffers).forEach(k => {
-    if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
-  });
+  clearDraftBuffers();   // P18b: Entwurfspuffer der vorherigen Editorsitzung verwerfen
   // Frische Audio-Rollback-Sicherung für diese Editiersitzung.
   _resetAudioRollback();
   // Defensiv, s. openSoundModal().

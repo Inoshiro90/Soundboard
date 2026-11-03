@@ -14,7 +14,7 @@
  * Degradation (`degrade`, AE-16): { oversample: 'none'|'2x'|'4x' (Obergrenze), equalPower: bool (HRTF → Equal-Power), irMax: Sekunden }.
  * Sie senkt nur die SCHÄTZUNG; angewandt wird sie im Graph-Aufbau (spätere Schritte von P3a).
  */
-import { moduleCost, convolverPoints, pitchActive } from './registry.js';
+import { moduleCost, convolverPoints, pitchActive, isPlanLevelKey, tempoCounterParams } from './registry.js';
 import { effectiveActiveKeys } from './schema.js';
 import { getIRDuration } from '../ir-data.js';
 
@@ -28,7 +28,7 @@ const OVERSAMPLE_POINTS = { none: 1, '2x': 5, '4x': 10 };
 
 /** Klingende Module eines Schritts (wie fx-pipeline `_soundingKeys`): aktiv, nicht überlagert, Pitch nur laut registry.pitchActive (P17b). */
 export function soundingKeys(params) {
-  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || pitchActive(params.pitchShift));
+  return effectiveActiveKeys(params).filter(k => !isPlanLevelKey(k) && (k !== 'pitchShift' || pitchActive(params.pitchShift)));   // P17f: Tempo nicht je Layer
 }
 
 /** IR-Länge (s) des Hall-Moduls `key` mit den Parametern `p`. */
@@ -81,6 +81,12 @@ export function planCost(plan, { send = null, degrade = null } = {}) {
       parts.push({ step: step.index, key, points: _moduleCost(key, step.params[key], degrade) });
     }
   });
+  // P17f: Gegen-Pitch des Tempos einmal je Plan (Schätzwert wie `voice`; Ziele ohne caps.tempo bauen ihn nicht — konservativ mitgezählt).
+  if (plan?.tempo?.counter) {
+    const tp = tempoCounterParams(plan.tempo.rate), c = moduleCost('pitchShift', tp);
+    if (!c.measured) measured = false;
+    parts.push({ step: -1, key: 'tempo', points: c.base || 0 });
+  }
   const points = parts.reduce((s, p) => s + p.points, 0);
   return { points, parts, hub, measured };
 }

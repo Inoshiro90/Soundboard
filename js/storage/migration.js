@@ -13,6 +13,7 @@ import { ensureEffectsV2 }               from '../fx-model.js';
 import { REMOVED_KEYS }                  from '../audio/engine/registry.js';
 import { toast }                            from '../notifications.js';
 import { idbSet, migrateAudioToIdb, audioKey, IDB_SENTINEL, isBase64Data } from '../db.js';
+import { collectEntityIds, ensureSlotIdentity } from './normalization.js';
 // Zirkulärer Import (persistence.js importiert umgekehrt migrateEffects/
 // migratePlaybackSettings/migrateProfileColors/runIdbMigrationIfNeeded aus
 // diesem Modul) — funktioniert wie das Muster in audio/playback.js/
@@ -108,6 +109,20 @@ export function migrateProfileColors() {
     if (!p.color) p.color = 'none';
     if (p.audioEffectPreset === undefined) p.audioEffectPreset = null;
   });
+}
+
+// ─── QUELLEN-IDENTITÄT (P18a) ─────────────────────────────────
+// Ergänzt fehlende Slot-Kennungen (`slot.id`) aller Sounds, vergibt doppelte neu (erstes Vorkommen behält sie)
+// und normalisiert `slot.rev`. Additiv und idempotent; unbekannte Felder bleiben erhalten (AE-18).
+// Ältere App-Versionen ignorieren die Felder. IDB-Schlüssel bleiben unverändert.
+/** @returns {number} Anzahl geänderter Slots (> 0 → speichern) */
+export function migrateSlotIdentity() {
+  const taken = collectEntityIds(APP);
+  let changed = 0;
+  APP.profiles.forEach(prof => (prof.items || []).filter(x => x?.type === 'sound').forEach(s => {
+    changed += ensureSlotIdentity(s.slots, taken);
+  }));
+  return changed;
 }
 
 // ─── IDB MIGRATION ───────────────────────────────────────────

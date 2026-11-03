@@ -6,6 +6,7 @@ import { iconSvg, setIcon } from './icons.js';
 import { APP, CItems } from '../core/state.js';
 import '../utils.js';
 import { playBufferPreview } from '../audio/playback.js';
+import { draftBuffer } from '../audio/engine/source-registry.js';   // P18b
 import { toast } from '../notifications.js';
 import { detectClipping } from '../analysis.js';
 import { createModalDraftGuard } from '../modalGuards.js';
@@ -14,34 +15,8 @@ import { drawTrimWaveform, updateTrimDurLabel, _initTrimCanvasDrag, _initTrimZoo
 
 // ─── SLOT LIST ────────────────────────────────────────────────
 
-/**
- * APP.audioBuffers['_ed_N'] ist positionsbezogen (N = Index in APP.editSlots) und
- * muss daher bei einem Drag-and-Drop-Reorder oder beim Entfernen eines Slots
- * mitverschoben werden — sonst würden Slot-Vorschau (previewSlot), Trim-Dialog
- * (openTrimModal) und vor allem der beim Speichern in den Haupt-Cache kopierte
- * Buffer (bk(soundId, i)) die FALSCHE Audiodatei für diese Position verwenden.
- *
- * Unmittelbar vor jeder Array-Mutation, die die Zuordnung Index→Slot-Objekt
- * verändert (Reorder, Entfernen), wird der aktuelle _ed_N-Stand anhand der ALTEN
- * Reihenfolge (prevSlots) auf die Objekt-IDENTITÄT der Slots gemapped. Nach der
- * Mutation wird _ed_N aus diesem Mapping anhand der NEUEN Reihenfolge neu aufgebaut.
- * Da die Zuordnung über Objekt-Referenzen (nicht Indizes) läuft, ist das Ergebnis
- * unabhängig davon, wie die Slots konkret umsortiert wurden.
- */
-function _resyncEdBuffers(prevSlots) {
-  const bufByObj = new Map();
-  prevSlots.forEach((sl, i) => {
-    const buf = APP.audioBuffers[`_ed_${i}`];
-    if (buf) bufByObj.set(sl, buf);
-  });
-  Object.keys(APP.audioBuffers).forEach(k => {
-    if (k.startsWith('_ed_')) delete APP.audioBuffers[k];
-  });
-  APP.editSlots.forEach((sl, i) => {
-    const buf = bufByObj.get(sl);
-    if (buf) APP.audioBuffers[`_ed_${i}`] = buf;
-  });
-}
+// P18b: Entwurfspuffer hängen am Slot-Objekt der Arbeitskopie (audio/engine/source-registry.js, draftBuffer()).
+// Umordnen und Entfernen verschieben sie damit automatisch mit; der frühere Positionsabgleich (_resyncEdBuffers) entfällt.
 
 export function renderSlotList() {
   const list = document.getElementById('slotList');
@@ -110,9 +85,7 @@ export function renderSlotList() {
         ? 'Diesen Audioslot wirklich entfernen? Danach hat der Sound keine Audiospur mehr.'
         : 'Diesen Audioslot wirklich entfernen?';
       if (!confirm(msg)) return;
-      const prevSlots = APP.editSlots.slice();
       APP.editSlots.splice(i, 1);
-      _resyncEdBuffers(prevSlots);
       renderSlotList();
     });
     const editBtn = row.querySelector('.js-slot-edit-btn');
@@ -132,10 +105,8 @@ export function renderSlotList() {
     row.addEventListener('drop', e => {
       e.preventDefault();
       if (slotDragSrc === null || slotDragSrc === i) return;
-      const prevSlots = APP.editSlots.slice();
       const moved = APP.editSlots.splice(slotDragSrc, 1)[0];
       APP.editSlots.splice(i, 0, moved);
-      _resyncEdBuffers(prevSlots);
       renderSlotList();
     });
 
@@ -158,8 +129,8 @@ export function openSlotEditModal(i) {
   if (!sl || !sl.data) return;
   _slotEditIdx = i;
 
-  const hasBuf = APP.audioBuffers[`_ed_${i}`];
-  const dur    = hasBuf ? APP.audioBuffers[`_ed_${i}`].duration : null;
+  const hasBuf = draftBuffer(sl);
+  const dur    = hasBuf ? hasBuf.duration : null;
 
   const durEl = document.getElementById('slotEditDuration');
   if (durEl) durEl.textContent = dur ? dur.toFixed(1) + 's' : '–';
@@ -230,7 +201,7 @@ function previewSlot(i) {
   stopSlotPreview();
   const sl = APP.editSlots[i];
   if (!sl || !sl.data) { toast('Slot leer'); return; }
-  const buf = APP.audioBuffers[`_ed_${i}`];
+  const buf = draftBuffer(sl);
   if (!buf) { toast('Audio lädt…'); return; }
   const vol   = parseFloat(document.getElementById('eVol')?.value) || 1;
   const pitch = APP.editId ? (CItems().find(x => x.id === APP.editId)?.pitch || 1) : 1;
@@ -288,7 +259,7 @@ export function markTrimSaved() {
 export function openTrimModal(slotIdx) {
   const sl  = APP.editSlots[slotIdx];
   if (!sl || !sl.data) { toast('Kein Audio'); return; }
-  const buf = APP.audioBuffers[`_ed_${slotIdx}`];
+  const buf = draftBuffer(sl);
   if (!buf)            { toast('Audio lädt…'); return; }
 
   // Spektrogramm: bei jedem Öffnen zurücksetzen (eingeklappt) — die

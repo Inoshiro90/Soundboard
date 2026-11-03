@@ -13,7 +13,7 @@ import { _normalizeAmbient, _normalizeMusic } from './normalization.js';
 import { migratePresetCategories } from '../presets.js';
 import { initDefaults }     from './factories.js';
 // Zirkulärer Import, s. Kommentar in migration.js.
-import { migrateEffects, migratePlaybackSettings, migrateProfileColors, runIdbMigrationIfNeeded } from './migration.js';
+import { migrateEffects, migratePlaybackSettings, migrateProfileColors, migrateSlotIdentity, runIdbMigrationIfNeeded } from './migration.js';
 
 // ─── DECODE ALL AUDIO ────────────────────────────────────────
 // We do NOT call actx() here — no AudioContext before user gesture.
@@ -95,6 +95,7 @@ export async function load() {
       if (migrateEffects() > 0) _saveRaw();   // Alt-Effekte → Pipeline v2 (Backup: <key>:pre-pipeline)
       migratePlaybackSettings();
       migrateProfileColors();
+      if (migrateSlotIdentity() > 0) _saveRaw();   // P18a: stabile Slot-Kennungen (additiv)
       await runIdbMigrationIfNeeded();
       // No decodeAllAudio() here — lazy decode on demand
     }

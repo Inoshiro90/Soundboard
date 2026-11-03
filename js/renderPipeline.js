@@ -16,10 +16,11 @@
  * Dauerschleifen-Layer).
  */
 
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from './audio/fx-pipeline.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS, exportTailSeconds, planTempoRate } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
 import { attachSend } from './audio/engine/reverb-hub.js';
 import { busesOf } from './audio/engine/buses.js';
+import { outputFor } from './audio/engine/output.js';   // P18c: Offline-Kern (renderSlotOffline)
 
 /**
  * Plant eine einzelne Fade-Rampe mit wählbarer Kurvenform auf einem Gain-Node.
@@ -189,6 +190,8 @@ export function slotBufferSpan(slot, buffer) {
  * @param {boolean} [opts.bypassable=false] - Bypass-Hülle je Modul (runtime.setModuleBypass).
  * @param {Function} [opts.admit]   - Phase 3a: `plan => { plan, release, heavy, degraded, points }` (Voice-Budget, nur Live/Preview)
  * @param {object}   [opts.stagger] - Phase 3a: Staffelung schwerer Aufbauten (createStagger)
+ * @param {boolean} [opts.tempo=true] - Phase 17f: `plan.tempo` anwenden (Rate der Quelle × Tempo, Gegen-Pitch in der Runtime). `false` für Aufrufer,
+ *   deren Ziel Tempo nicht ausführt, damit Vorschau und Live gleich bleiben (bis 17f-3 die Ambient-Vorschau; derzeit kein Aufrufer).
  * @param {boolean} [opts.sharedReverb=false] - Phase 3b (AE-17): sendfähiger Hall über den geteilten Hub (reverb-hub.js). Standard aus =
  *   bisheriger Pfad (Hall je Voice), bit-gleich zu Phase 3. Hall liegt dann NACH Fade/Lautstärke (D1).
  * @returns {Promise<{
@@ -198,8 +201,9 @@ export function slotBufferSpan(slot, buffer) {
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null, loopPreview = false } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null, loopPreview = false, tempo = true } = opts;
   const isLive    = mode === 'live';
+  const caps = tempo ? TARGET_CAPS.sound : { ...TARGET_CAPS.sound, tempo: false };   // P17f
 
   // Zeitbasis (B-10): `bufferDur` = Quellmaterial in PUFFERzeit (so erwartet es start(when, offset, duration));
   // `dur` = WIRKSAME Spielzeit in Context-Zeit = bufferDur / Abspielrate. Fades, Fortschritt und Export-Länge
@@ -208,7 +212,7 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
 
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.playbackRate.value = s.pitch || 1;
+  // (Abspielrate: siehe unten, nach der Plan-Auflösung — P17f multipliziert das Tempo des Plans hinzu.)
   // Preview/Export loopen nie (Bestandsverhalten). `allowLoop=false` erlaubt
   // zusätzlich Aufrufern wie playSoundAndWait() (sequenzielle Makro-
   // Wiedergabe), Loop-Sounds bewusst NICHT zu loopen — sonst würde
@@ -229,13 +233,18 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   if (admission) plan = admission.plan;
   let graph;
   try {
-    await preparePipelineContext(ctx, plan, TARGET_CAPS.sound);
-    const build = () => buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps: TARGET_CAPS.sound, live, bypassable, shareReverb: sharedReverb });
+    await preparePipelineContext(ctx, plan, caps);
+    const build = () => buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps, live, bypassable, shareReverb: sharedReverb });
     // Schwere Aufbauten (Pitch-Worklet, eigener Faltungs-Hall) gestaffelt: Firefox/Chrome blockieren sonst den Haupt-Thread (E6, M-1).
     graph = (stagger && admission?.heavy) ? await stagger.run(build) : build();
   } catch (e) { admission?.release(); throw e; }
+  // P17f (Entscheidung M): Abspielrate = altes `s.pitch` (Band-Tempo, unverändert) × wirksames Tempo des Plans (eingefroren in der Runtime).
+  // Ohne Tempo-Modul ist tempoRate 1 → exakt der bisherige Wert.
+  const tempoRate = graph.runtime.tempoRate;
+  const sourceRate = (s.pitch || 1) * tempoRate;
+  src.playbackRate.value = sourceRate;
   if (graph.detuneSemitones) src.detune.value = graph.detuneSemitones * 100;
-  const rate = effectivePlaybackRate(s.pitch, graph.detuneSemitones);
+  const rate = effectivePlaybackRate(sourceRate, graph.detuneSemitones);
   const dur  = bufferDur / rate;
 
   // Legacy-Fades (s.fade / slot.fadeIn / slot.fadeOut): eigener Gain-Node mit Form 0..1; die eigentliche
@@ -271,6 +280,8 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
 
   return {
     src, masterGain, dur, bufferDur, rate, ts,
+    /** P17f: Tempo-Rate (1 = kein Tempo) und ob „Tonhöhe halten“ mangels Worklet entfiel. */
+    tempoRate, tempoFallback: graph.runtime.tempoFallback,
     /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
     // Sendfähig: der Hall-Nachklang liegt im Hub (eigener Lebenszyklus) — die Voice braucht nur die Ketten-Restzeit.
     plan, tailSeconds: graph.tailSeconds(),
@@ -293,4 +304,42 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
     /** Zeitbasis, die start() gemeldet hat (Phase 13d; null vor dem Start). */
     get timing() { return graph.runtime.timing; }
   };
+}
+
+// ─── OFFLINE-RENDER EINES SLOTS (P18c) ─────────────────────────
+
+/** K1: Offline-Render immer in Stereo wie Live/Vorschau. export.js führt dieselbe Zahl als EXPORT_RENDER_CHANNELS. */
+export const OFFLINE_RENDER_CHANNELS = 2;
+
+/**
+ * Rendert einen Slot offline über renderSoundGraph (derselbe Baustein wie Live und Vorschau, Invariante 2).
+ * P18c: unverändert aus export.js renderSoundOffline() herausgelöst; Einzel-Export (export.js) und Render-Cache
+ * (audio/engine/render-cache.js) nutzen beide diese Funktion. Das Beschaffen des Buffers bleibt beim Aufrufer.
+ * Länge = wirksame Spielzeit (Material ÷ Abspielrate) + Effekt-Nachklang; deckt sich mit der Live-Wiedergabe (B-10).
+ * Trim geschieht per start(when, offset, duration) direkt auf dem ungetrimmten Buffer (identisch zu live), inkl. Fades.
+ * @param {object} s       Sound (effects, pitch, vol, loop, fade, playback)
+ * @param {object} slot    Slot (trimStart/trimEnd, fadeIn/fadeOut)
+ * @param {AudioBuffer} buffer  dekodiertes, ungetrimmtes Quellmaterial
+ * @param {{ channels?: number, sharedReverb?: boolean }} [opts]
+ * @returns {Promise<AudioBuffer|null>} null, wenn der getrimmte Bereich leer ist
+ */
+export async function renderSlotOffline(s, slot, buffer, { channels = OFFLINE_RENDER_CHANNELS, sharedReverb = true } = {}) {
+  const { bufferDur } = slotBufferSpan(slot, buffer);
+  if (bufferDur <= 0) return null;
+
+  const plan0 = resolvePlan(asPipelineEffects(s.effects));
+  const tail = exportTailSeconds(plan0);
+  const sr   = buffer.sampleRate;
+
+  const build = async lengthS => {
+    const offCtx = new OfflineAudioContext(channels, Math.max(1, Math.ceil(lengthS * sr)), sr);
+    const graph = await renderSoundGraph(offCtx, buffer, slot, s, { mode: 'export', destination: outputFor(offCtx, 'export'), sharedReverb });
+    return { offCtx, graph };
+  };
+  let r = await build(bufferDur / effectivePlaybackRate((s.pitch || 1) * planTempoRate(plan0)) + tail);   // P17f: Tempo verkürzt/verlängert die Spielzeit
+  // Fehlt der Pitch-Worklet, kommt ein Detune-Notbehelf hinzu und ändert die Rate erst beim Graph-Aufbau → einmal mit der echten Länge neu aufsetzen.
+  const wanted = r.graph.dur + tail;
+  if (Math.abs(wanted * sr - r.offCtx.length) > 1) { r.graph.dispose(); r = await build(wanted); }
+  r.graph.start(0);
+  try { return await r.offCtx.startRendering(); } finally { r.graph.dispose(); }
 }

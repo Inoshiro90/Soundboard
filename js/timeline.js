@@ -6,13 +6,15 @@
  * Audio scheduling via Web Audio API (sample-accurate).
  *
  * Track structure:
- *   { id, name, vol, pan, mute, solo, clips: [{ id, soundId, slotIdx, startSec, gain }] }
+ *   { id, name, vol, pan, mute, solo, clips: [{ id, soundId, slotId, slotIdx, startSec, gain }] }
+ *   P18b (E1): `slotId` ist die Slot-Kennung; aufgelöst wird über sie, `slotIdx` ist nur Rückfall (ältere Clips).
  *
  * Clip: references a sound's slot audio buffer.
  */
 
 import { APP, CItems }   from './core/state.js';
-import { uid, bk }       from './utils.js';
+import { uid }           from './utils.js';
+import { bufferForRef }  from './audio/engine/source-registry.js';   // P18b
 import { toast }         from './notifications.js';
 import { actx } from './audio/context.js';
 import './audio/playback.js';
@@ -43,7 +45,8 @@ export function addClipToTrack(trackId, soundId, slotIdx, startSec) {
   const sound  = CItems().find(x => x.id === soundId);
   if (!sound) return;
   const before = snapshotTimeline();
-  const clip   = { id: uid(), soundId, slotIdx: slotIdx || 0, startSec: startSec || 0, gain: sound.vol || 1, label: sound.name };
+  const slotId = sound.slots?.[slotIdx || 0]?.id ?? null;   // P18b (E1): Verweis über die Slot-Kennung
+  const clip   = { id: uid(), soundId, slotId, slotIdx: slotIdx || 0, startSec: startSec || 0, gain: sound.vol || 1, label: sound.name };
   track.clips.push(clip);
   historyPush(`Clip „${sound.name}" hinzugefügt`, 'timeline', { before, after: snapshotTimeline() });
   renderTimeline();
@@ -93,7 +96,7 @@ export function timelinePlay() {
     trackGain.connect(panner); panner.connect(masterLimiter);
 
     (track.clips || []).forEach(clip => {
-      const buf = APP.audioBuffers[bk(clip.soundId, clip.slotIdx)];
+      const buf = bufferForRef(clip.soundId, clip.slotId, clip.slotIdx);
       if (!buf) return;
 
       const clipOffset  = clip.startSec - APP.timeline.startPlayhead;
@@ -224,7 +227,7 @@ export function renderTimeline() {
 
     // Clips
     (track.clips || []).forEach(clip => {
-      const buf = APP.audioBuffers[bk(clip.soundId, clip.slotIdx)];
+      const buf = bufferForRef(clip.soundId, clip.slotId, clip.slotIdx);
       const dur = buf ? buf.duration : 1;
       const cx  = HEADER_W + clip.startSec * pps;
       const cw  = Math.max(8, dur * pps);
@@ -353,7 +356,7 @@ export async function timelineMixdown() {
   let totalDur = 0;
   tracks.forEach(t => {
     (t.clips || []).forEach(c => {
-      const buf = APP.audioBuffers[bk(c.soundId, c.slotIdx)];
+      const buf = bufferForRef(c.soundId, c.slotId, c.slotIdx);
       if (buf) totalDur = Math.max(totalDur, c.startSec + buf.duration);
     });
   });
@@ -377,7 +380,7 @@ export async function timelineMixdown() {
     tGain.connect(pan); pan.connect(lim);
 
     (track.clips || []).forEach(clip => {
-      const buf = APP.audioBuffers[bk(clip.soundId, clip.slotIdx)];
+      const buf = bufferForRef(clip.soundId, clip.slotId, clip.slotIdx);
       if (!buf) return;
       const src = offCtx.createBufferSource(); src.buffer = buf;
       const cg  = offCtx.createGain(); cg.gain.value = clip.gain;

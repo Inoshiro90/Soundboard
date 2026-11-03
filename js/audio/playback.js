@@ -5,10 +5,11 @@
  */
 
 import { APP, CItems, resolveItemById } from '../core/state.js';
-import { bk, sleep }   from '../utils.js';
+import { sleep }       from '../utils.js';
 import { toast }       from '../notifications.js';
 import '../db.js';
 import { getOrDecodeBuffer } from '../audioCache.js';
+import { bufferFor } from './engine/source-registry.js';   // P18b: Buffer über die Slot-Identität
 import { renderSoundGraph, scheduleFadeCurve } from '../renderPipeline.js';
 // Auto Duck: zirkulärer Import (ambient/ambient-playback.js importiert umgekehrt actx/
 // hasAudioContext aus audio/context.js und buildEffectChain aus
@@ -34,10 +35,10 @@ export function decodeAudio(key, b64) {
   } catch(e) { console.error('[audio] decodeAudio setup error:', e); }
 }
 
-/** Promise-based decode, uses central cache. */
-export async function decodeAudioSmart(soundId, slotIdx, slotData) {
+/** Promise-based decode, uses central cache. P18b: `slot` bestimmt den Cache-Schlüssel (Kennung vor Position). */
+export async function decodeAudioSmart(soundId, slotIdx, slotData, slot = null) {
   if (!slotData || !hasAudioContext()) return null;
-  return getOrDecodeBuffer(soundId, slotIdx, slotData, actx());
+  return getOrDecodeBuffer(soundId, slotIdx, slotData, actx(), slot);
 }
 
 // ─── AUTO DUCK ───────────────────────────────────────────
@@ -100,13 +101,13 @@ export async function playSelectedSlot(s, idx, opts = {}) {
   const slot  = slots[idx];
   if (!slot || !slot.data) { toast('Slot ' + (idx + 1) + ' leer'); return; }
 
-  let buf = APP.audioBuffers[bk(s.id, idx)];
+  let buf = bufferFor(s, idx);
   if (!buf) {
     // Lazy-load, dann GENAU diesen Slot (idx) weiterverwenden — nie
     // erneut über playSound()/curSlot neu bestimmen lassen.
     toast('Audio lädt…');
     actx(); // stellt sicher, dass der AudioContext existiert (User-Gesture)
-    buf = await decodeAudioSmart(s.id, idx, slot.data);
+    buf = await decodeAudioSmart(s.id, idx, slot.data, slot);
     if (!buf) { toast('Audio konnte nicht geladen werden', 'err'); return; }
   }
 
@@ -188,8 +189,8 @@ export function playSoundAndWait(s) {
     // Playback, statt bei einem Cache-Miss den Slot stillschweigend zu überspringen (sonst
     // fehlen Sounds in Makros direkt nach einem Bulk-Import, bevor der Cache warm ist).
     actx();
-    let buf = APP.audioBuffers[bk(s.id, idx)];
-    if (!buf) buf = await decodeAudioSmart(s.id, idx, slot.data);
+    let buf = bufferFor(s, idx);
+    if (!buf) buf = await decodeAudioSmart(s.id, idx, slot.data, slot);
     if (!buf) { resolve(); return; }
     const gs = APP.globalSettings; const ctx = actx();
 

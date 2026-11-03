@@ -75,13 +75,15 @@ export function _syncMusicFxCard() {
 //   „Musikstück speichern" → setMusicTrackEffects(id, _musicEditEffects)  (erst hier persistiert)
 // Abbrechen/Schließen des Musik-Editors verwirft den Draft; der echte Track bleibt unberührt.
 
-/** Dialog-Rahmen für den Musik-Kontext: keine Vorschau/Export (gehören zur Sound-Pipeline), Hinweis im Footer. */
+/**
+ * Dialog-Rahmen für den Musik-Kontext: Hinweis im Footer. Seit Phase 17g hat Musik eine eigene Vorschau (audio/preview.js
+ * previewMusicTrack, gestartet über register-effects-events.js); der Vorschau-Knopf bleibt deshalb sichtbar. Export bleibt ausgeblendet
+ * (_setModalContext('music')).
+ */
 function _applyMusicFxModalChrome(on) {
-  const prev = document.getElementById('btnPreviewFx');
-  if (prev) prev.style.display = on ? 'none' : '';
   const hint = document.getElementById('fxModalFooterHint');
   if (hint) hint.textContent = on
-    ? 'Änderungen wirken erst nach dem Speichern des Musikstücks.'
+    ? 'Vorschau mit dem Entwurf; das Stück im Player übernimmt Änderungen erst nach dem Speichern.'
     : 'Änderungen wirken sofort auf die Vorschau.';
 }
 
@@ -103,6 +105,7 @@ export function openMusicFxEditor() {
  */
 export function commitMusicFxDraft() {
   if (_fxEditContext.kind !== 'music') return;
+  stopEffectPreview();   // P17g: die Musik-Vorschau endet mit dem Effekt-Dialog (der Musik-Editor hat keinen eigenen Vorschau-Knopf)
   if (_musicEditId && _musicEditEffects) _musicEditEffects = readEffectsFromUI();
   _syncMusicFxCard();
   _applyMusicFxModalChrome(false);

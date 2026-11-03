@@ -7,11 +7,11 @@ import { APP, CMP, CMTracks } from '../core/state.js';
 import { fmtTime } from '../utils.js';
 import { toast } from '../notifications.js';
 import { actx } from '../audio/context.js';
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
+import { resolvePlan, preparePipelineContext, TARGET_CAPS } from '../audio/fx-pipeline.js';
 import { makeAdmit, initVoiceBudget } from '../audio/engine/budget.js';   // Phase 3a: Voice-Budget (nur zählen, nie vereinfachen/entfernen)
 import { asPipelineEffects } from '../fx-model.js';
 import { connectToOutput } from '../audio/engine/output.js';   // Phase 4: einziger Ausgang
-import { musicTiming } from '../audio/engine/timebase.js';     // Phase 13d: Zeitbasis für Bewegungen
+import { applyMusicTempo, connectMusicFx, armMusicChain, musicBlob } from './music-fx.js';   // P17g: gemeinsame Musik-Kette (Live und Vorschau)
 import { idbGet, audioKey, IDB_SENTINEL } from '../db.js';
 // Zirkulärer Import (music-model.js importiert umgekehrt stopMusic/
 // _revokeBlobUrl/_orderedTracks/_blobUrls/_resetShuffleOrder aus diesem
@@ -90,10 +90,7 @@ export function _revokeBlobUrl(trackId) {
 function _blobUrlFor(trackId, b64) {
   const cached = _blobUrls.get(trackId);
   if (cached) return cached;
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([arr]));
+  const url = URL.createObjectURL(musicBlob(b64));   // P17g: Dekodierung gemeinsam mit der Vorschau (music-fx.js)
   _blobUrls.set(trackId, url);
   return url;
 }
@@ -167,14 +164,16 @@ function _reconnectSlotFx(rec, effects) {
   // Phase 3a: geschützte Voice (gezählt, nie vereinfacht/entfernt); Hall bei Musik immer pro Stimme. Live-Updates (runtime.update) ändern die Kosten nicht nach.
   rec.voice = makeAdmit({ kind: 'music', id: rec.trackId, share: false, noDegrade: true })(plan);
   let graph;
-  try { graph = buildPipelineGraph(ctx, plan, { numChannels: 2, caps: TARGET_CAPS.music, live: true }); }
+  // P17g: Bau, Verbindung und Tempo des Elements im gemeinsamen Helfer (music-fx.js) — dieselbe Kette nutzt die Vorschau (Live = Preview).
+  try { graph = connectMusicFx(ctx, plan, rec.source, rec.gain, rec.audio); }
   catch (e) { rec.voice.release(); rec.voice = null; throw e; }
-  if (graph.input) { rec.source.connect(graph.input); graph.output.connect(rec.gain); }
-  else rec.source.connect(rec.gain);
   rec.fxChain = graph;
   // Phase 13d: Neu verbunden während der Wiedergabe (Notbehelf in applyMusicTrackEffectsLive) → Zeitbasis sofort übernehmen.
   if (!rec.audio.paused) _armMusicFx(rec);
 }
+
+// P17f-2 applyMusicTempo: seit P17g in music-fx.js (gemeinsam mit der Vorschau); hier weiter exportiert (Tests, bisherige Importe).
+export { applyMusicTempo };
 
 /**
  * Phase 13d: Zeitbasis der Effektkette aus der Wiedergabeposition melden (timebase.js musicTiming). Position 0 des Clips = Trim-Anfang
@@ -183,10 +182,8 @@ function _reconnectSlotFx(rec, effects) {
 function _armMusicFx(rec) {
   if (!rec.fxChain || !rec.trackId) return;
   const track = _findTrack(rec.trackId);
-  rec.timing = musicTiming({ ctxNow: actx().currentTime, position: rec.audio.currentTime, clipStart: track?.trimStart || 0,
-    duration: rec.audio.duration, rate: rec.audio.playbackRate || 1, prev: rec.timing || null, newPass: !!rec.newPass });
+  rec.timing = armMusicChain(rec.fxChain, rec.audio, track?.trimStart || 0, rec.timing, rec.newPass);   // P17g: gemeinsam mit der Vorschau
   rec.newPass = false;
-  try { rec.fxChain.arm(rec.timing); } catch (e) { console.warn('[music] Zeitbasis:', e); }
 }
 
 /**

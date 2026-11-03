@@ -7,6 +7,13 @@
  *   Es gibt bewusst KEINE Optimierung, die Layer zusammenfasst, umordnet, überspringt oder verschmilzt
  *   (insbesondere kein Pitch-Coalescing, kein Zusammenführen von Presets).
  *
+ *   AUSNAHME „Tempo“ (Phase 17f, Entscheidungen M und N; dokumentiert wie AE-17): Das Modul `tempo` darf in jeder Stufe stehen,
+ *   wirkt aber IMMER auf die gesamte Wiedergabe — es ändert die Abspielrate der Quelle; der Gegen-Pitch („Tonhöhe halten“) sitzt
+ *   am Kettenanfang vor allen Layern. Von mehreren aktiven Tempo-Modulen wirkt nur das ERSTE in Pipeline-Reihenfolge
+ *   (Quelle → Hörer, innerhalb der Stufe Layer-Reihenfolge; ausgeschaltete Stufen/Layer zählen nicht); die anderen bleiben
+ *   gespeichert und sind unwirksam. Ein Layer mit nur einem Tempo-Modul gilt als Layer ohne klingende Module (Schritt bleibt,
+ *   reicht durch). Ergebnis: `plan.tempo` (resolvePlan). Die übrigen Layer und ihre Reihenfolge bleiben unberührt.
+ *
  * Datenmodell (effects.v === 2), eine Instanz je Sound / Ambient-Track / Musik-Track:
  *   {
  *     v: 2, enabled: bool,                       // Master: false → Originalaudio (Pipeline entfällt)
@@ -34,7 +41,7 @@ import { workletsForPlan, fallbackWorklets } from './engine/worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './engine/compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './engine/waveshaper-probe.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive, isPlanLevelKey, tempoValues, TEMPO_COUNTER_TAIL_S } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
 import {
   fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
@@ -244,11 +251,14 @@ export function duplicateLayer(effects, layerId) {
  * Fähigkeiten je Ziel (Live/Export/Ambient/Musik/Noise-Preview). Der Plan selbst ist für alle Ziele gleich;
  * nur diese Flags unterscheiden, was ein Ziel technisch ausführen kann.
  *   pitch: 'worklet' = Pitch-Worklet pro Layer (Reihenfolge bleibt erhalten) | 'none' = Pitch wird nicht ausgeführt
+ *   tempo: true = das Ziel wendet `plan.tempo` an (Rate der Quelle + Gegen-Pitch, Phase 17f). Fehlt das Flag, wird Tempo ignoriert
+ *          (Rauschgeneratoren haben keine Rate: `noise`). Musik seit 17f-2 (Rate am Media-Element, music-playback.js), Ambient seit
+ *          17f-3 (Rate der Pufferquelle je Clip, ambient-playback.js; Generator-Tracks nutzen `noise`).
  */
 export const TARGET_CAPS = {
-  sound:   { pitch: 'worklet' },
-  ambient: { pitch: 'worklet' },
-  music:   { pitch: 'worklet' },
+  sound:   { pitch: 'worklet', tempo: true },
+  ambient: { pitch: 'worklet', tempo: true },   // P17f-3
+  music:   { pitch: 'worklet', tempo: true },   // P17f-2
   noise:   { pitch: 'worklet' }
 };
 
@@ -259,6 +269,47 @@ export const TARGET_CAPS = {
  *   needsPanner = true, sobald mindestens ein aktiver Schritt existiert: rein technischer Stereo-Abschluss
  *                 (Pan 0, Mono→Stereo wie bisher), KEIN Pipeline-Schritt und nicht einstellbar.
  */
+/** Klingt mindestens ein Modul IM Layer? Wie hasActiveModules, aber ohne Plan-Ebene-Module (Tempo, Phase 17f). */
+function _layerSounds(params) {
+  return LAYER_PARAM_KEYS.some(k => !isPlanLevelKey(k) && params[k]?.enabled === true);
+}
+
+/**
+ * Phase 17f (Regel N): wirksames Tempo eines Plans aus seinen Schritten — das ERSTE eingeschaltete Tempo-Modul in Planreihenfolge.
+ * @returns {{rate:number, keepPitch:boolean, counter:boolean, layerId:string, stage:string, stepIndex:number}|null}
+ *   counter = Gegen-Pitch nötig (Tonhöhe halten und Rate ≠ 1). null = kein aktives Tempo-Modul.
+ */
+export function resolveTempo(steps) {
+  const s = (steps || []).find(st => st.params?.tempo?.enabled === true);
+  if (!s) return null;
+  const { rate, keepPitch } = tempoValues(s.params.tempo);
+  return { rate, keepPitch, counter: keepPitch && rate !== 1, layerId: s.layerId, stage: s.stage, stepIndex: s.index };
+}
+
+/**
+ * Phase 17f (Oberfläche): alle EINGESCHALTETEN Tempo-Module eines v2-Effektobjekts in Pipeline-Reihenfolge, mit Wirksamkeit nach Regel N.
+ * Der Master-Schalter wird hier nicht betrachtet (er schaltet alles ab und ist eigener Zustand der Oberfläche).
+ * @returns {{layerId:string, stage:string, layerIndex:number, counted:boolean, effective:boolean}[]}
+ *   counted = Stufe und Layer eingeschaltet (nimmt an Regel N teil); effective = das wirksame Tempo-Modul.
+ */
+export function tempoUsages(effects) {
+  const out = [];
+  if (!effects || effects.v !== PIPELINE_VERSION) return out;
+  for (const stage of STAGE_ORDER) {
+    const st = effects.stages?.[stage];
+    (st?.layers || []).forEach((layer, layerIndex) => {
+      if (layer?.params?.tempo?.enabled !== true) return;
+      out.push({ layerId: layer.id, stage, layerIndex, counted: !!st.enabled && !!layer.enabled, effective: false });
+    });
+  }
+  const win = out.find(u => u.counted);
+  if (win) win.effective = true;
+  return out;
+}
+
+/** Wirksame Tempo-Rate eines Plans (1 ohne aktives Tempo-Modul). */
+export const planTempoRate = plan => plan?.tempo?.rate ?? 1;
+
 export function resolvePlan(effects) {
   if (!effects || effects.v !== PIPELINE_VERSION) {
     throw new TypeError('resolvePlan: v2-Effektobjekt erwartet (v1-Daten zuerst migrieren: fx-model.js ensureEffectsV2)');
@@ -273,7 +324,7 @@ export function resolvePlan(effects) {
         const params = fillLayerParams(layer.params);
         steps.push({
           index: steps.length, stage, layerId: layer.id, layerIndex, presetId: layer.presetId,
-          params, active: hasActiveModules(params)
+          params, active: _layerSounds(params)   // P17f: Tempo zählt nicht (Plan-Ebene); ohne Tempo identisch zu hasActiveModules
         });
       });
     }
@@ -284,6 +335,8 @@ export function resolvePlan(effects) {
     steps,
     needsPanner,
     hasPitch: steps.some(s => pitchActive(s.params.pitchShift)),
+    /** P17f: wirksames Tempo (Regel N) oder null — siehe resolveTempo(). */
+    tempo: resolveTempo(steps),
     /** Lesbare Reihenfolge für Tests/Diagnose, z. B. ['source:monster', 'source:manual', 'medium:radio'] */
     sequence: steps.map(s => `${s.stage}:${s.presetId || 'manual'}`)
   };
@@ -319,12 +372,13 @@ export function planTailSeconds(plan) {
     if (pitchActive(s.params.pitchShift)) t += moduleTail('pitchShift', s.params.pitchShift);
     sum += t;
   }
+  if (plan.tempo?.counter) sum += TEMPO_COUNTER_TAIL_S;   // P17f: Latenz des Gegen-Pitch am Kettenanfang verschiebt alles (wie runtime.tailSeconds)
   return Math.min(30, sum);
 }
 
 /** Export-Tail: mindestens 3,5 s sobald Effekte aktiv waren, bei langen Ketten mehr (Registry-`tail()` der klingenden Module, Phase 4). */
 export function exportTailSeconds(plan) {
-  if (!plan.steps.some(s => s.active)) return 0;
+  if (!plan.steps.some(s => s.active)) return plan.tempo?.counter ? planTailSeconds(plan) : 0;   // P17f: nur Tempo → nur die Latenz des Gegen-Pitch
   return Math.min(30, Math.max(3.5, planTailSeconds(plan) + 0.5));
 }
 
@@ -343,7 +397,7 @@ const _LAYER_ORDER = Object.fromEntries(MODULES.map(m => [m.key, m.layerOrder]))
 
 /** Klingende Module eines Schritts: aktiv, nicht überlagert (B-02); Pitch nur, wenn ein Knoten gebaut wird (registry.pitchActive, P17b). */
 function _soundingKeys(params) {
-  return effectiveActiveKeys(params).filter(k => k !== 'pitchShift' || pitchActive(params.pitchShift));
+  return effectiveActiveKeys(params).filter(k => !isPlanLevelKey(k) && (k !== 'pitchShift' || pitchActive(params.pitchShift)));
 }
 
 /**

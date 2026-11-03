@@ -9,6 +9,74 @@ import { defaultPipelineEffects }  from '../audio/fx-pipeline.js';
 import { mkAmbientProfile, mkMusicProfile } from './factories.js';
 import { normalizeAmbientVolumeFields } from '../ambient/ambient-volume.js';
 
+// ─── QUELLEN-IDENTITÄT (P18a) ─────────────────────────────────
+// Sound-Slots erhalten eine stabile, positionsunabhängige Kennung `slot.id` (uid) und
+// optional eine Revision `rev` (ganze Zahl > 0; fehlt = 0, sparsam gespeichert).
+// Ambient-Dateien (`files[].id`) und Musik-Tracks (`track.id`) haben ihre Kennung bereits;
+// für sie wird hier nur `rev` normalisiert. Die IDB-Schlüssel bleiben positionsbezogen
+// und unverändert (`audioKey(soundId, i)` bzw. `audioKey(id, 0)`).
+
+/**
+ * Entfernt eine ungültige oder neutrale Revision (`rev` ist dann 0). Gültig: ganze Zahl > 0.
+ * @returns {boolean} true, wenn das Objekt geändert wurde
+ */
+export function normalizeSourceRev(obj) {
+  if (!obj || typeof obj !== 'object' || !('rev' in obj)) return false;
+  if (Number.isInteger(obj.rev) && obj.rev > 0) return false;
+  delete obj.rev;
+  return true;
+}
+
+/**
+ * Alle Kennungen eines Zustands (Profile, Elemente, Ambient-Szenen/-Tracks/-Dateien, Musik-Playlists/-Tracks),
+ * ohne Slot-Kennungen. Neue Slot-Kennungen meiden diese Menge.
+ * @param {{profiles?:Array, ambient?:object, music?:object}} state
+ */
+export function collectEntityIds(state) {
+  const ids = new Set();
+  const add = id => { if (typeof id === 'string' && id) ids.add(id); };
+  (state?.profiles || []).forEach(p => { add(p.id); (p.items || []).forEach(i => add(i?.id)); });
+  (state?.ambient?.profiles || []).forEach(p => {
+    add(p.id);
+    (p.tracks || []).forEach(t => { add(t?.id); (t?.files || []).forEach(f => add(f?.id)); });
+  });
+  (state?.music?.profiles || []).forEach(p => { add(p.id); (p.tracks || []).forEach(t => add(t?.id)); });
+  return ids;
+}
+
+/** Slot-Kennungen aller Sounds eines Zustands, optional ohne einen Sound (dessen Slots gerade bearbeitet werden). */
+export function collectSlotIds(state, exceptSoundId = null) {
+  const ids = new Set();
+  (state?.profiles || []).forEach(p => (p.items || []).forEach(it => {
+    if (it?.type !== 'sound' || it.id === exceptSoundId) return;
+    (it.slots || []).forEach(sl => { if (typeof sl?.id === 'string' && sl.id) ids.add(sl.id); });
+  }));
+  return ids;
+}
+
+/**
+ * Stellt für jeden Slot eine eindeutige `id` sicher und normalisiert `rev`. Ein Slot behält seine Kennung, solange sie
+ * gültig ist und nicht schon in `taken` steht; sonst erhält er eine neue. Jede vergebene/behaltene Kennung wird in
+ * `taken` eingetragen (Duplikate in derselben Liste werden dadurch ebenfalls neu vergeben). Unbekannte Felder bleiben.
+ * @param {Array} slots
+ * @param {Set<string>} taken  bereits belegte Kennungen (wird ergänzt)
+ * @returns {number} Anzahl geänderter Slots
+ */
+export function ensureSlotIdentity(slots, taken) {
+  let changed = 0;
+  (slots || []).forEach(sl => {
+    if (!sl || typeof sl !== 'object') return;
+    let ch = normalizeSourceRev(sl);
+    if (typeof sl.id !== 'string' || !sl.id || taken.has(sl.id)) {
+      let id; do { id = uid(); } while (taken.has(id));
+      sl.id = id; ch = true;
+    }
+    taken.add(sl.id);
+    if (ch) changed++;
+  });
+  return changed;
+}
+
 // ─── AMBIENT NORMALISATION ────────────────────────────────────
 // Accepts either the current scene-profile shape ({ profiles:[{tracks}] })
 // or the legacy flat shape from an earlier version ({ tracks:[...] }) and
@@ -30,6 +98,7 @@ function _normalizeAmbientTrack(t) {
     if (typeof f.fileName !== 'string') f.fileName = '';
     if (typeof f.trimStart !== 'number') f.trimStart = 0;
     if (f.trimEnd === undefined) f.trimEnd = null;
+    normalizeSourceRev(f);   // P18a: Revision der Datei (fehlt = 0)
   });
   if (t.variantMode !== 'random' && t.variantMode !== 'rotate') t.variantMode = 'random';
   if (!t.name) t.name = 'Ambient';
@@ -114,6 +183,7 @@ function _normalizeMusicTrack(t) {
   if (typeof t.order    !== 'number') t.order    = 0;
   if (typeof t.trimStart !== 'number') t.trimStart = 0;
   if (t.trimEnd === undefined) t.trimEnd = null;
+  normalizeSourceRev(t);   // P18a: Revision der Audiodatei des Tracks (fehlt = 0)
   // Bestehende Musik-Tracks ohne vollständiges
   // Effekt-Objekt bekommen es rückwärtskompatibel ergänzt (dieselbe
   // defaultEffects()-Fabrik wie Sound/Ambient — kein eigenes Modell,

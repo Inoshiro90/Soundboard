@@ -120,7 +120,7 @@ export function _releaseSoundDraftGuard() {
 }
 
 /**
- * Decodes any APP.editSlots entries that don't yet have a `_ed_N` buffer cached
+ * Decodes any APP.editSlots entries that don't yet have a draft buffer (P18b: draftBuffer(), source-registry.js)
  * (i.e. existing, previously-saved audio that wasn't touched this session) so
  * the waveform/trim/preview tools work immediately, not just for newly-loaded files.
  * Resolves the right IDB key depending on whether we're editing a sound or an

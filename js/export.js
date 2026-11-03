@@ -8,14 +8,11 @@
 
 import { APP }  from './core/state.js';
 import { toast } from './notifications.js';
-import { bk }   from './utils.js';
 import './audio/context.js';
-import { renderSoundGraph, effectivePlaybackRate, slotBufferSpan } from './renderPipeline.js';
-import { resolvePlan, exportTailSeconds } from './audio/fx-pipeline.js';
-import { asPipelineEffects } from './fx-model.js';
+import { renderSlotOffline, OFFLINE_RENDER_CHANNELS } from './renderPipeline.js';   // P18c: Offline-Kern
 import { getOrDecodeBuffer } from './audioCache.js';
+import { bufferFor } from './audio/engine/source-registry.js';   // P18b
 import { actx } from './audio/context.js';
-import { outputFor } from './audio/engine/output.js';
 import { timelineMixdown } from './timeline.js';
 
 // ─── KANALZAHL DER EXPORTDATEI (K1) ───────────────────────────
@@ -26,7 +23,7 @@ import { timelineMixdown } from './timeline.js';
  * Sonst bleibt die Kanalzahl des Renders. Vorher: Kanalzahl = Kanalzahl der Quelldatei, eine Mono-Quelle wurde mono gerendert und
  * verlor Panorama, Auto-Pan, Haas, Verbreiterung, Spatial und Doppler-Panorama (Hörliste 13a #15).
  */
-export const EXPORT_RENDER_CHANNELS = 2;
+export const EXPORT_RENDER_CHANNELS = OFFLINE_RENDER_CHANNELS;   // P18c: Wert (2) liegt in renderPipeline.js
 
 export function exportChannelCount(buffer) {
   if (buffer.numberOfChannels !== 2) return buffer.numberOfChannels;
@@ -128,30 +125,13 @@ export async function renderSoundOffline(s, slotIdx) {
   const slot = (s.slots || [])[slotIdx];
   if (!slot || !slot.data) return null;
 
-  let liveBuf = APP.audioBuffers[bk(s.id, slotIdx)];
-  if (!liveBuf) liveBuf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, actx());
+  let liveBuf = bufferFor(s, slotIdx);
+  if (!liveBuf) liveBuf = await getOrDecodeBuffer(s.id, slotIdx, slot.data, actx(), slot);
   if (!liveBuf) return null;
 
-  const { bufferDur } = slotBufferSpan(slot, liveBuf);
-  if (bufferDur <= 0) return null;
-
-  const tail = exportTailSeconds(resolvePlan(asPipelineEffects(s.effects)));
   const numCh = EXPORT_RENDER_CHANNELS;   // K1: wie Live, nicht die Kanalzahl der Quelle
-  const sr    = liveBuf.sampleRate;
-
-  // Trim geschieht per start(when, offset, duration) direkt auf dem ungetrimmten liveBuf (identisch zu live);
-  // derselbe Baustein wie überall sonst (renderPipeline.js), inkl. Fades.
-  const build = async lengthS => {
-    const offCtx = new OfflineAudioContext(numCh, Math.max(1, Math.ceil(lengthS * sr)), sr);
-    const graph = await renderSoundGraph(offCtx, liveBuf, slot, s, { mode: 'export', destination: outputFor(offCtx, 'export'), sharedReverb: APP.globalSettings.reverbShare !== false });
-    return { offCtx, graph };
-  };
-  let r = await build(bufferDur / effectivePlaybackRate(s.pitch) + tail);
-  // Fehlt der Pitch-Worklet, kommt ein Detune-Notbehelf hinzu und ändert die Rate erst beim Graph-Aufbau → einmal mit der echten Länge neu aufsetzen.
-  const wanted = r.graph.dur + tail;
-  if (Math.abs(wanted * sr - r.offCtx.length) > 1) { r.graph.dispose(); r = await build(wanted); }
-  r.graph.start(0);
-  try { return await r.offCtx.startRendering(); } finally { r.graph.dispose(); }
+  // P18c: Graph-Aufbau, Länge, Nachklang und Rendern unverändert nach renderPipeline.js renderSlotOffline() verschoben.
+  return renderSlotOffline(s, slot, liveBuf, { channels: numCh, sharedReverb: APP.globalSettings.reverbShare !== false });
 }
 
 const _safeFileName = (name, fallback = 'sound') => ((name || fallback).replace(/[^a-zA-Z0-9äöüÄÖÜß _-]/g, '').trim() || fallback);
