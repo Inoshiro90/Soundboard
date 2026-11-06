@@ -16,7 +16,7 @@
  * Dauerschleifen-Layer).
  */
 
-import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS, exportTailSeconds, planTempoRate } from './audio/fx-pipeline.js';
+import { resolvePlan, buildPipelineGraph, preparePipelineContext, TARGET_CAPS, exportTailSeconds, planTailSeconds, planTempoRate, prefixPlan, reverseTargets } from './audio/fx-pipeline.js';
 import { asPipelineEffects } from './fx-model.js';
 import { attachSend } from './audio/engine/reverb-hub.js';
 import { busesOf } from './audio/engine/buses.js';
@@ -194,6 +194,7 @@ export function slotBufferSpan(slot, buffer) {
  *   deren Ziel Tempo nicht ausführt, damit Vorschau und Live gleich bleiben (bis 17f-3 die Ambient-Vorschau; derzeit kein Aufrufer).
  * @param {boolean} [opts.sharedReverb=false] - Phase 3b (AE-17): sendfähiger Hall über den geteilten Hub (reverb-hub.js). Standard aus =
  *   bisheriger Pfad (Hall je Voice), bit-gleich zu Phase 3. Hall liegt dann NACH Fade/Lautstärke (D1).
+ * @param {{step:number, key:string}} [opts.untilStep] - P19e (R3): nur der Teil-Plan bis vor dieses Modul (fx-pipeline.js prefixPlan; Render-Cache).
  * @returns {Promise<{
  *   src: AudioBufferSourceNode, masterGain: GainNode,
  *   dur: number (wirksame Spielzeit in Context-Zeit), bufferDur: number (Material in Pufferzeit), rate: number,
@@ -201,7 +202,7 @@ export function slotBufferSpan(slot, buffer) {
  * }>}
  */
 export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
-  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null, loopPreview = false, tempo = true } = opts;
+  const { destination, mode = 'live', masterVol = 1, allowLoop = true, crossfadeIn = null, live = false, bypassable = false, sharedReverb = false, admit = null, stagger = null, loopPreview = false, tempo = true, untilStep = null } = opts;
   const isLive    = mode === 'live';
   const caps = tempo ? TARGET_CAPS.sound : { ...TARGET_CAPS.sound, tempo: false };   // P17f
 
@@ -227,6 +228,17 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   // Knotenkette. Live, Preview und Export laufen durch dieselbe Funktion; es gibt keine Optimierung, die Layer
   // zusammenfasst oder umordnet (auch kein Pitch-Coalescing). Der Pitch-Worklet wird je Layer-Instanz gebaut.
   let plan = resolvePlan(asPipelineEffects(s.effects));
+  if (untilStep) plan = prefixPlan(plan, untilStep);   // P19e: Teil-Render für den Render-Cache
+  // P19e: Reverse-Hall — vorgerendertes Wet-Signal je Modul (reverse-reverb.js, Render-Cache), ermittelt am Plan VOR der Degradation.
+  // Export: wartet darauf und bekommt es immer. Live und Vorschau (19e-2, F4 = b): nur aus dem Cache; fehlt eine Variante, spielt der
+  // Sound trocken (F2 = b) und sie wird im Hintergrund angefordert (F3 = a). Ohne Reverse-Modul wird nichts geladen (dynamischer Import).
+  let reverse = null;
+  if (reverseTargets(plan).length) {
+    const RR = await import('./audio/engine/reverse-reverb.js');
+    const wait = mode === 'export';
+    reverse = await RR.reverseVariantsFor(plan, s, slot, buffer, { wait });
+    if (!wait && reverse.missing) RR.requestReverse(s, slot, { buffer });
+  }
   // Voice-Budget (Phase 3a, AE-16): nur Live und Preview. `admit(plan)` meldet die Voice an und liefert ggf. einen
   // DEGRADIERTEN Plan (gleiche Layer-Reihenfolge); der Export läuft nie degradiert (Qualität vor Echtzeit).
   const admission = (admit && mode !== 'export') ? admit(plan) : null;
@@ -234,7 +246,7 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
   let graph;
   try {
     await preparePipelineContext(ctx, plan, caps);
-    const build = () => buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps, live, bypassable, shareReverb: sharedReverb });
+    const build = () => buildPipelineGraph(ctx, plan, { numChannels: buffer.numberOfChannels, caps, live, bypassable, shareReverb: sharedReverb, reverse });
     // Schwere Aufbauten (Pitch-Worklet, eigener Faltungs-Hall) gestaffelt: Firefox/Chrome blockieren sonst den Haupt-Thread (E6, M-1).
     graph = (stagger && admission?.heavy) ? await stagger.run(build) : build();
   } catch (e) { admission?.release(); throw e; }
@@ -285,6 +297,8 @@ export async function renderSoundGraph(ctx, buffer, slot, s, opts) {
     /** Aufgelöster Plan (Reihenfolge s. plan.sequence), geschätzter Nachklang und Aufräumfunktion der Effekt-Knoten. */
     // Sendfähig: der Hall-Nachklang liegt im Hub (eigener Lebenszyklus) — die Voice braucht nur die Ketten-Restzeit.
     plan, tailSeconds: graph.tailSeconds(),
+    /** P19e: Varianten des Reverse-Halls (Map layerId → Wet) oder null — die Vorschau meldet damit veraltete Varianten (markStaleReverse). */
+    reverse,
     dispose: () => { try { sendHandle?.dispose(); } finally { try { graph.dispose(); } finally { admission?.release(); } } },
     /** Voice-Budget: die Voice wurde degradiert angemeldet (Phase 3a) bzw. Kostenpunkte der Voice. */
     degraded: !!admission?.degraded, voicePoints: admission?.points ?? null,
@@ -320,20 +334,23 @@ export const OFFLINE_RENDER_CHANNELS = 2;
  * @param {object} s       Sound (effects, pitch, vol, loop, fade, playback)
  * @param {object} slot    Slot (trimStart/trimEnd, fadeIn/fadeOut)
  * @param {AudioBuffer} buffer  dekodiertes, ungetrimmtes Quellmaterial
- * @param {{ channels?: number, sharedReverb?: boolean }} [opts]
+ * P19e: `untilStep` → Teil-Render bis vor ein Modul (Render-Cache, R3). Länge dann Spielzeit + Nachklang des Teil-Plans (planTailSeconds,
+ * ohne die Mindestzugabe des Exports); Fades und Lautstärke neutralisiert der Aufrufer (render-cache.js).
+ * @param {{ channels?: number, sharedReverb?: boolean, untilStep?: {step:number, key:string} }} [opts]
  * @returns {Promise<AudioBuffer|null>} null, wenn der getrimmte Bereich leer ist
  */
-export async function renderSlotOffline(s, slot, buffer, { channels = OFFLINE_RENDER_CHANNELS, sharedReverb = true } = {}) {
+export async function renderSlotOffline(s, slot, buffer, { channels = OFFLINE_RENDER_CHANNELS, sharedReverb = true, untilStep = null } = {}) {
   const { bufferDur } = slotBufferSpan(slot, buffer);
   if (bufferDur <= 0) return null;
 
-  const plan0 = resolvePlan(asPipelineEffects(s.effects));
-  const tail = exportTailSeconds(plan0);
+  let plan0 = resolvePlan(asPipelineEffects(s.effects));
+  if (untilStep) plan0 = prefixPlan(plan0, untilStep);
+  const tail = untilStep ? planTailSeconds(plan0) : exportTailSeconds(plan0);
   const sr   = buffer.sampleRate;
 
   const build = async lengthS => {
     const offCtx = new OfflineAudioContext(channels, Math.max(1, Math.ceil(lengthS * sr)), sr);
-    const graph = await renderSoundGraph(offCtx, buffer, slot, s, { mode: 'export', destination: outputFor(offCtx, 'export'), sharedReverb });
+    const graph = await renderSoundGraph(offCtx, buffer, slot, s, { mode: 'export', destination: outputFor(offCtx, 'export'), sharedReverb, untilStep });
     return { offCtx, graph };
   };
   let r = await build(bufferDur / effectivePlaybackRate((s.pitch || 1) * planTempoRate(plan0)) + tail);   // P17f: Tempo verkürzt/verlängert die Spielzeit

@@ -318,9 +318,11 @@ export function registerEffectsEvents() {
       ensureSlotIdentity(cleanSlots, taken);
     }
 
+    let savedSound = null;   // P19e-2: für den Hintergrund-Render des Reverse-Halls
     if (APP.editId) {
       const s = items.find(x => x.id === APP.editId);
       if (!s) { toast('Sound nicht gefunden', 'err'); return; }
+      savedSound = s;
       const oldSlots = (s.slots || []).slice();
       const oldSlotCount = oldSlots.length;
       Object.assign(s, { name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, effects, playback });
@@ -340,6 +342,7 @@ export function registerEffectsEvents() {
       const phId  = APP._phReplacingId;
       const phIdx = phId ? items.findIndex(x => x.id === phId) : -1;
       const newS  = { type: 'sound', id, order: phIdx >= 0 ? items[phIdx].order : 99999, name, vol, pitch, loop, fade, random, hotkey, category, icon, color, tileColor, tileW, tileH, slots: cleanSlots, curSlot: 0, locked: false, effects, playback };
+      savedSound = newS;
       if (phIdx >= 0) items.splice(phIdx, 1, newS);
       else {
         const firstPH = items.findIndex(x => x.type === 'placeholder');
@@ -355,6 +358,10 @@ export function registerEffectsEvents() {
     _releaseSoundDraftGuard();
     bootstrap.Modal.getInstance(document.getElementById('soundModal')).hide();
     renderGrid(); toast('Gespeichert ✓', 'ok');
+    // P19e-2 (F3 = a): Varianten des Reverse-Halls im Hintergrund vorrendern (nur Sounds mit Reverse-Hall; Modul nur dann geladen).
+    if (savedSound && JSON.stringify(savedSound.effects || null).includes('"reverse"')) {
+      import('../audio/engine/reverse-reverb.js').then(m => m.warmSound(savedSound)).catch(e => console.warn('[audio] Reverse-Hall: Vorrendern fehlgeschlagen', e));
+    }
   });
 
   document.getElementById('btnDelSound')?.addEventListener('click', () => {

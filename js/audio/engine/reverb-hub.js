@@ -7,6 +7,7 @@
  *
  * SENDFÄHIG (describeSend/fx-pipeline.sendEligibility): das klingende Hall-Modul gehört zum letzten klingenden Schritt
  * des Plans, und im selben Layer folgt nach ihm kein klingendes Modul (Delay, Tremolo, Noise-Gate, Spatial).
+ * P19c: `reverb` nur im Modus `room` (Gated, Shimmer und Reverse sind nicht linear bzw. pro Stimme).
  *
  * VERDRAHTUNG (eine Voice), alle Abgriffe HINTER dem Master-Gain (Fades und Lautstärke wirken auf Dry und Send):
  *   masterGain → dryG (1−wet) ──────────────┐
@@ -26,8 +27,10 @@
  */
 
 import { getIRBuffer, getGenericIR } from '../ir-data.js';
+import { reverbIsLegacy, reverbIRKey, reverbNormalize } from '../ir-synth.js';   // P19a; reverbNormalize: Nachbesserung 19a Teil 2
 import { buildTerminalPanner } from '../effect-graph.js';
 import { outputFor } from './output.js';
+import { reverbMode } from './registry.js';   // P19c
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -37,7 +40,11 @@ export function describeSend(key, p) {
     return { key, wet: clamp01(p.wet ?? 0.35), irKey: 'ir:' + (p.impulse || 'default') + (p.irMax ? '@' + p.irMax : ''), getIR: ctx => getIRBuffer(ctx, p.impulse, p.irMax) };
   }
   if (key === 'reverb') {
-    return { key, wet: clamp01(p.amount ?? 0.35), irKey: `g:${p.duration ?? 2.2}|${p.decay ?? 2.0}|${p.pre ?? 0.005}`, getIR: ctx => getGenericIR(ctx, p) };
+    // P19c: nur der Modus `room` ist linear und damit sendfähig (Gated hat ein Gate im Wet-Pfad; Shimmer/Reverse folgen pro Stimme).
+    if (reverbMode(p) !== 'room') return null;
+    // P19a: neue Synthese → vollständiger Parameterschlüssel (ir-synth.js); Altdaten behalten ihren Schlüssel
+    // Nachbesserung 19a Teil 2: `normalize` wie pro Stimme (neue Synthese bereits normiert); der Hub-Schlüssel trennt Alt/Neu schon über irKey
+    return { key, wet: clamp01(p.amount ?? 0.35), irKey: reverbIsLegacy(p) ? `g:${p.duration ?? 2.2}|${p.decay ?? 2.0}|${p.pre ?? 0.005}` : reverbIRKey(p), getIR: ctx => getGenericIR(ctx, p), normalize: reverbNormalize(p) };
   }
   return null;
 }
@@ -54,13 +61,14 @@ function _standInIR(ctx) {
 const _isOffline = ctx => typeof ctx.startRendering === 'function';
 
 class Hub {
-  constructor(ctx, map, key, destination, ir, scope) {
+  constructor(ctx, map, key, destination, ir, scope, normalize = true) {
     this.ctx = ctx; this.map = map; this.key = key;
     this.refs = 0; this.dead = false; this.timer = null;
     this.irSeconds = ir.duration;
     this.immediate = _isOffline(ctx) || scope === 'preview';
     this.input = ctx.createGain();
     this.conv = ctx.createConvolver();
+    this.conv.normalize = normalize !== false;   // Nachbesserung 19a Teil 2: vor `buffer`; irReverb und Altdaten: true wie bisher
     this.conv.buffer = ir;
     this.input.connect(this.conv);
     this.pan = buildTerminalPanner(ctx, 0);
@@ -102,7 +110,7 @@ export function attachSend(ctx, from, { send, channels = 2, destination, scope =
   let map = _registry.get(ctx); if (!map) { map = new Map(); _registry.set(ctx, map); }
   const key = [ctx.sampleRate, scope, _idOf(destination), Math.min(2, channels), send.irKey].join('|');
   let hub = map.get(key);
-  if (!hub || hub.dead) { hub = new Hub(ctx, map, key, destination, ir, scope); map.set(key, hub); }
+  if (!hub || hub.dead) { hub = new Hub(ctx, map, key, destination, ir, scope, send.normalize); map.set(key, hub); }
   hub.attach();
 
   // Kanalform-Stand-in: der bisherige Hall-Baustein ließ die Summe (Dry + Hall) bei Anteil > 0 stereo werden. Engines entscheiden das

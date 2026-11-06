@@ -41,7 +41,7 @@ import { workletsForPlan, fallbackWorklets } from './engine/worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './engine/compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './engine/waveshaper-probe.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive, isPlanLevelKey, tempoValues, TEMPO_COUNTER_TAIL_S } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive, isPlanLevelKey, tempoValues, TEMPO_COUNTER_TAIL_S, reverbBuiltMode } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
 import {
   fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
@@ -421,6 +421,49 @@ export function sendEligibility(plan) {
   return d ? { step: step.index, ...d } : null;
 }
 
+// ─── REVERSE-HALL: TEIL-PLAN (P19e, R3) ──────────────────────
+
+/**
+ * P19e: Hall-Module im Modus `reverse`, die tatsächlich klingen (nicht von `irReverb` überlagert), in Planreihenfolge. REIN.
+ * @returns {{step:number, layerId:string, key:'reverb'}[]}
+ */
+export function reverseTargets(plan) {
+  const out = [];
+  for (const s of plan?.steps || []) {
+    if (_soundingKeys(s.params).includes('reverb') && reverbBuiltMode(s.params.reverb) === 'reverse') out.push({ step: s.index, layerId: s.layerId, key: 'reverb' });
+  }
+  return out;
+}
+
+/**
+ * P19e (R3, Vertrag `untilStep`): Teil-Plan mit dem Signal, das live am Eingang des Moduls `key` im Schritt `step` anliegt. REIN.
+ *   - alle Schritte VOR `step` unverändert;
+ *   - im Schritt `step` der Pitch-Knoten des Layers (sitzt vor der Kette) und die Module mit kleinerem `layerOrder` als `key`;
+ *     das Modul selbst und alle späteren sind ausgeschaltet (Plan-Ebene wie Tempo bleibt);
+ *   - KEIN terminaler Panner (sitzt live hinter der ganzen Kette), Tempo des VOLLEN Plans (wirkt immer auf die ganze Wiedergabe).
+ * Die Layer-Reihenfolge bleibt unberührt: der Teil-Plan ist ein Präfix (Invariante 1); er wird nur offline gerendert.
+ * @param {object} plan  resolvePlan()
+ * @param {{step:number, key:string}} until
+ */
+export function prefixPlan(plan, until) {
+  const cut = plan.steps.findIndex(s => s.index === until.step);
+  if (cut < 0) throw new RangeError('prefixPlan: Schritt ' + until.step + ' fehlt im Plan');
+  const lim = _LAYER_ORDER[until.key];
+  const last = plan.steps[cut];
+  const params = { ...last.params };
+  for (const k of Object.keys(params)) {
+    if (k === 'pitchShift' || isPlanLevelKey(k) || !(k in _LAYER_ORDER)) continue;
+    if (_LAYER_ORDER[k] >= lim && params[k]?.enabled) params[k] = { ...params[k], enabled: false };
+  }
+  const steps = [...plan.steps.slice(0, cut), { ...last, params, active: _layerSounds(params) }];
+  return {
+    ...plan, steps, needsPanner: false,
+    hasPitch: steps.some(s => pitchActive(s.params.pitchShift)),
+    sequence: steps.map(s => `${s.stage}:${s.presetId || 'manual'}`),
+    until: { step: until.step, key: until.key }
+  };
+}
+
 // ─── EXECUTOR ────────────────────────────────────────────────
 
 /** Lädt, falls nötig, die vom Plan benötigten Worklets im Ziel-Context (muss vor buildPipelineGraph() fertig sein). */
@@ -441,17 +484,19 @@ export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound
  * Live-Update/Überblendung/Tail/Kosten. Ohne `live` fügt die Runtime keine Knoten hinzu (bit-gleich zu Phase 2).
  *
  * @param {object} [o] { numChannels, caps, live (Ein-/Ausgangs-Gain + swapTo), bypassable (Bypass-Hülle je Modul), xfade,
- *                       shareReverb (Phase 3b: Hall über den Hub; Rückgabe `send` ≠ null → Aufrufer hängt reverb-hub.attachSend an) }
+ *                       shareReverb (Phase 3b: Hall über den Hub; Rückgabe `send` ≠ null → Aufrufer hängt reverb-hub.attachSend an),
+ *                       reverse (P19e: Varianten des Reverse-Halls je Layer, s. reverse-reverb.js) }
  * @returns {{input:AudioNode|null, output:AudioNode|null, detuneSemitones:number, skippedPitch:number,
  *            dispose:()=>void, runtime:PipelineRuntime, update:Function, tailSeconds:()=>number, cost:Function, arm:Function, hold:Function}}
  *   input/output = null, wenn die Pipeline leer ist (Aufrufer verbindet dann die Quelle direkt) — im Live-Modus nie null.
  *   detuneSemitones: nur gesetzt, wenn ein Pitch-Worklet für diesen Schritt nicht verfügbar war (Notbehelf
  *   über src.detune, Reihenfolge dann NICHT garantiert; Console-Warnung). skippedPitch: vom Ziel nicht ausgeführte Pitch-Schritte.
  */
-export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound, live = false, bypassable = false, xfade, shareReverb = false } = {}) {
+export function buildPipelineGraph(ctx, plan, { numChannels = 2, caps = TARGET_CAPS.sound, live = false, bypassable = false, xfade, shareReverb = false, reverse = null } = {}) {
   // Geteilter Reverb (Phase 3b): nur statisch (nicht live/bypassable) und nur, wenn der Aufrufer ihn ausdrücklich verlangt.
   const send = (shareReverb && !live && !bypassable) ? sendEligibility(plan) : null;
-  const rt = new PipelineRuntime(ctx, plan, { numChannels, caps, live, bypassable, xfade, send });
+  // P19e: `reverse` = Map layerId → { buffer, irSamples, sig } (vorgerendertes Wet-Signal des Reverse-Halls) oder null (nur trocken).
+  const rt = new PipelineRuntime(ctx, plan, { numChannels, caps, live, bypassable, xfade, send, reverse });
   return {
     send: rt.send,
     input: rt.input, output: rt.output,

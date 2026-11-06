@@ -3,6 +3,7 @@
  */
 
 import { APP } from '../core/state.js';
+import { reverbIsLegacy, reverbIRKey, synthReverbIR } from './ir-synth.js';   // P19a
 
 // ─── IR REVERB ───────────────────────────────────────────────
 
@@ -51,14 +52,52 @@ export function getIRBuffer(ctx, name, maxDur) {
   return buf;
 }
 
-/** Generische (unbenannte) Reverb-IR, gecacht nach (Rate, Dauer, Decay) — _buildIR() ist deterministisch. */
+/**
+ * Generische (unbenannte) Reverb-IR. Altdaten (ir-synth.js reverbIsLegacy): _buildIR(), gecacht nach (Rate, Dauer, Decay, Vorlauf) —
+ * deterministisch. P19a (Befund 7): der Vorlauf `pre` gehört zum Schlüssel, weil _buildIR und der Seed ihn verwenden; vorher teilten
+ * sich IRs mit verschiedenem `pre` einen Eintrag (der erste gewann). Ohne `pre` im Datensatz ist der Klang unverändert.
+ * Neue Synthese (P19a): ir-synth.js synthReverbIR(), eigener LRU-Cache mit Byte-Deckel (s. unten).
+ */
 export function getGenericIR(ctx, p) {
-  const ck = `${ctx.sampleRate}:g:${p.duration ?? 2.2}:${p.decay ?? 2.0}`;
+  if (!reverbIsLegacy(p)) return _getSynthIR(ctx, p);
+  const ck = `${ctx.sampleRate}:g:${p.duration ?? 2.2}:${p.decay ?? 2.0}:${p.pre ?? 0.005}`;
   if (APP.irCache[ck]) return APP.irCache[ck];
   const buf = _buildIR(ctx, p);
   APP.irCache[ck] = buf;
   return buf;
 }
+
+// ─── P19a: Cache der synthetisierten IRs ───────────────────────────────────────────────────────────
+// Jeder Reglerwert ergibt eine eigene IR (bis ≈ 6 MB bei 15 s Stereo @ 48 kHz). Deshalb LRU nach Byte-Größe (Länge × Kanäle × 4),
+// getrennt vom bisherigen APP.irCache (dessen Einträge bleiben unbegrenzt wie bisher). Ein verdrängter Buffer bleibt gültig,
+// solange ein Convolver ihn hält; er wird beim nächsten Bedarf neu (identisch) synthetisiert.
+export const IR_SYNTH_CAP_BYTES = 48 * 1024 * 1024;
+let _synthCap = IR_SYNTH_CAP_BYTES;
+const _synth = new Map();   // Schlüssel → { buf, bytes }; Einfügereihenfolge = LRU
+let _synthBytes = 0;
+function _getSynthIR(ctx, p) {
+  const ck = `${ctx.sampleRate}:${reverbIRKey(p)}`;
+  const hit = _synth.get(ck);
+  if (hit) { _synth.delete(ck); _synth.set(ck, hit); return hit.buf; }
+  const [l, r] = synthReverbIR(p, ctx.sampleRate);
+  const buf = ctx.createBuffer(2, l.length, ctx.sampleRate);
+  buf.getChannelData(0).set(l); buf.getChannelData(1).set(r);
+  const bytes = l.length * 2 * 4;
+  if (bytes <= _synthCap) {
+    _synth.set(ck, { buf, bytes }); _synthBytes += bytes;
+    for (const [k, e] of _synth) { if (_synthBytes <= _synthCap) break; _synth.delete(k); _synthBytes -= e.bytes; }
+  }
+  return buf;
+}
+/** Diagnose/Tests: { entries, bytes, cap }. */
+export function irSynthStats() { return { entries: _synth.size, bytes: _synthBytes, cap: _synthCap }; }
+/** Tests: Deckel setzen (Bytes; ohne Argument Standard) und auf ihn kürzen. */
+export function setIrSynthCap(bytes = IR_SYNTH_CAP_BYTES) {
+  _synthCap = Math.max(0, bytes);
+  for (const [k, e] of _synth) { if (_synthBytes <= _synthCap) break; _synth.delete(k); _synthBytes -= e.bytes; }
+}
+/** Tests: Cache leeren. */
+export function clearIrSynthCache() { _synth.clear(); _synthBytes = 0; }
 
 // Seeded PRNG (mulberry32): Live-Wiedergabe, Preview und Export erzeugen für gleiche Parameter
 // dieselbe Impulsantwort — vorher Math.random(), daher klang jeder Aufbau minimal anders.

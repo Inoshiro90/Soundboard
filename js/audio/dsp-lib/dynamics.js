@@ -27,6 +27,9 @@
  *   die Verstärkung exakt 1 (bit-genau neutral). `mix` blendet trocken/nass ohne Latenz. Keine Latenz, Mono bleibt Mono.
  *   Unter −80 dBFS (schnelle Hüllkurve) wird nicht geformt (kein Aufziehen des Rauschbodens).
  *
+ * Seitenkette (Nachbesserung 19a, Teil 5, nur Gate/Expander): Optional steuert ein zweites Signal `sc` die Erkennung (Hochpass, Betrag,
+ *   Maximum, Hüllkurve wie oben), die Verstärkung wirkt weiter auf `inp`. Ohne `sc` ist der Rechenweg unverändert (bit-gleich).
+ *
  * Keine Allokation in process(); NaN/Inf im Eingang werden als 0 gewertet, Zustände werden von Denormalen freigehalten.
  */
 import { clamp, dbToLin, DENORMAL_FLOOR } from './util.js';
@@ -54,9 +57,11 @@ export class Dynamics {
    * @param {number} n            Anzahl Samples dieses Blocks
    * @param {{mode:number, thresholdDb:number, rangeDb:number, attack:number, hold:number, release:number, hysteresisDb:number, ratio:number, scHp:number}} p
    *        Zeiten in Sekunden, Pegel in dB
+   * @param {Float32Array[]|null} [sc]  Seitenkette (Nachbesserung 19a, Teil 5): steuert die Erkennung statt `inp`; je Kanal ≥ n Samples
    */
-  process(inp, out, n, p) {
+  process(inp, out, n, p, sc = null) {
     const sr = this.sr, chs = Math.min(inp.length, out.length, this._hpx.length);
+    const det_in = sc || inp, dchs = sc ? Math.min(sc.length, this._hpx.length) : chs;   // Erkennung: Seitenkette oder Eingang
     const expander = p.mode >= 0.5;
     const thrDb = clamp(p.thresholdDb, -100, 0);
     const thrOpen = dbToLin(thrDb);
@@ -73,8 +78,8 @@ export class Dynamics {
 
     for (let i = 0; i < n; i++) {
       let lvl = 0;
-      for (let c = 0; c < chs; c++) {
-        const x = inp[c][i];
+      for (let c = 0; c < dchs; c++) {
+        const x = det_in[c][i];
         const xv = Number.isFinite(x) ? x : 0;
         const y = hpA * (hpy[c] + xv - hpx[c]);
         hpx[c] = xv; hpy[c] = Math.abs(y) < DENORMAL_FLOOR ? 0 : y;

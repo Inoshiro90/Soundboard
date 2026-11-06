@@ -13,6 +13,7 @@ import { actx } from './context.js';
 import { outputFor, connectToOutput } from './engine/output.js';   // Phase 4: einziger Ausgang
 import { startPreviewMeter, stopPreviewMeter } from '../ui/meters.js';   // Phase 7: Peak-Anzeige der Vorschau
 import { resolvePlan, connectPipeline, preparePipelineContext, TARGET_CAPS } from './fx-pipeline.js';
+import { reverbBuiltMode } from './engine/registry.js';   // Nachbesserung 19a, Teil 5
 import { asPipelineEffects } from '../fx-model.js';
 import { buildNoiseGenerator } from '../generators.js';
 import { connectMusicFx, armMusicChain } from '../music/music-fx.js';   // P17g: Musik-Kette wie die Live-Wiedergabe
@@ -62,7 +63,7 @@ export function stopEffectPreview() {
   _stopPreviewSourceOnly();
   p.playing = false; p.loading = false; p.ending = false; p.bypass = false;
   if (p.dispose) { try { p.dispose(); } catch (e) {} p.dispose = null; }   // LFOs/Träger/Worklets der Effektkette freigeben
-  p.src = null; p.masterGain = null; p.runtime = null; p.restart = null;
+  p.src = null; p.masterGain = null; p.runtime = null; p.restart = null; p.reverseCtx = null;
   p.soundId = null; p.slotIdx = null; p.kind = null;
   _updatePreviewButton();
 }
@@ -86,7 +87,38 @@ export function updatePreviewEffects(effects) {
     if (again.start) return again.start(effects);   // P17g: Musik-Vorschau (eigene Startfunktion)
     return startEffectPreview({ ...again.s, effects }, again.slotIdx, again.opts);
   }
+  // Nachbesserung 19a, Teil 5 (Hörliste 19, Punkt 24): Ein Moduswechsel des Halls ist ein Neubau; die neue Kette bekäme nur neues Signal,
+  // ein Einzelschlag wäre dann schon vorbei (Stille). Deshalb startet die Vorschau mit dem neuen Stand neu — immer, auch mit Loop.
+  if (p.restart && reverbModeChanged(rt.plan, plan)) {
+    const again = p.restart;
+    if (again.start) return again.start(effects);
+    return startEffectPreview({ ...again.s, effects }, again.slotIdx, again.opts);
+  }
+  // P19e-2 (F4 = b): Passt eine Reverse-Variante nicht mehr zum neuen Stand, verstummt ihr Wet-Signal bis zum nächsten Start.
+  const rv = p.reverseCtx;
+  if (rv) {
+    const stale = import('./engine/reverse-reverb.js').then(m => m.markStaleReverse(rv.map, plan, { ...rv.s, effects }, rv.slot, rv.sr));
+    return Promise.all([rt.update(plan), stale]).then(r => r[0]).catch(e => console.warn('[preview] Live-Update fehlgeschlagen:', e));
+  }
   return Promise.resolve(rt.update(plan)).catch(e => console.warn('[preview] Live-Update fehlgeschlagen:', e));
+}
+
+/**
+ * Nachbesserung 19a, Teil 5: Wechselt der gebaute Hall-Modus (room/gated/shimmer/reverse) eines Layers, dessen Hall in beiden Plänen
+ * klingt? Ein- und Ausschalten zählt nicht (überblendet wie jede Strukturänderung). Rein (ohne Audio testbar).
+ */
+export function reverbModeChanged(oldPlan, newPlan) {
+  const modes = plan => {
+    const m = new Map();
+    for (const st of plan?.steps || []) {
+      const q = st.params || {};
+      if (q.reverb?.enabled && !q.irReverb?.enabled) m.set(st.layerId, reverbBuiltMode(q.reverb));   // irReverb hat Vorrang (effect-graph.js)
+    }
+    return m;
+  };
+  const a = modes(oldPlan), b = modes(newPlan);
+  for (const [id, mode] of a) if (b.has(id) && b.get(id) !== mode) return true;
+  return false;
 }
 
 /** P17f: Vergleichsschlüssel eines wirksamen Tempos (Rate, Tonhöhe halten); kein Tempo und Rate 1 sind gleichwertig. */
@@ -234,6 +266,8 @@ async function startEffectPreview(s, slotIdx, opts = {}) {
   p.src = src; p.masterGain = masterGain; p.dispose = graph.dispose; p.runtime = graph.runtime;
   p.soundId = s.id; p.slotIdx = slotIdx; p.kind = 'buffer';
   p.restart = { s, slotIdx, opts: { ...opts, buffer: buf } };   // P17f: Neustart bei geändertem Tempo (updatePreviewEffects)
+  // P19e-2: Varianten des Reverse-Halls dieser Vorschau (F4 = b wie Live: beim Start aus dem Cache). Live-Updates melden veraltete.
+  p.reverseCtx = graph.reverse?.size ? { map: graph.reverse, s, slot, sr: buf.sampleRate } : null;
 
   src.onended = () => _onSourceEnded(src);
 

@@ -16,8 +16,9 @@ import { hilbertPath } from './engine/hilbert.js';
 import { buildCrossover2, buildCrossover3, LR4_Q, LR4_Q_DB } from './engine/crossover.js';
 import { isWorkletReady } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
+import { reverbIsLegacy, reverbIRKey, reverbNormalize } from './ir-synth.js';   // P19a; reverbNormalize: Nachbesserung 19a Teil 2
 import { defaultModules, peqActiveBands, chorusVoices, chorusIsMulti, vibratoSwing, WIDTH_DECOR_DELAY_S, MS_EQ_DEF, DOPPLER_C, DOPPLER_MAX_DELAY_S,
-  delayIsLegacy, delayMode, delayLoopGains, crusherValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
+  delayIsLegacy, delayMode, delayLoopGains, crusherValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, reverbBuiltMode, reverbGateParams, shimmerValues, reverseValues, reverbIRSig, REVERSE_PREROLL_RANGE, SHIMMER_LOOP_HP, SHIMMER_LOOP_LP, SHIMMER_LOOP_SAMPLES, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
 import { makeEnvelopeFollower, makePhasedWave } from './engine/modsources.js';
 import { motionWindows } from './engine/timebase.js';
 
@@ -68,10 +69,12 @@ const _setter = (ctx, smooth) => (param, v) => {
 };
 
 /** Versieht ein Segment {input, output} mit Schlüssel und update(); `sig(p)` = Signatur der nicht glättbaren Werte. */
-function _inst(key, seg, p, { apply, sig = null, hot = null }) {
+function _inst(key, seg, p, { apply, sig = null, hot = null, struct = null }) {
   const s0 = sig ? sig(p) : '';
+  const st0 = struct ? struct(p) : '';                // P19c: strukturelle Signatur neben dem Hot-Slot (z. B. Hall-Modus) → Neubau
   seg.key = key;
   seg.update = np => {
+    if (struct && struct(np) !== st0) return false;
     if (hot) { apply(np, true); hot.request(np); return true; }   // nicht glättbarer Kern: Modul-Austausch (_hotSlot) statt Pipeline-Neubau
     if (sig && sig(np) !== s0) return false;
     apply(np, true);
@@ -89,23 +92,70 @@ function _inst(key, seg, p, { apply, sig = null, hot = null }) {
  * erzeugt so höchstens ca. 1000/throttleMs Austausche pro Sekunde, und der zuletzt angefragte Wert gewinnt immer.
  * Beim Bau ist der Graph bis auf die Einsen-Gains identisch zum bisherigen (Gain 1 ist verlustfrei → Goldens unverändert).
  * `make(q)` → {input, output, dispose?(), startDelay?}. `tr` = dispose()-Liste der Pipeline.
+ * `rho(alterKern, neuerKern)` (P19b, optional): Korrelation der beiden Kerne ∈ [0, 1] oder null. Bei einer Zahl folgt die Überblendung
+ * `xfadeCurves(ρ)` (konstante Leistung bei Korrelation ρ); null oder ohne `rho` bleibt es bei den festen Kurven (`power`).
+ * `tailOf(kern)` (P19b, optional, Hall): Nachklang des Kerns in s. Dann sitzt der Kern-Fade VOR dem Kern (input → Fade → Kern → Ausklang-Gain
+ * → output): beim Austausch wird nur der EINGANG umgeblendet, der alte Kern klingt mit seiner Vorgeschichte aus und wird erst nach
+ * Fade + Nachklang (Audio-Uhr) entsorgt. Grund [S, Node]: ein neuer Convolver beginnt ohne Vorgeschichte; bei Ausgangs-Blende fiel der
+ * Hall 100–200 ms lang um 4–7 dB ab. Höchstens `maxTails` Kerne klingen gleichzeitig aus; ein weiterer blendet den ältesten in `fadeSec` aus.
  */
 export const MODULE_SWAP_STATS = { swaps: 0, requests: 0 };
-function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, power = true } = {}) {
+
+/**
+ * P19b: Überblendkurven mit konstanter Ausgangsleistung für zwei Signale gleicher Leistung mit Korrelation ρ:
+ *   g_neu = sin θ · k, g_alt = cos θ · k, k = 1/√(1 + 2ρ·sin θ·cos θ), θ = x·π/2.
+ * Dann gilt g_alt² + g_neu² + 2ρ·g_alt·g_neu = 1 an jeder Stelle. ρ = 0 ergibt genau die bisherige Equal-Power-Kurve (sin/cos),
+ * ρ = 1 eine Kurve mit Summe 1 (keine Pegelbeule bei fast gleichen Kernen). ρ wird auf [0, 1] geklemmt.
+ */
+export function xfadeCurves(rho, n = 32) {
+  const r = Math.max(0, Math.min(1, Number(rho) || 0));
+  const up = new Float32Array(n), dn = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = (i / (n - 1)) * Math.PI / 2, s = Math.sin(a), c = Math.cos(a), k = 1 / Math.sqrt(1 + 2 * r * s * c);
+    up[i] = s * k; dn[i] = c * k;
+  }
+  return { up, dn };
+}
+
+/**
+ * P19b: Korrelation zweier Impulsantworten (AudioBuffer) ∈ [−1, 1]: Σ a·b / √(Σa²·Σb²) über alle gemeinsamen Kanäle. Für weißes
+ * Eingangssignal ist das genau die Korrelation der beiden Hall-Ausgänge; für farbige Signale eine Näherung [H]. Die Normalisierung des
+ * ConvolverNode skaliert beide IRs auf gleiche Energie, der Wert bleibt davon unberührt. Leere oder fehlende IR → 0.
+ */
+export function irCorrelation(a, b) {
+  if (!a || !b) return 0;
+  const nc = Math.min(a.numberOfChannels, b.numberOfChannels);
+  let ab = 0, aa = 0, bb = 0;
+  for (let c = 0; c < nc; c++) {
+    const x = a.getChannelData(c), y = b.getChannelData(c), n = Math.min(x.length, y.length);
+    for (let i = 0; i < n; i++) ab += x[i] * y[i];
+    for (let i = 0; i < x.length; i++) aa += x[i] * x[i];
+    for (let i = 0; i < y.length; i++) bb += y[i] * y[i];
+  }
+  return aa > 0 && bb > 0 ? ab / Math.sqrt(aa * bb) : 0;
+}
+
+/** P19b: Höchstzahl gleichzeitig ausklingender Hall-Kerne je Modul (CPU: jeder läuft bis zu einer IR-Länge weiter). */
+export const HOT_SLOT_MAX_TAILS = 2;
+
+function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, power = true, rho = null, tailOf = null, maxTails = HOT_SLOT_MAX_TAILS } = {}) {
   const input = ctx.createGain(), output = ctx.createGain();
   const mount = q => {
     const core = make(q), fade = ctx.createGain();
-    input.connect(core.input); core.output.connect(fade); fade.connect(output);
-    return { core, fade };
+    if (!tailOf) { input.connect(core.input); core.output.connect(fade); fade.connect(output); return { core, fade }; }
+    const out = ctx.createGain();                      // P19b: Ausklang-Gain (1); nur zum Kappen über den Deckel `maxTails`
+    input.connect(fade); fade.connect(core.input); core.output.connect(out); out.connect(output);
+    return { core, fade, out };
   };
   const drop = c => {
     try { c.core.output.disconnect(); } catch (e) { /* schon getrennt */ }
     try { c.fade.disconnect(); } catch (e) { /* schon getrennt */ }
-    try { input.disconnect(c.core.input); } catch (e) { /* schon getrennt */ }
+    try { c.out?.disconnect(); } catch (e) { /* schon getrennt */ }
+    try { input.disconnect(tailOf ? c.fade : c.core.input); } catch (e) { /* schon getrennt */ }
     try { c.core.dispose?.(); } catch (e) { /* ignorieren */ }
   };
   let cur = mount(p0), curSig = sig(p0), pending = null, timer = null, last = -Infinity, dead = false;
-  const retiring = new Set();
+  const retiring = new Map();                          // alter Kern → Timer der Entsorgung
   const curveUp = new Float32Array(32), curveDn = new Float32Array(32);
   for (let i = 0; i < 32; i++) {
     const x = i / 31;
@@ -113,6 +163,18 @@ function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, po
     curveUp[i] = power ? Math.sin(x * Math.PI / 2) : (1 - Math.cos(x * Math.PI)) / 2;
     curveDn[i] = power ? Math.cos(x * Math.PI / 2) : (1 + Math.cos(x * Math.PI)) / 2;
   }
+  const retire = (c, ms, set = retiring) => { const id = setTimeout(() => { if (set.delete(c)) drop(c); }, ms); set.set(c, id); };
+  const capped = new Map();                            // P19b: über den Deckel ausgeblendete Kerne (zählen nicht mehr als Ausklang)
+  /** P19b: entsorgt `c`, sobald die AUDIO-Uhr `tEnd` erreicht (Nachklang vollständig); Rückfall Wanduhr (suspendierter Context). */
+  const retireAt = (c, tEnd) => {
+    const limit = Date.now() + Math.max(1000, (tEnd - ctx.currentTime) * 3000 + 1000);
+    const tick = () => {
+      if (!retiring.has(c)) return;
+      if (ctx.currentTime >= tEnd || Date.now() > limit) { retiring.delete(c); drop(c); return; }
+      retiring.set(c, setTimeout(tick, Math.min(250, Math.max(15, (tEnd - ctx.currentTime) * 1000))));
+    };
+    retiring.set(c, null); tick();
+  };
   const run = q => {
     if (dead) return;
     last = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -120,13 +182,27 @@ function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, po
     // `startDelay` (s, Phase 15a): Latenz des neuen Kerns (Oversampling der Verzerrung). Die Überblendung beginnt erst, wenn sein Signal anliegt —
     // sonst setzt es mitten in der Rampe ein (bei Gleichanteil hinter dem DC-Blocker als Sprung messbar). Fehlt das Feld: wie bisher sofort.
     const t0 = ctx.currentTime + Math.max(0, Number(nu.core.startDelay) || 0);
+    // P19b: Kurve nach der gemessenen Korrelation der beiden Kerne (Hall-IR); null → feste Kurve wie bisher
+    const r = rho ? rho(old.core, nu.core) : null;
+    const cv = (r == null) ? { up: curveUp, dn: curveDn } : xfadeCurves(r);
+    if (r != null) MODULE_SWAP_STATS.lastRho = r;
     nu.fade.gain.value = 0;
-    nu.fade.gain.setValueCurveAtTime(curveUp, t0, fadeSec);
+    nu.fade.gain.setValueCurveAtTime(cv.up, t0, fadeSec);
     old.fade.gain.cancelScheduledValues(ctx.currentTime);
-    old.fade.gain.setValueCurveAtTime(curveDn, t0, fadeSec);
+    old.fade.gain.setValueCurveAtTime(cv.dn, t0, fadeSec);
     cur = nu; curSig = sig(q); MODULE_SWAP_STATS.swaps++;
-    retiring.add(old);
-    setTimeout(() => { if (retiring.delete(old)) drop(old); }, (t0 - ctx.currentTime + fadeSec) * 1000 + 80);
+    if (!tailOf) { retire(old, (t0 - ctx.currentTime + fadeSec) * 1000 + 80); return; }
+    // P19b: Ausklang. Deckel: der älteste noch ausklingende Kern wird am Ausgang in `fadeSec` ausgeblendet und danach entsorgt.
+    retireAt(old, t0 + fadeSec + Math.max(0, Number(tailOf(old.core)) || 0) + 0.05);
+    while (retiring.size > maxTails) {
+      const [oldest, id] = retiring.entries().next().value;
+      if (id) clearTimeout(id);
+      retiring.delete(oldest);
+      const tc = ctx.currentTime;
+      try { oldest.out.gain.cancelScheduledValues(tc); oldest.out.gain.setValueAtTime(oldest.out.gain.value, tc); oldest.out.gain.linearRampToValueAtTime(0, tc + fadeSec); } catch (e) { /* ignorieren */ }
+      MODULE_SWAP_STATS.tailCaps = (MODULE_SWAP_STATS.tailCaps || 0) + 1;
+      retire(oldest, fadeSec * 1000 + 80, capped);
+    }
   };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const request = q => {
@@ -140,7 +216,7 @@ function _hotSlot(ctx, tr, make, p0, sig, { fadeSec = 0.04, throttleMs = 120, po
   };
   if (tr) tr.push({ stop() {
     dead = true; if (timer) { clearTimeout(timer); timer = null; }
-    for (const c of retiring) drop(c); retiring.clear();
+    for (const m of [retiring, capped]) { for (const [c, id] of m) { if (id) clearTimeout(id); drop(c); } m.clear(); }
     drop(cur);
   } });
   return { input, output, request };
@@ -1311,7 +1387,7 @@ function _buildFreqShift(ctx, p, tr) {
 }
 
 /** Gemeinsame Hall-Hülle: Dry/Wet um einen Convolver. `wetOf(p)` liefert den Anteil; die IR ist nicht glättbar → Modul-Austausch (P10f). */
-function _buildConvolverModule(ctx, p, tr, { key, wetOf, irOf, sig }) {
+function _buildConvolverModule(ctx, p, tr, { key, wetOf, irOf, sig, rhoOf = null, wetInsert = null, wetLoop = null, struct = null, normalizeOf = null }) {
   const dry = ctx.createGain();
   const wetG = ctx.createGain(); const out = ctx.createGain();
   const apply = (q, sm) => {
@@ -1322,21 +1398,206 @@ function _buildConvolverModule(ctx, p, tr, { key, wetOf, irOf, sig }) {
   apply(p, false);
   const make = q => {
     const conv = ctx.createConvolver();
-    conv.buffer = irOf(ctx, q);
-    return { input: conv, output: conv, dispose() { try { conv.buffer = null; } catch (e) { /* Knoten bereits verworfen */ } } };   // Chrome-Leck (L-02)
+    const ir = irOf(ctx, q);
+    if (normalizeOf) conv.normalize = normalizeOf(q);   // Nachbesserung 19a Teil 2: vor `buffer` setzen (wirkt beim Zuweisen)
+    conv.buffer = ir;
+    return { input: conv, output: conv, q, ir, dispose() { try { conv.buffer = null; } catch (e) { /* Knoten bereits verworfen */ } } };   // Chrome-Leck (L-02)
   };
-  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.05, throttleMs: 150, power: true });
-  const inp = slot.input;
-  inp.connect(dry); slot.output.connect(wetG);
+  // P19b: `rhoOf(altQ, neuQ, altIR, neuIR)` → Korrelation oder null (feste Equal-Power-Kurve wie bisher)
+  const rho = rhoOf ? (o, n) => rhoOf(o.q, n.q, o.ir, n.ir) : null;
+  const slot = _hotSlot(ctx, tr, make, p, sig, { fadeSec: 0.05, throttleMs: 150, power: true, rho, tailOf: c => c.ir?.duration ?? 0 });   // P19b: Eingang umblenden, alter Hall klingt aus
+  // P19d: optionaler Rückkopplungskreis HINTER dem Hall-Kern (slot.output → Kreis → zurück in slot.input). `wetLoop` → { input, output,
+  // update(q), fallback? } | { fallback } | null. Mit Kreis bekommt das Modul einen eigenen Eingang (Gain 1), damit der trockene Anteil
+  // nichts aus dem Kreis erhält. Der Kreis sitzt außerhalb des Hot-Slots: Bei einem IR-Wechsel speist er ab der Umblendung den neuen Kern,
+  // der alte klingt nur mit seiner eigenen Vorgeschichte aus (19b). Ohne Kreis bleibt der Graph unverändert (room/gated bit-gleich).
+  const loopSeg = wetLoop ? wetLoop(p) : null;
+  const loop = loopSeg?.input ? loopSeg : null;
+  let inp = slot.input;
+  if (loop) {
+    inp = ctx.createGain();
+    inp.connect(slot.input);
+    slot.output.connect(loop.input); loop.output.connect(slot.input);
+  }
+  // P19c: optionaler Baustein im Wet-Pfad HINTER dem Hall-Kern (slot.output → Baustein → wetG). Die Eingangsumblendung (19b) bleibt
+  // davon unberührt; der Baustein läuft über einen IR-Wechsel ohne Neustart weiter. `wetInsert` → { input, output, update(q), fallback?,
+  // sidechain? } | null. Nachbesserung 19a, Teil 5: `sidechain` = { node, input } bekommt den Moduleingang (trocken, vor dem Hall-Kern).
+  const ins = wetInsert ? wetInsert(p) : null;
+  inp.connect(dry);
+  if (ins?.sidechain) inp.connect(ins.sidechain.node, 0, ins.sidechain.input);
+  if (ins) { slot.output.connect(ins.input); ins.output.connect(wetG); } else slot.output.connect(wetG);
   dry.connect(out); wetG.connect(out);
-  return _inst(key, { input: inp, output: out }, p, { apply, sig, hot: slot });
+  const extra = [ins, loop].filter(Boolean);
+  const applyAll = extra.length ? (q, sm) => { apply(q, sm); for (const e of extra) e.update(q); } : apply;
+  const seg = _inst(key, { input: inp, output: out }, p, { apply: applyAll, sig, hot: slot, struct });
+  const fb = ins?.fallback || loopSeg?.fallback;
+  if (fb) seg.fallback = fb;
+  return seg;
 }
 
-function _buildReverb(ctx, p, tr) {
+function _buildReverb(ctx, p, tr, rev = null) {
+  if (reverbBuiltMode(p) === 'reverse') return _buildReverseReverb(ctx, p, tr, rev);   // P19e: eigene Bauform (kein Convolver live)
   return _buildConvolverModule(ctx, p, tr, {
     key: 'reverb', wetOf: q => Math.max(0, Math.min(1, q.amount ?? 0.35)), irOf: getGenericIR,
-    sig: q => `${q.duration ?? 2.2}|${q.decay ?? 2.0}|${q.pre ?? 0.005}`
+    // Nachbesserung 19a Teil 2: neue Synthese ist bereits normiert (ir-synth.js, Kopf 6) → normalize = false; Altdaten wie bisher
+    normalizeOf: reverbNormalize,
+    // P19a: neue Synthese mit vollständigem Parameterschlüssel; Altdaten unverändert
+    sig: q => (reverbIsLegacy(q) ? `${q.duration ?? 2.2}|${q.decay ?? 2.0}|${q.pre ?? 0.005}` : reverbIRKey(q)),
+    // P19b: Die neuen Regler (Dämpfung, Breite, Cuts, frühe Reflexionen) behalten das Rauschen → alte und neue IR sind stark korreliert
+    // (ρ bis 1), die Equal-Power-Kurve höbe die Mitte der Überblendung um bis zu +3 dB. Deshalb Kurve nach gemessenem ρ.
+    // Altdaten ↔ Altdaten: jede Änderung würfelt das Rauschen neu (ρ ≈ 0) → feste Kurve wie bisher (unverändert).
+    rhoOf: (a, b, ia, ib) => (reverbIsLegacy(a) && reverbIsLegacy(b)) ? null : irCorrelation(ia, ib),
+    // P19c: Modus strukturell (room ↔ gated = Neubau mit Überblendung durch die Runtime). Gated: Gate des Moduls `noiseGate` im Wet-Pfad,
+    // gesteuert vom trockenen Signal (Seitenkette, Nachbesserung 19a, Teil 5).
+    struct: reverbBuiltMode,
+    wetInsert: q => (reverbBuiltMode(q) === 'gated' ? _reverbGate(ctx, q, tr) : null),
+    // P19d: Shimmer-Kreis (Tonhöhe in der Rückkopplung) hinter dem Hall-Kern.
+    wetLoop: q => (reverbBuiltMode(q) === 'shimmer' ? _reverbShimmer(ctx, q, tr) : null)
   });
+}
+
+/** P19e: strukturelle Signatur des Reverse-Halls: Modus und Vorlauf (der Vorlauf bestimmt Verzögerung und Startpunkt → Neubau). */
+const _reverseStruct = q => (reverbBuiltMode(q) === 'reverse' ? 'reverse:' + reverseValues(q).preRoll : reverbBuiltMode(q));
+/** P19e: höchstens so viele Wet-Quellen gleichzeitig (sehr kurze Loops mit langer IR). */
+const REVERSE_MAX_SOURCES = 32;
+
+/**
+ * P19e: Reverse-Hall. Das Wet-Signal ist vorgerendert (reverse-reverb.js: reverse(conv(reverse(x), IR)) aus dem Signal x am Eingang dieses
+ * Moduls, Render-Cache) und kommt als `rev` = { buffer, irSamples, sig } herein. Im Buffer liegt der Hall-Anteil zum Eingangssample n bei
+ * Index n + irSamples − 1 (der Anstieg endet dort); der Anstieg beginnt bis zu einer IR-Länge davor.
+ *   Mit Variante:  Eingang → DelayNode(preRoll) → Dry(1 − amount) → Ausgang;  Buffer-Quelle → Wet(amount) → Ausgang.
+ *                  Die Quelle startet zum Start der Wiedergabe (arm, Zeitbasis 13d) bei Offset (irSamples − 1)/sr − preRoll; ein Anstieg,
+ *                  der länger als der Vorlauf ist, wird vorne abgeschnitten. Loop (F1 = a): je Durchlauf eine eigene Quelle; ab dem zweiten
+ *                  Durchlauf ungekürzt (sie beginnt im vorigen Durchlauf), nur der erste ist um den Vorlauf gekürzt. Alle Durchläufe
+ *                  nutzen das Wet-Signal des ersten (eine Variante je Sound).
+ *   Ohne Variante (F2 = b): Eingang → Dry → Ausgang, unverzögert, kein Wet.
+ * `amount` live. Ändert sich die IR (andere Signatur als die Variante) oder meldet die Vorschau die Variante als veraltet (`rev.stale`,
+ * reverse-reverb.js markStaleReverse), schweigt das Wet-Signal bis zum nächsten Start. Ohne gültiges Wet-Signal klingt Dry mit vollem
+ * Pegel (Ersatzpegel, Nachbesserung 19a, Teil 5; geglättet beim Wechsel), mit Variante Dry(1 − amount) wie bisher. Der Vorlauf ist strukturell (Neubau). Kein Send.
+ */
+function _buildReverseReverb(ctx, p, tr, rev) {
+  const buf = rev?.buffer || null;
+  const inp = ctx.createGain(), dry = ctx.createGain(), wetG = ctx.createGain(), out = ctx.createGain();
+  // Ausgang fest stereo (wie der Raum-Hall mit Stereo-IR): Ohne festen Wert wechselte die Kanalzahl mit dem Lauf der Wet-Quelle
+  // (vor dem Start mono, danach stereo) und der terminale Panner (Mono → Stereo mit −3 dB) änderte mitten im Klang den Pegel [S, Node].
+  out.channelCount = 2; out.channelCountMode = 'explicit'; out.channelInterpretation = 'speakers';
+  const preRoll = reverseValues(p).preRoll;
+  let delay = null;
+  if (buf) {
+    delay = ctx.createDelay(REVERSE_PREROLL_RANGE[1] + 0.01);
+    delay.delayTime.value = preRoll;
+    inp.connect(delay); delay.connect(dry);
+  } else inp.connect(dry);
+  dry.connect(out); wetG.connect(out);
+  let cur = p;
+  const apply = (q, sm) => {
+    cur = q;
+    const set = _setter(ctx, sm);
+    const a = Math.max(0, Math.min(1, q.amount ?? 0.35));
+    // Nachbesserung 19a, Teil 5 (Hörliste 19, Punkte 38/41): Dry = 1 − a · w, w = 1 nur mit gültiger Variante. Fehlt das Wet-Signal
+    // (keine, veraltete oder andere Variante; Musik/Ambient), klingt der trockene Anteil voll statt mit 1 − a (bei a = 1 sonst Stille).
+    const w = buf && !rev.stale && reverbIRSig(q) === rev.sig ? 1 : 0;
+    set(dry.gain, 1 - a * w);
+    set(wetG.gain, a * w);
+  };
+  apply(p, false);
+  const seg = _inst('reverb', { input: inp, output: out }, p, { apply, struct: _reverseStruct });
+  if (!buf) { seg.fallback = 'dry'; return seg; }
+  // P19e-2: Meldung „veraltet“ der Vorschau sofort übernehmen (geglättet); beim Entsorgen abmelden.
+  const refresh = () => apply(cur, true);
+  rev.mods?.add(refresh);
+
+  const lead = (Math.max(1, rev.irSamples) - 1) / buf.sampleRate;   // Länge des Anstiegs vor dem Einsatz
+  const bufDur = buf.duration;
+  const sources = new Map();   // Durchlauf k → AudioBufferSourceNode
+  let origin = null;
+  const stopAll = t => {
+    for (const n of sources.values()) { try { n.stop(t); } catch (e) { /* bereits gestoppt */ } }
+    if (t === undefined) { for (const n of sources.values()) { try { n.disconnect(); } catch (e) { /* bereits getrennt */ } } sources.clear(); }
+  };
+  if (tr) tr.push({ stop() { stopAll(); rev.mods?.delete(refresh); } });
+  // Start und Offset der Quelle für Durchlauf k (Context-Zeit). Durchlauf 0 beginnt frühestens mit der Wiedergabe.
+  const span = (tm, k) => {
+    const ps = tm.passStart + (k - tm.passIndex) * tm.dur;
+    if (k === 0) { const t0 = ps + Math.max(0, preRoll - lead); return { t0, off: Math.max(0, lead - preRoll) }; }
+    return { t0: ps + preRoll - lead, off: 0 };
+  };
+  const schedule = (tm, k, from) => {
+    if (sources.has(k) || sources.size >= REVERSE_MAX_SOURCES) return;
+    const { t0, off } = span(tm, k);
+    const at = Math.max(t0, from, ctx.currentTime);
+    const offset = off + (at - t0);
+    if (offset >= bufDur) return;
+    const n = ctx.createBufferSource();
+    n.buffer = buf; n.connect(wetG);
+    n.start(at, offset);
+    n.onended = () => { try { n.disconnect(); } catch (e) { /* bereits getrennt */ } if (sources.get(k) === n) sources.delete(k); };
+    sources.set(k, n);
+  };
+  // Zeitbasis (13d-Vertrag): Quellen mit Beginn vor `to`, die nach `from` noch klingen. Bereits geplante Durchläufe bleiben (reset ändert nur Gains).
+  seg.arm = ({ timing: tm, from, to }) => {
+    if (origin !== tm.origin) { stopAll(); origin = tm.origin; }
+    if (!tm.loop) { schedule(tm, tm.passIndex, from); return; }
+    if (!(tm.dur > 0)) return;
+    const kLo = Math.max(0, tm.passIndex + Math.floor((from - tm.passStart - preRoll - bufDur) / tm.dur));
+    for (let k = kLo; ; k++) {
+      const { t0, off } = span(tm, k);
+      if (!(t0 < to)) break;
+      if (t0 + (bufDur - off) > from) schedule(tm, k, from);
+      if (sources.size >= REVERSE_MAX_SOURCES) break;
+    }
+  };
+  // Musik-Pause (hold): Reverse kommt dort nicht vor (R5); der Vollständigkeit halber verstummen.
+  seg.hold = t => stopAll(t);
+  return seg;
+}
+
+/** P19d: Parameter des Pitch-Worklets im Shimmer-Kreis: Algorithmus `music` (Phasenvocoder, polyphon), nur Wet (Mix 1), ohne Formant. */
+const _shimmerPitchParams = q => ({ enabled: true, algorithm: 'music', semitones: shimmerValues(q).semitones, cents: 0, mix: 1, formant: 0 });
+
+/**
+ * P19d: Shimmer-Kreis. Hallausgang → Tonhöhe (buildPitchNode, `music`; ohne `stft` das Legacy-Worklet `pitch`, E6) → Rückkopplung
+ * (≤ SHIMMER_FB_MAX) → Hochpass/Tiefpass (fest, Butterworth) → Schutzsättigung (P14a) → DelayNode (SHIMMER_LOOP_SAMPLES) → zurück in den
+ * Hall-Eingang. Jede Runde erklingt also eine Stufe höher (bzw. um das Intervall verschoben) und wird erneut gefaltet. Intervall und
+ * Rückkopplung live. Ohne Pitch-Worklet: kein Kreis (klingt wie `room`), `fallback = 'none'`, Hinweis in der Konsole.
+ */
+function _reverbShimmer(ctx, q, tr) {
+  const pitch = buildPitchNode(ctx, _shimmerPitchParams(q), 2);
+  if (!pitch) {
+    console.warn('[audio] Shimmer-Hall: kein Pitch-Worklet verfügbar — Hall ohne Shimmer');
+    return { fallback: 'none' };
+  }
+  const fb = ctx.createGain(), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), guard = ctx.createWaveShaper();
+  const d = ctx.createDelay(1);
+  hp.type = 'highpass'; lp.type = 'lowpass'; hp.Q.value = LR4_Q_DB; lp.Q.value = LR4_Q_DB;   // Butterworth (Q in dB)
+  hp.frequency.value = SHIMMER_LOOP_HP; lp.frequency.value = Math.min(SHIMMER_LOOP_LP, ctx.sampleRate * 0.45);
+  guard.curve = delayGuardCurve();
+  d.delayTime.value = SHIMMER_LOOP_SAMPLES / ctx.sampleRate;
+  fb.gain.value = shimmerValues(q).feedback;
+  pitch.output.connect(fb); fb.connect(hp); hp.connect(lp); lp.connect(guard); guard.connect(d);
+  if (tr) tr.push({ stop() { pitch.dispose?.(); } });
+  return {
+    input: pitch.input, output: d,
+    update(nq) { fb.gain.setTargetAtTime(shimmerValues(nq).feedback, ctx.currentTime, SMOOTH_TC); pitch.update(_shimmerPitchParams(nq)); }
+  };
+}
+
+/**
+ * P19c: Gate im Wet-Pfad des Gated-Halls. Baustein des Moduls `noiseGate` (makeDynamicsNode 'gate', Worklet `dynamics`).
+ * Nachbesserung 19a, Teil 5 (Hörliste 19, Punkt 23, Prototyp B): gesteuert vom TROCKENEN Signal (Seitenkette = Moduleingang vor dem
+ * Hall-Kern, `_buildConvolverModule`). Das Gate öffnet mit dem Schlag und schließt Hold + Release nach dessen Ende, nicht erst im leisen
+ * Ausklang des Halls (bis P19c: das Hallsignal steuerte sich selbst). Der Convolver hat keine Latenz, ein Ausgleich entfällt.
+ * Schwelle (dBFS des trockenen Signals), Hold und Release live; Attack, Absenkung, Hysterese und Sidechain-Hochpass fest (REVERB_GATE_FIXED, E2 = a).
+ * Ohne Worklet: Durchgang (klingt wie `room`), `fallback = 'none'` wie beim Noise Gate, Hinweis in der Konsole.
+ */
+function _reverbGate(ctx, q, tr) {
+  const node = makeDynamicsNode(ctx, 'gate', reverbGateParams(q), { sidechain: true });
+  if (!node) {
+    console.warn('[audio] Gated-Hall: Worklet "dynamics" nicht verfügbar — Hall ohne Gate');
+    const pass = ctx.createGain();
+    return { input: pass, output: pass, update() {}, fallback: 'none' };
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  return { input: node.input, output: node.output, sidechain: node.sidechain, update: nq => node.update(reverbGateParams(nq)) };
 }
 
 function _buildIRReverb(ctx, p, tr) {
@@ -2027,7 +2288,7 @@ export function buildTerminalPanner(ctx, pan) {
  * gestarteten Quellen (LFOs, Träger, ConstantSources), damit der Aufrufer sie über dispose() wieder stoppen kann.
  * Jedes Element ist eine Modul-Instanz mit `key` und `update()` (s. NODE BUILDERS).
  */
-function _collectSegments(ctx, effects, tr, omit) {
+function _collectSegments(ctx, effects, tr, omit, rev = null) {
   const segs = [];
 
   if (effects.highpass?.enabled)
@@ -2072,7 +2333,7 @@ function _collectSegments(ctx, effects, tr, omit) {
   // `omit` (Phase 3b): Schlüssel, die NICHT gebaut werden, obwohl sie klingen würden — der geteilte Reverb-Send übernimmt den
   // Hall (engine/reverb-hub.js). Die Exklusivität bleibt erhalten: ein überlagertes Modul wird auch dann nicht gebaut.
   if (effects.irReverb?.enabled)   { if (!omit?.has('irReverb')) segs.push(_buildIRReverb(ctx, effects.irReverb, tr)); }
-  else if (effects.reverb?.enabled) { if (!omit?.has('reverb')) segs.push(_buildReverb(ctx, effects.reverb, tr)); }
+  else if (effects.reverb?.enabled) { if (!omit?.has('reverb')) segs.push(_buildReverb(ctx, effects.reverb, tr, rev)); }
 
   if (effects.delay?.enabled)      segs.push(_buildDelay(ctx, effects.delay, tr));
   // Multiband-Delay (Phase 14c, layerOrder 121): direkt hinter dem Delay, vor dem Tremolo.
@@ -2152,7 +2413,7 @@ export function buildEffectChain(ctx, effects) {
  */
 export function buildLayerChain(ctx, params, opts = {}) {
   if (!params) return null;
-  let segs = _collectSegments(ctx, params, opts.track, opts.omit);
+  let segs = _collectSegments(ctx, params, opts.track, opts.omit, opts.reverse || null);   // P19e: Variante des Reverse-Halls
   const sp = _buildSpatialPanner(ctx, params.spatial);
   if (sp) segs.push(sp);
   if (opts.bypassable) segs = segs.map(s => _wrapBypass(ctx, s));

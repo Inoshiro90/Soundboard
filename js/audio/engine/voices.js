@@ -30,7 +30,7 @@ export const DEGRADE_LEVELS = Object.freeze([
   Object.freeze({ equalPower: true, oversample: '2x' }),
   Object.freeze({ equalPower: true, oversample: 'none' }),
   Object.freeze({ equalPower: true, oversample: 'none', irMax: 1.5 }),
-  Object.freeze({ equalPower: true, oversample: 'none', irMax: 0.6 })
+  Object.freeze({ equalPower: true, oversample: 'none', irMax: 0.6, shimmer: false })   // P19d (E5): Shimmer → Raum auf der letzten Stufe
 ]);
 const PROTECTED_KINDS = new Set(['ambient', 'music', 'noise', 'preview']);
 

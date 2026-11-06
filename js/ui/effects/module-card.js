@@ -84,7 +84,8 @@ export function createModuleCard(def, api) {
       if (c.after) body.appendChild(c.after);                           // einklappbare Frequenzliste (P10e)
       continue;
     }
-    const values = Array.isArray(spec.enum) ? spec.enum : spec.impulse ? IR_IMPULSE_NAMES : null;       // Aufzählung oder Impulsantwort-Name
+    // P19c: `ui.offer` schränkt die angebotenen Werte ein (z. B. Hall-Modi, die erst später gebaut werden); gespeicherte Werte bleiben unberührt.
+    const values = Array.isArray(spec.enum) ? (Array.isArray(spec.ui?.offer) ? spec.ui.offer : spec.enum) : spec.impulse ? IR_IMPULSE_NAMES : null;       // Aufzählung oder Impulsantwort-Name
     const make = values ? createSelectControl : typeof spec.def === 'number' ? createNumberControl : null;
     if (!make) throw new Error(`Effekt-UI: Parametertyp von ${def.key}.${param} wird noch nicht unterstützt`);
     const c = make({ idBase: `${idBase}-${param}`, moduleLabel: def.label, spec, values, getValue: () => api.get(param), setValue: v => setAndRefresh(param, v) });

@@ -318,10 +318,24 @@ function _tempoRuleNote(fx, layerId, takeover) {
   return {};
 }
 
+/**
+ * P19e-2: Hinweis zum Reverse-Hall (R5) für die Hall-Karte. Sounds: Vorlauf = Verzögerung beim Auslösen, Berechnung im Hintergrund.
+ * Musik und Ambient: kein vorgerendertes Signal → nur das trockene Signal klingt (voller Pegel, Nachbesserung 19a, Teil 5). Rückgabe { reverb: Text } oder {}.
+ */
+export function reverseNote({ kind, state }) {
+  if (!state?.reverb?.enabled || state.reverb.mode !== 'reverse') return {};
+  return { reverb: kind === 'music' || kind === 'ambient' ? REVERSE_HINT_STREAM : REVERSE_HINT_SOUND };
+}
+const REVERSE_HINT_SOUND = 'Reverse: Der Hall läuft rückwärts auf den Einsatz zu; der Sound setzt um den Vorlauf verzögert ein. Der Hall wird nach dem Speichern im Hintergrund berechnet — bis er fertig ist, klingt der Sound beim Abspielen nur trocken und ohne Verzögerung.';
+const REVERSE_HINT_STREAM = 'Reverse: Bei Musik und Ambient bleibt der Hall stumm (er braucht eine vorab berechnete Fassung einer Sound-Datei); es klingt nur das trockene Signal, mit vollem Pegel.';
+
 /** Kontext für die Effekt-Karten des Layer-Dialogs (Hinweise und Rückfrage beim Einschalten von Tempo). */
 function _tempoContext() {
   return {
-    notes: state => (state.tempo?.enabled ? tempoNote({ kind: _fxEditContext?.kind || 'sound', fx: _effWithForm(state), layerId: L.id, takeover: L.tempoTakeover }) : {}),
+    notes: state => ({
+      ...(state.tempo?.enabled ? tempoNote({ kind: _fxEditContext?.kind || 'sound', fx: _effWithForm(state), layerId: L.id, takeover: L.tempoTakeover }) : {}),
+      ...reverseNote({ kind: _fxEditContext?.kind || 'sound', state })   // P19e-2
+    }),
     onToggle: (key, on, state) => {
       if (key !== 'tempo') return;
       if (!on) { L.tempoTakeover = false; return; }

@@ -39,6 +39,7 @@
  */
 
 import { IR_IMPULSE_NAMES, getIRDuration } from '../ir-data.js';
+import { reverbIsLegacy, reverbIRSeconds, reverbIRKey, REVERB_PREDELAY_LEGACY_MS, REVERB_LOWCUT_OFF, REVERB_HIGHCUT_OFF } from '../ir-synth.js';   // P19a, P19e
 import { DISTORTION_LEGACY_MODES, DISTORTION_V2_MODES, DIST_DRIVE_RANGE, DIST_BIAS_RANGE, WS_DEFAULT_POINTS, TAPE_BASE_DELAY_S, TAPE_WOW_MAX_S, TAPE_FLUTTER_MAX_S } from './distortion-curves.js';
 export { WS_POINTS_MAX, WS_POINT_RANGES, WS_DEFAULT_POINTS } from './distortion-curves.js';
 import { CRUSHER_BITS_RANGE, CRUSHER_RATE_RANGE } from '../dsp-lib/crusher.js';
@@ -127,6 +128,72 @@ const stereoShaperCost = () => ({ base: 13, measured: false, estimate: 'stereo' 
 const haasCost = () => ({ base: 3, measured: false, estimate: 'stereo' });
 /** Phase 13f: Doppler (Hochmischer, 1 Verzögerung, 1 Biquad, 2 Gains; Automation ohne Knoten) — Schätzwert. */
 const dopplerCost = () => ({ base: 4, measured: false, estimate: 'stereo' });
+/**
+ * Hall-Modi (Phase 19c, Entscheidung E1 = a, 2026-11-03) — eine Wahrheit für Registry, Engine, Hub und Tests.
+ * Die Aufzählung kennt schon alle im Plan P19 vorgesehenen Werte, damit die Normalisierung (schema.js setzt unbekannte Aufzählungswerte
+ * auf den Standard, Befund 8) Daten späterer Teilphasen nicht verwirft (AE-18). Gebaut und angeboten werden seit 19e alle vier Modi.
+ *   room    Standard = bisheriger Hall (bit-gleich), sendfähig.
+ *   gated   Wet-Pfad hinter dem Hall-Kern durch das Gate des Moduls `noiseGate` (Worklet `dynamics`), gesteuert vom Hallsignal selbst.
+ *           Nicht sendfähig (das Gate ist nicht linear) → immer pro Stimme.
+ *   shimmer (19d) Rückkopplungskreis hinter dem Hall-Kern: Hallausgang → Tonhöhe (Worklet `stft`, Algorithmus `music`, Mix 1) →
+ *           Rückkopplung ≤ SHIMMER_FB_MAX → Schutzfilter → Schutzsättigung → DelayNode → zurück in den Hall-Eingang. Intervall frei
+ *           (Pitch Reverb, ±24 Halbtöne). Nicht sendfähig (Rückkopplung mit Tonhöhe ist nicht linear) → pro Stimme (R4).
+ *   reverse (19e) Vorgerendert über den Render-Cache (AE-10): Wet = reverse(conv(reverse(x), IR)) aus dem Signal x VOR dem Hall
+ *           (Teil-Render `untilStep`, R3). Live: Dry um `preRoll` verzögert, das Wet-Signal läuft als Buffer-Quelle auf den Einsatz zu.
+ *           Ohne fertige Variante nur trocken und unverzögert (F2 = b). Nicht sendfähig (nicht kausal).
+ */
+export const REVERB_MODES = ['room', 'gated', 'shimmer', 'reverse'];
+export const REVERB_MODES_OFFERED = ['room', 'gated', 'shimmer', 'reverse'];   // P19e-2: reverse angeboten
+export const REVERB_MODE_LABELS = { room: 'Raum (Standard)', gated: 'Gated (Hall wird abgeschnitten)', shimmer: 'Shimmer (Hall mit Tonhöhe in der Rückkopplung)', reverse: 'Reverse (Hall läuft rückwärts auf den Einsatz zu)' };
+/** Modus wie gespeichert; fehlend oder ungültig → `room`. */
+export const reverbMode = p => (REVERB_MODES.includes(p?.mode) ? p.mode : 'room');
+/** Modus, wie die Engine ihn baut: seit 19e-1 alle vier (`room` | `gated` | `shimmer` | `reverse`). */
+export const reverbBuiltMode = p => reverbMode(p);
+/** P19e: Vorlauf des Reverse-Halls (s) = dokumentierte Latenz beim Auslösen (Plan P19: 0,3–2 s). Startwert [H]. */
+export const REVERSE_PREROLL_RANGE = [0.3, 2];
+export const REVERSE_PREROLL_DEF = 1;
+/** P19e: Kosten des Reverse-Halls live (Buffer-Quelle, DelayNode, Gains; die Faltung läuft offline). Schätzwert bis M-1. */
+export const REVERSE_POINTS = 2;
+/** P19e: Werte des Reverse-Halls (geklemmt). */
+export function reverseValues(p) {
+  const v = Number(p?.preRoll);
+  return { preRoll: Math.max(REVERSE_PREROLL_RANGE[0], Math.min(REVERSE_PREROLL_RANGE[1], Number.isFinite(v) ? v : REVERSE_PREROLL_DEF)) };
+}
+/** P19e: Signatur der Hall-IR (gleiche Regel wie der Hot-Slot in effect-graph.js `_buildReverb`): Altdaten → alter Schlüssel, sonst Synthese-Schlüssel. */
+export const reverbIRSig = q => (reverbIsLegacy(q) ? `${q.duration ?? 2.2}|${q.decay ?? 2.0}|${q.pre ?? 0.005}` : reverbIRKey(q));
+/** P19d: Obergrenze der Rückkopplung im Shimmer-Kreis (Plan P19: ≤ 0,6). */
+export const SHIMMER_FB_MAX = 0.6;
+/** P19d: feste Schutzfilter im Kreis (E3: kein Klang-Regler). Hochpass gegen Bassaufbau, Tiefpass gegen Aufbau an der Nyquistgrenze bei +12. Werte [H]. */
+export const SHIMMER_LOOP_HP = 80;
+export const SHIMMER_LOOP_LP = 10000;
+/** P19d: Verzögerung (Samples) des DelayNode im Kreis — jeder Kreis braucht eine (Web Audio), mindestens ein Render-Quantum. */
+export const SHIMMER_LOOP_SAMPLES = 128;
+/** P19d, E4: Kosten = Faltung + Tonhöhe (`music`, Schätzwert wie pitchCost) + Kreis (Gains, Filter, WaveShaper, Delay). Schätzwert bis M-1. */
+export const SHIMMER_PITCH_POINTS = 28;
+export const SHIMMER_LOOP_POINTS = 2;
+/** P19d: Werte des Shimmer-Kreises (geklemmt). `factor` = 2^(Halbtöne/12) für das Pitch-Worklet. */
+export function shimmerValues(p) {
+  const n = (v, d, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : d));
+  const st = Math.round(n(p?.shimmerInterval, 12, -24, 24));
+  return { semitones: st, factor: Math.pow(2, st / 12), feedback: n(p?.shimmerFeedback, 0.4, 0, SHIMMER_FB_MAX) };
+}
+/**
+ * P19d: Nachklang des Shimmer-Halls (s) bei IR-Länge `irSec`: geometrische Reihe der Runden, irSec / (1 − Rückkopplung).
+ * Gemessen [S, Node, Rauschstoß und Sinus, Zeit bis −60 dB nach Quellenende]: höchstens 92 % dieses Werts (ungünstigster Fall Intervall 0,
+ * Rückkopplung 0,6; mit +12 oder −12 kürzer, weil die Schutzfilter je Runde Energie entnehmen). Untergrenze 1 − fb ≥ 0,4.
+ */
+export function shimmerTailSeconds(p, irSec) {
+  const fb = shimmerValues(p).feedback;
+  return irSec / Math.max(1 - SHIMMER_FB_MAX, 1 - fb);
+}
+/** Feste Gate-Werte des Gated-Modus (E2 = a: nur Schwelle, Hold und Release sind Regler). */
+export const REVERB_GATE_FIXED = { attack: 1, range: -80, hysteresis: 3, scHp: 20 };
+/** Parameter für makeDynamicsNode(ctx, 'gate', …) aus den `reverb`-Feldern (Zeiten in ms wie beim Noise Gate). */
+export function reverbGateParams(p) {
+  const n = (v, d, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : d));
+  return { ...REVERB_GATE_FIXED, threshold: n(p?.gateThreshold, -30, -80, 0), hold: n(p?.gateHold, 200, 0, 2000), release: n(p?.gateRelease, 30, 1, 1000) };
+}
+
 /**
  * Delay v2 (Phase 14a) — eine Wahrheit für Registry, Engine und Tests.
  * Neutralwerte: lowCut = 20 Hz und highCut = 20 kHz heißen „aus“, modDepth = 0 heißt „keine Modulation“.
@@ -431,12 +498,43 @@ export const MODULES = [
       sensitivity: sensitivityParam()
     } },
   { key: 'reverb', stageHint: p => ((p?.duration ?? 0) >= 1.5 ? { stage: 'environment', weight: 2 } : null), ui: { generated: true }, family: 'space', label: 'Hall (algorithmisch)', layerOrder: 110, consumers: ALL_CONSUMERS,
-    cost: p => ({ base: convolverPoints(p?.duration ?? 2.2), measured: true }), degrade: { irLength: true },
-    tail: p => p?.duration ?? 2.2,
+    // P19a: Altdaten (ir-synth.js reverbIsLegacy) behalten Kosten und Tail exakt; die neue Synthese rechnet mit der tatsächlichen IR-Länge.
+    // P19c: Gated = Faltung + Gate-Worklet (Schätzwert wie dynamicsCost, `measured` dann false).
+    // P19d (E4): Shimmer = Faltung + Tonhöhe + Kreis (Schätzwert, `measured` false). Tail: Ausklang des Kreises (shimmerTailSeconds).
+    cost: p => (reverbBuiltMode(p) === 'gated'
+      ? { base: convolverPoints(reverbIsLegacy(p) ? (p?.duration ?? 2.2) : reverbIRSeconds(p)) + DYNAMICS_WORKLET_POINTS, measured: false, estimate: 'dynamics' }
+      : reverbBuiltMode(p) === 'shimmer'
+        ? { base: convolverPoints(reverbIsLegacy(p) ? (p?.duration ?? 2.2) : reverbIRSeconds(p)) + SHIMMER_PITCH_POINTS + SHIMMER_LOOP_POINTS, measured: false, estimate: 'shimmer' }
+        : reverbBuiltMode(p) === 'reverse'
+          ? { base: REVERSE_POINTS, measured: false, estimate: 'reverse' }   // P19e: Faltung offline (Render-Cache)
+          : { base: convolverPoints(reverbIsLegacy(p) ? (p?.duration ?? 2.2) : reverbIRSeconds(p)), measured: true }), degrade: { irLength: true },
+    // P19e: Reverse endet mit dem trockenen Signal; die Kette dahinter ist um `preRoll` verzögert → Tail = Vorlauf.
+    tail: p => { if (reverbBuiltMode(p) === 'reverse') return reverseValues(p).preRoll; const s = reverbIsLegacy(p) ? (p?.duration ?? 2.2) : reverbIRSeconds(p); return reverbBuiltMode(p) === 'shimmer' ? shimmerTailSeconds(p, s) : s; },
     params: {
       amount: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer', ui: { min: 0.1, max: 10, step: 0.1 } },
-      decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen', ui: { min: 0.1, max: 6, step: 0.1 } }
+      decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen', ui: { min: 0.1, max: 6, step: 0.1 } },
+      // P19a (additiv): Standardwerte = neutral → bisherige IR, bit-gleich. Sobald ein Feld abweicht, gilt die neue Synthese
+      // (ir-synth.js): `duration` ist dann die Nachhallzeit RT60, `decay` die Kurvenform (Entscheidung R2).
+      preDelay: { def: REVERB_PREDELAY_LEGACY_MS, range: [0, 500], unit: 'ms', label: 'Vorverzögerung', ui: { min: 0, max: 250, step: 1, digits: 0 } },
+      damping: { def: 0, range: [0, 1], label: 'Dämpfung (Höhen klingen kürzer)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      diffusion: { def: 1, range: [0, 1], label: 'Diffusion (Dichte)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      earlyLevel: { def: 0, range: [0, 1], label: 'Frühe Reflexionen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      earlySize: { def: 10, range: [2, 40], unit: 'm', label: 'Frühe Reflexionen: Raumgröße', ui: { min: 2, max: 40, step: 0.5, digits: 1 } },
+      width: { def: 1, range: [0, 1], label: 'Stereobreite', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      lowCut: { def: REVERB_LOWCUT_OFF, range: [REVERB_LOWCUT_OFF, 2000], unit: 'Hz', label: 'Low-Cut (Hall)', ui: { min: 20, max: 2000, step: 5, scale: 'log', digits: 0 } },
+      highCut: { def: REVERB_HIGHCUT_OFF, range: [1000, REVERB_HIGHCUT_OFF], unit: 'Hz', label: 'High-Cut (Hall)', ui: { min: 1000, max: 20000, step: 50, scale: 'log', digits: 0 } },
+      seed: { def: 0, range: [0, 999999], label: 'Variante (Seed, 0 = automatisch)', ui: { hidden: true, min: 0, max: 999, step: 1, digits: 0 } },   // Nachbesserung 19a, Teil 5: Regler ausgeblendet (Hörliste 19, Punkt 12); Feld, Normalisierung, Synthese und R2 unverändert, Daten bis 999 999
+      // P19c (additiv): Modus. Standard `room` = bisheriger Hall. Wechsel des Modus = Neubau mit Überblendung (strukturell).
+      mode: { def: 'room', enum: REVERB_MODES, label: 'Modus', ui: { options: REVERB_MODE_LABELS, offer: REVERB_MODES_OFFERED } },
+      gateThreshold: { def: -30, range: [-80, 0], unit: 'dB', label: 'Gate: Schwelle', ui: { min: -60, max: -6, step: 1, showIf: { mode: ['gated'] } } },
+      gateHold: { def: 200, range: [0, 2000], unit: 'ms', label: 'Gate: Hold', ui: { min: 0, max: 1000, step: 5, digits: 0, showIf: { mode: ['gated'] } } },
+      gateRelease: { def: 30, range: [1, 1000], unit: 'ms', label: 'Gate: Release', ui: { min: 5, max: 500, step: 1, digits: 0, showIf: { mode: ['gated'] } } },
+      // P19d (additiv, E3): Intervall der Tonhöhe im Kreis (+12 = Oktave; frei = Pitch Reverb) und Rückkopplung. Beide live. Startwerte [H].
+      shimmerInterval: { def: 12, range: [-24, 24], unit: 'Halbtöne', label: 'Shimmer: Intervall', ui: { min: -24, max: 24, step: 1, signed: true, digits: 0, showIf: { mode: ['shimmer'] } } },
+      shimmerFeedback: { def: 0.4, range: [0, SHIMMER_FB_MAX], label: 'Shimmer: Rückkopplung', ui: { min: 0, max: SHIMMER_FB_MAX, step: 0.01, percent: true, showIf: { mode: ['shimmer'] } } },
+      // P19e (additiv): Vorlauf des Reverse-Halls = Latenz beim Auslösen. Nicht live: wirkt beim nächsten Start (Neubau). Startwert [H].
+      preRoll: { def: REVERSE_PREROLL_DEF, range: REVERSE_PREROLL_RANGE, unit: 's', label: 'Reverse: Vorlauf', ui: { min: 0.3, max: 2, step: 0.05, digits: 2, showIf: { mode: ['reverse'] } } }
     } },
   // Phase 14a (additiv): Modi mono (Standard = bisheriges Delay) | stereo | pingpong, Low-/High-Cut und Schutzsättigung in der Rückkopplung,
   // Modulation der Verzögerung. Mono mit neutralen neuen Feldern (delayIsLegacy) baut exakt den bisherigen Graphen.

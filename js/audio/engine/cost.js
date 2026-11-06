@@ -17,6 +17,7 @@
 import { moduleCost, convolverPoints, pitchActive, isPlanLevelKey, tempoCounterParams } from './registry.js';
 import { effectiveActiveKeys } from './schema.js';
 import { getIRDuration } from '../ir-data.js';
+import { reverbIsLegacy, reverbIRSeconds } from '../ir-synth.js';   // P19a
 
 /** Rest-Kosten einer Voice, die ihren Hall an einen Hub sendet (Send-Gain, Dry-Gain, Stand-in) [S Chrome: ≈ 0,3 je Voice]. */
 export const SEND_VOICE_POINTS = 0.3;
@@ -34,7 +35,7 @@ export function soundingKeys(params) {
 /** IR-Länge (s) des Hall-Moduls `key` mit den Parametern `p`. */
 export function reverbSeconds(key, p) {
   if (key === 'irReverb') return Math.min(getIRDuration(p?.impulse ?? null), Number.isFinite(p?.irMax) ? p.irMax : Infinity);   // irMax: bereits degradierter Plan
-  if (key === 'reverb') return Number(p?.duration ?? 2.2) || 0;
+  if (key === 'reverb') return reverbIsLegacy(p) ? (Number(p?.duration ?? 2.2) || 0) : reverbIRSeconds(p);   // P19a: neue Synthese = tatsächliche IR-Länge
   return 0;
 }
 

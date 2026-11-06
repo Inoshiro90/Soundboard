@@ -4,6 +4,8 @@
  *
  * Ein Eingang, ein Ausgang, gleiche Kanalzahl wie der Eingang (Mono bleibt Mono — die Pegelbilanz der Kette ändert sich nicht, M-3).
  * Parameter (k-rate): mode 0 = Gate, 1 = Expander, 3 = Transient Shaper (tAttack/tSustain in dB, sensitivity/mix 0…1, release in s; keine Latenz), 2 = Limiter (threshold = Ceiling, release in s, inputGain in dB, lookahead in s; Latenz = Lookahead); threshold/range/hysteresis in dB; attack/hold/release in Sekunden; ratio; scHp in Hz.
+ * Seitenkette (Nachbesserung 19a, Teil 5): mit `processorOptions.sidechain` zwei Eingänge. Eingang 1 steuert bei Gate/Expander die Erkennung;
+ *   ohne Signal dort (nicht verbunden oder Quelle beendet) gilt Stille, das Gate schließt. Ohne die Option unverändert (ein Eingang).
  * Rechenkern: audio/dsp-lib/dynamics.js (per `import`, wie envfollower.js: Chrome/Firefox/Node [S], Safari/iOS offen [H]).
  */
 import { Dynamics, Limiter, Transient } from '../audio/dsp-lib/dynamics.js';
@@ -30,8 +32,9 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     ];
   }
 
-  constructor() {
+  constructor(options) {
     super();
+    this._sc = !!(options && options.processorOptions && options.processorOptions.sidechain);   // Nachbesserung 19a, Teil 5
     // Beendigung (Fix A, Befund 3A): ein getrennter Knoten mit process() → true bliebe aktiv. 'dispose' lässt process() false liefern.
     this._alive = true;
     this.port.onmessage = e => { if (e && e.data === 'dispose') this._alive = false; };
@@ -69,7 +72,15 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     p.mode = params.mode[0]; p.thresholdDb = params.threshold[0]; p.rangeDb = params.range[0];
     p.attack = params.attack[0]; p.hold = params.hold[0]; p.release = params.release[0];
     p.hysteresisDb = params.hysteresis[0]; p.ratio = params.ratio[0]; p.scHp = params.scHp[0];
-    this._dyn.process(inp, out, out[0].length, p);
+    const n = out[0].length;
+    if (!this._sc) { this._dyn.process(inp, out, n, p); return true; }
+    let sc = inputs[1];                                // Seitenkette: ohne Signal Stille (nicht der eigene Eingang)
+    if (!sc || !sc.length) {
+      if (this._zero[0].length < n) this._zero = [new Float32Array(n), new Float32Array(n)];
+      sc = this._zero;
+    }
+    this._dyn.process(inp, out, n, p, sc);
+    if (inp.length === 1) for (let c = 1; c < out.length; c++) out[c].set(out[0]);   // Ausgang fest stereo (dynamics-node.js): Mono auf beide Kanäle
     return true;
   }
 }

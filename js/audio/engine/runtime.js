@@ -109,7 +109,7 @@ export function assertOrder(plan, builtSteps) {
  * Baut die serielle Knotenkette eines Plans: [Pitch₁] → Kette₁ → [Pitch₂] → Kette₂ → … → [terminaler Panner].
  * (Bis Phase 2 stand dieser Code in fx-pipeline.js buildPipelineGraph; unverändert in der Verdrahtung.)
  */
-function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false, send = null, tempo = null } = {}) {
+function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, bypassable = false, send = null, tempo = null, reverse = null } = {}) {
   const track = [];      // gestartete Quellen (LFO/Träger) und Convolver → dispose() stoppt/leert sie
   const nodes = [];      // Verbindungsknoten → dispose() trennt sie
   const steps = [];
@@ -144,7 +144,7 @@ function buildInner(ctx, plan, { numChannels = 2, caps = { pitch: 'worklet' }, b
     }
     // Geteilter Reverb-Send (Phase 3b): das Hall-Modul dieses Schritts baut der Hub, nicht die Kette.
     const isSend = !!send && step.index === send.step;
-    const lc = buildLayerChain(ctx, step.params, { track, bypassable, omit: isSend ? new Set([send.key]) : undefined });
+    const lc = buildLayerChain(ctx, step.params, { track, bypassable, omit: isSend ? new Set([send.key]) : undefined, reverse: reverse?.get(step.layerId) || null });   // P19e
     if (lc) { link(lc); rec.modules = lc.modules; for (const m of lc.modules) nodes.push(m.input, m.output); }
     steps.push(rec);
   }
@@ -187,6 +187,7 @@ export class PipelineRuntime {
     this._swapChain = Promise.resolve();
     this._pending = null;
     this._swapping = false;
+    this._inflight = false;   // P19-0: Neubau läuft (Plan entnommen, noch nicht aktiv)
     this.bypassedAll = false;
     // Zeitbasis (13d): erst beim Start der Quelle bekannt (arm). `_armedTo` = bis wohin Module geplant sind.
     this.timing = null; this.held = false; this._armedTo = -Infinity; this._timer = null;
@@ -196,7 +197,9 @@ export class PipelineRuntime {
 
     // P17f: Tempo beim Bau einfrieren (Regel P) — nur Ziele, die Tempo ausführen.
     this.tempo = this.caps.tempo ? (plan.tempo || null) : null;
-    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, send: this.send, tempo: this.tempo });
+    // P19e: Varianten des Reverse-Halls (Map layerId → Wet-Signal) — fest für die Lebensdauer der Runtime, auch für Neubauten.
+    this.reverse = o.reverse instanceof Map ? o.reverse : null;
+    const inner = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, send: this.send, tempo: this.tempo, reverse: this.reverse });
     this.cur = inner;
     if (this.live) {
       this.entry = ctx.createGain(); this.exit = ctx.createGain();
@@ -237,6 +240,10 @@ export class PipelineRuntime {
    */
   update(plan) {
     if (this.disposed) return 'disposed';
+    // P19-0 (Befund 6, Zeitrennen): Läuft gerade ein Neubau (Plan aus der Warteschlange genommen, aber noch nicht aktiv), vergliche
+    // die Signatur unten mit der ALTEN Kette; ein Live-Update ginge an die ausblendende Kette, und der ältere Plan gewänne danach.
+    // Deshalb einreihen: der neueste Plan wird nach dem laufenden Neubau gebaut (letzter gewinnt).
+    if (this.live && this._inflight) return this.swapTo(plan).then(() => 'swapped');
     const sig = planSignature(plan);
     let ok = sig === this.sig;
     if (ok) {
@@ -249,6 +256,9 @@ export class PipelineRuntime {
     // Sendmodus: der Hall liegt außerhalb der Kette (Hub) — geänderte Hall-Parameter erfordern einen Neubau.
     if (ok && this.send && JSON.stringify(plan.steps[this.send.step]?.params?.[this.send.key]) !== this.sendSig) ok = false;
     if (ok) {
+      // P19-0 (Befund 6): Ein noch wartender älterer Plan (Drosselung) ist durch diesen neueren überholt und wird verworfen —
+      // sonst baute _drain() ihn danach und überschriebe den live angewendeten Stand.
+      if (this._pending) { this._pending = null; this.swapStats.coalesced++; }
       const old = this.plan; this.plan = plan;
       // Zeitbasis (13d): geänderte Module mit Bewegung relativ zum ursprünglichen Start neu planen (ab jetzt, bis zum bisherigen Vorlauf).
       if (this.timing && !this.held) {
@@ -290,17 +300,21 @@ export class PipelineRuntime {
         if (wait > 0) { await new Promise(r => setTimeout(r, wait)); continue; }
         const { plan, fade } = this._pending; this._pending = null;
         this._lastSwapAt = Date.now();
+        // P19-0: `_inflight` von der Entnahme bis `this.sig` umgestellt ist (synchroner Teil von _swapNow) — s. update().
+        this._inflight = true;
         await this.prepare(plan);
         if (this.disposed) break;
-        await this._swapNow(plan, fade);
+        const done = this._swapNow(plan, fade);
+        this._inflight = false;
+        await done;
       }
-    } finally { this._swapping = false; }
+    } finally { this._swapping = false; this._inflight = false; }
     return this.disposed ? 'disposed' : 'swapped';
   }
 
   async _swapNow(plan, fade) {
     const ctx = this.ctx, old = this.cur, tSwap = (typeof performance !== 'undefined') ? performance.now() : 0;
-    const nu = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, tempo: this.tempo });   // P17f: eingefrorenes Tempo
+    const nu = buildInner(ctx, plan, { numChannels: this.numChannels, caps: this.caps, bypassable: this.bypassable, tempo: this.tempo, reverse: this.reverse });   // P17f: eingefrorenes Tempo; P19e
     nu.fade = ctx.createGain(); nu.fade.gain.value = 0;
     if (nu.input) this.entry.connect(nu.input); else this.entry.connect(nu.fade);
     if (nu.output) nu.output.connect(nu.fade);

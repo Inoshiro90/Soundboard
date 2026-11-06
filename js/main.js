@@ -13,7 +13,7 @@ import { initSlotEditModal } from './ui/slot-editor.js';
 import { ensurePitchWorklet, actx } from './audio/context.js';
 import { openDB }                      from './db.js';
 import { undo, redo }                  from './history.js';
-import { APP }                         from './core/state.js';
+import { APP, CItems }                 from './core/state.js';
 import { registerAmbientEvents }       from './ambient/ambient-events.js';
 import { registerMusicEvents }         from './music/music-events.js';
 import { initDisclosure }              from './ui/disclosure.js';
@@ -102,6 +102,11 @@ async function init() {
     const ctx = actx(); // safe to create now
     await ensurePitchWorklet();
     startMasterMeter(ctx);   // Phase 6: Pegel des Master-Busses (B-08)
+    // P19e-2 (F3 = a): Reverse-Hall des aktiven Profils im Leerlauf vorrendern. Erst jetzt, weil vor der ersten Nutzeraktion kein
+    // AudioContext zum Dekodieren existiert. Modul nur laden, wenn im Profil überhaupt ein Reverse-Modus vorkommt.
+    if (JSON.stringify(CItems().map(x => x?.effects || null)).includes('"reverse"')) {
+      setTimeout(() => import('./audio/engine/reverse-reverb.js').then(m => m.warmActiveProfile()).catch(e => console.warn('[audio] Reverse-Hall: Vorrendern fehlgeschlagen', e)), 1500);
+    }
   };
   document.body.addEventListener('click',       _onFirstInteraction, { once: true });
   document.body.addEventListener('keydown',     _onFirstInteraction, { once: true });

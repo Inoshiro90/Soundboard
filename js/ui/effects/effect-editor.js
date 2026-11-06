@@ -132,7 +132,8 @@ export function createEffectEditor() {
           const def = defs.find(d => d.key === key);
           if (!def) throw new Error(`Effekt-UI: Modul „${key}“ ist nicht als generiert markiert (Registry ui.generated)`);
           const card = createModuleCard(def, {
-            get: p => state[key][p], set: (p, v) => { state[key][p] = v; },
+            // P19e-2: Auswahlfelder (z. B. Hall-Modus) können Hinweise des Kontexts ändern → neu berechnen (Regler nicht, die feuern 60/s).
+            get: p => state[key][p], set: (p, v) => { state[key][p] = v; if (ctx?.notes && Array.isArray(def.params[p]?.enum)) refreshHints(); },
             getEnabled: () => state[key].enabled, setEnabled: on => { state[key].enabled = on; ctx?.onToggle?.(key, on, state); refreshHints(true); }
           });
           host.appendChild(card.root); cards.push(card); card.sync();
