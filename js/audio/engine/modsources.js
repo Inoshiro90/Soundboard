@@ -6,12 +6,13 @@
  *
  * Gemeinsamer Vertrag (wie EffectInstance, AE-04′): `output` (AudioNode, anschließbar an einen AudioParam),
  * `update(params)`, `dispose()`. Oszillatoren werden bei dispose() gestoppt und getrennt (B-24).
- * Sample&Hold ist bewusst nicht enthalten (kommt mit P20, Addendum/Phasenplan P12).
+ * Sample&Hold (Phase 20g, Form `sh`): nativ über einen geloopten AudioBufferSourceNode mit vorberechneter Stufenfolge (makeShBuffer).
  */
 import { isWorkletReady } from '../context.js';
+import { hashRand } from '../dsp-lib/prng.js';
 
 const SHAPES = { sine: 'sine', triangle: 'triangle', square: 'square', saw: 'sawtooth' };
-export const LFO_SHAPES = Object.keys(SHAPES);
+export const LFO_SHAPES = [...Object.keys(SHAPES), 'sh'];   // 20g: + 'sh' (Sample&Hold)
 
 const RATE_RANGE = [0.01, 40];    // Hz
 const SMOOTH_TC = 0.02;           // s, wie bei den übrigen Live-Updates
@@ -22,10 +23,13 @@ const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
  * Bipolarer LFO: Oszillator → Gain(depth). `depth` ist der Spitzenwert in der Einheit des Ziel-AudioParams
  * (z. B. Hz bei `frequency`). Der Basiswert des Ziels bleibt beim Aufrufer.
  * @param {BaseAudioContext} ctx
- * @param {{shape?: 'sine'|'triangle'|'square'|'saw', rate?: number, depth?: number}} [p]
- * @returns {{output: GainNode, osc: OscillatorNode, update(p:object):void, start(when?:number):void, dispose():void}}
+ * Form `sh` (20g): Stufenquelle statt Oszillator (`osc` = null, `src` = AudioBufferSourceNode, Rate über playbackRate). Ein Wechsel
+ * zwischen `sh` und einer Oszillatorform ist nicht neustartfrei und wird in update() ignoriert (Aufrufer baut neu).
+ * @param {{shape?: 'sine'|'triangle'|'square'|'saw'|'sh', rate?: number, depth?: number, seed?: number}} [p]
+ * @returns {{output: GainNode, osc: OscillatorNode|null, src?: AudioBufferSourceNode, update(p:object):void, start(when?:number):void, dispose():void}}
  */
 export function makeLfo(ctx, p = {}) {
+  if (p.shape === 'sh') return _makeShLfo(ctx, p);
   const osc = ctx.createOscillator();
   const out = ctx.createGain();
   osc.type = SHAPES[p.shape] || 'sine';
@@ -90,6 +94,110 @@ export function makePhasedWave(ctx, shape, phaseDeg = 0) {
   const w = ctx.createPeriodicWave(re, im, { disableNormalization: false });
   m.set(id, w);
   return w;
+}
+
+/**
+ * Sample&Hold (Phase 20g, Entscheidungen A–H = a): Stufenfolge aus SH_STEPS Stufen zu je SH_STEP_SAMPLES Samples (Context-Rate), Wert je
+ * Stufe gleichverteilt in [−1, 1) über hashRand(seed, k, SH_SALT) — fest je Seed, also jede Wiedergabe gleich und Live = Vorschau = Export (E).
+ * Glättung (D): die ersten SH_SLEW_SAMPLES jeder Stufe gehen per Kosinus vom Vorgänger (zyklisch, Stufe 0 ← Stufe N−1) zum neuen Wert —
+ * ein fester Anteil der Stufe (2 %), also bei 20 Hz ≈ 1 ms, bei 0,5 Hz ≈ 40 ms. Abgespielt als geloopter AudioBufferSourceNode mit
+ * playbackRate = rate · SH_STEP_SAMPLES / sampleRate (shPlaybackRate) → genau `rate` Stufen je Sekunde; die Folge wiederholt sich nach
+ * SH_STEPS / rate Sekunden. Startphase (H): 360° = eine Stufe (shStartOffset). Puffer je Context und Seed zwischengespeichert.
+ */
+export const SH_STEPS = 256;
+export const SH_STEP_SAMPLES = 1024;
+export const SH_SLEW_SAMPLES = Math.round(SH_STEP_SAMPLES * 0.02);   // 20
+const SH_SALT = 0x5348;
+const _shCache = new WeakMap();   // ctx → Map(seed → AudioBuffer)
+
+/** Stufenwert k (zyklisch) in [−1, 1). Rein, für Tests und Puffer. */
+export function shValue(seed, k) {
+  const kk = ((k % SH_STEPS) + SH_STEPS) % SH_STEPS;
+  return 2 * hashRand(seed >>> 0, kk, SH_SALT) - 1;
+}
+
+/** Stufenfolge als Float32Array (Länge SH_STEPS · SH_STEP_SAMPLES); rein, ohne Context. */
+export function shSamples(seed) {
+  const L = SH_STEP_SAMPLES, T = SH_SLEW_SAMPLES, out = new Float32Array(SH_STEPS * L);
+  let prev = shValue(seed, SH_STEPS - 1);
+  for (let k = 0; k < SH_STEPS; k++) {
+    const v = shValue(seed, k), o = k * L;
+    for (let i = 0; i < T; i++) out[o + i] = prev + (v - prev) * 0.5 * (1 - Math.cos(Math.PI * (i + 1) / T));
+    out.fill(v, o + T, o + L);
+    prev = v;
+  }
+  return out;
+}
+
+/** Einkanaliger AudioBuffer der Stufenfolge (Context-Rate), zwischengespeichert. */
+export function makeShBuffer(ctx, seed) {
+  const sd = seed >>> 0;
+  let m = _shCache.get(ctx);
+  if (!m) { m = new Map(); _shCache.set(ctx, m); }
+  if (m.has(sd)) return m.get(sd);
+  const data = shSamples(sd);
+  const buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
+  buf.copyToChannel(data, 0);
+  m.set(sd, buf);
+  return buf;
+}
+
+/** playbackRate für `rate` Stufen je Sekunde. */
+export const shPlaybackRate = (ctx, rate) => rate * SH_STEP_SAMPLES / ctx.sampleRate;
+
+/**
+ * Rate einer Stufenquelle setzen (Hz). `smooth`: geglättet wie die übrigen Live-Updates (SMOOTH_TC), aber mit Ankerwert
+ * (setValueAtTime des aktuellen Werts unmittelbar davor). Grund [S, node-web-audio-api 2.2.0]: ein setTargetAtTime mit Startzeit > 0
+ * als erstes Ereignis auf playbackRate/detune eines AudioBufferSourceNode lässt das Rendern hängen bzw. rechnet die Rate vor dem
+ * Ereignis falsch; mit Anker korrekt. Die Leseposition bleibt stetig, der Anker ist daher unhörbar.
+ */
+export function shSetRate(ctx, src, rate, smooth) {
+  const v = shPlaybackRate(ctx, rate), pr = src.playbackRate;
+  if (!smooth) { pr.value = v; return; }
+  const t = ctx.currentTime;
+  pr.setValueAtTime(pr.value, t);
+  pr.setTargetAtTime(v, t, SMOOTH_TC);
+}
+
+/** Startversatz im Puffer (Sekunden) für eine Startphase in Grad (360° = eine Stufe). */
+export function shStartOffset(ctx, phaseDeg = 0) {
+  const ph = Number.isFinite(phaseDeg) ? ((phaseDeg % 360) + 360) % 360 : 0;
+  return (ph / 360) * SH_STEP_SAMPLES / ctx.sampleRate;
+}
+
+/** Geloopte, noch nicht gestartete Stufenquelle. Start: `src.start(when, shStartOffset(ctx, phase))`. */
+export function makeShSource(ctx, { seed = SH_SALT, rate = 1 } = {}) {
+  const src = ctx.createBufferSource();
+  src.buffer = makeShBuffer(ctx, seed);
+  src.loop = true;
+  src.playbackRate.value = shPlaybackRate(ctx, rate);
+  return src;
+}
+
+function _makeShLfo(ctx, p) {
+  const out = ctx.createGain();
+  const src = makeShSource(ctx, { seed: Number.isFinite(p.seed) ? p.seed : SH_SALT, rate: clamp(Number.isFinite(p.rate) ? p.rate : 1, RATE_RANGE[0], RATE_RANGE[1]) });
+  out.gain.value = Number.isFinite(p.depth) ? p.depth : 1;
+  src.connect(out);
+  let started = false, disposed = false;
+  return {
+    output: out,
+    osc: null,
+    src,
+    update(np = {}) {
+      if (disposed) return;
+      const t = ctx.currentTime;
+      if (Number.isFinite(np.rate)) shSetRate(ctx, src, clamp(np.rate, RATE_RANGE[0], RATE_RANGE[1]), true);
+      if (Number.isFinite(np.depth)) out.gain.setTargetAtTime(np.depth, t, SMOOTH_TC);
+    },
+    start(when) { if (!started && !disposed) { started = true; src.start(when ?? 0, shStartOffset(ctx, p.phase)); } },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      try { if (started) src.stop(); } catch (e) { /* war bereits gestoppt */ }
+      try { src.disconnect(); out.disconnect(); } catch (e) { /* bereits getrennt */ }
+    }
+  };
 }
 
 /**

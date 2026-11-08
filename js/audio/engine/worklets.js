@@ -15,7 +15,7 @@
  *   cost       Kostenpunkte je Instanz (AE-13′). `measured:false` ⇒ noch NICHT gemessen (M-1-Methode, Suite 13);
  *              der Wert `null` heißt „unbekannt“, nicht „kostenlos“ (gilt für `noise`, nur Quelle). Pitch: Zahl steht in der Modul-Registry (pitchShift).
  */
-import { MODULES, pitchActive, pitchAlgorithm, reverbBuiltMode } from './registry.js';
+import { MODULES, pitchActive, pitchAlgorithm, reverbBuiltMode, delayMode } from './registry.js';
 
 export const WORKLETS = {
   pitch: {
@@ -51,6 +51,13 @@ export const WORKLETS = {
   crusher: {
     url: './js/worklets/crusher.js', processor: 'crusher-processor', imports: true, fallback: 'native',
     cost: { base: 3, measured: false, estimate: 'crusher' }     // Schätzwert (Sample-and-Hold + Quantisierung je Sample); M-1 steht aus
+  },
+  // Phase 20a (AE-09): Time-Buffer-Engine, ein Prozessor für Stutter, Beat Repeat, Retrigger, Reverse- und Granular-Delay
+  // (Rechenkern audio/dsp-lib/timebuffer.js, Knoten engine/timebuffer-node.js). Ohne Worklet wird das Modul übersprungen.
+  // Verbraucher: `stutter` (20b), `beatRepeat` (20c), `retrigger` (20d), Delay-Modi `reverse` (20e) und `granular` (20f), Bedingungen in workletsForPlan.
+  timebuffer: {
+    url: './js/worklets/timebuffer.js', processor: 'timebuffer-processor', imports: true, fallback: 'none',
+    cost: { base: 6, measured: false, estimate: 'plan-p20' }    // Planwert (Kostenpunkt 6); M-1 im Browser steht aus (Suite 13, Fall timebuffer)
   }
 };
 
@@ -99,6 +106,20 @@ export function workletsForPlan(plan, caps) {
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.crusher?.enabled)) {
     for (const id of workletsOfModule('crusher')) ids.add(id);
   }
+  // P20b: Stutter im Worklet `timebuffer`; ohne Worklet wird das Modul übersprungen (Fallback 'none').
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.stutter?.enabled)) {
+    for (const id of workletsOfModule('stutter')) ids.add(id);
+  }
+  // P20c: Beat Repeat im selben Worklet; ohne Worklet wird das Modul übersprungen (Fallback 'none').
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.beatRepeat?.enabled)) {
+    for (const id of workletsOfModule('beatRepeat')) ids.add(id);
+  }
+  // P20d: Retrigger im selben Worklet; ohne Worklet wird das Modul übersprungen (Fallback 'none').
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.retrigger?.enabled)) {
+    for (const id of workletsOfModule('retrigger')) ids.add(id);
+  }
+  // P20e/P20f: Delay-Modi `reverse` und `granular` im selben Worklet; ohne Worklet baut der Graph den Modus `mono` (Entscheidung Phase 20).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.delay?.enabled && ['reverse', 'granular'].includes(delayMode(s.params.delay)))) ids.add('timebuffer');
   return [...ids];
 }
 

@@ -43,6 +43,11 @@ import { reverbIsLegacy, reverbIRSeconds, reverbIRKey, REVERB_PREDELAY_LEGACY_MS
 import { DISTORTION_LEGACY_MODES, DISTORTION_V2_MODES, DIST_DRIVE_RANGE, DIST_BIAS_RANGE, WS_DEFAULT_POINTS, TAPE_BASE_DELAY_S, TAPE_WOW_MAX_S, TAPE_FLUTTER_MAX_S } from './distortion-curves.js';
 export { WS_POINTS_MAX, WS_POINT_RANGES, WS_DEFAULT_POINTS } from './distortion-curves.js';
 import { CRUSHER_BITS_RANGE, CRUSHER_RATE_RANGE } from '../dsp-lib/crusher.js';
+import { stutterParams, stutterTailSeconds, STUTTER_AT_RANGE, STUTTER_LENGTH_RANGE, STUTTER_COUNT_RANGE, STUTTER_SPACING_RANGE, STUTTER_FADE_RANGE, STUTTER_STEP_RANGE } from '../dsp-lib/stutter.js';
+import { beatRepeatParams, beatRepeatTailSeconds, BEATREPEAT_INTERVAL_RANGE, BEATREPEAT_OFFSET_RANGE, BEATREPEAT_WINDOW_RANGE, BEATREPEAT_COUNT_RANGE, BEATREPEAT_DECAY_RANGE } from '../dsp-lib/beat-repeat.js';
+import { reverseDelayTailSeconds } from '../dsp-lib/reverse-delay.js';
+import { granularDelayTailSeconds, GRAIN_SIZE_RANGE, GRAIN_DENSITY_RANGE, GRAIN_SPRAY_RANGE, GRAIN_PITCH_RANGE, GRAIN_PITCH_RANDOM_RANGE } from '../dsp-lib/granular-delay.js';
+import { retriggerParams, retriggerTailSeconds, RETRIGGER_SENS_RANGE, RETRIGGER_THRESHOLD_RANGE, RETRIGGER_HOLDOFF_RANGE, RETRIGGER_PREROLL_RANGE, RETRIGGER_WINDOW_RANGE, RETRIGGER_COUNT_RANGE, RETRIGGER_DECAY_RANGE } from '../dsp-lib/retrigger.js';
 
 /** Schlüssel, die frühere Versionen kannten und das Pipeline-Modell bewusst NICHT mehr trägt (Backup: `…:pre-pipeline`). */
 export const REMOVED_KEYS = ['envelope', 'pan', 'output', 'analyzer'];
@@ -198,8 +203,14 @@ export function reverbGateParams(p) {
  * Delay v2 (Phase 14a) — eine Wahrheit für Registry, Engine und Tests.
  * Neutralwerte: lowCut = 20 Hz und highCut = 20 kHz heißen „aus“, modDepth = 0 heißt „keine Modulation“.
  */
-export const DELAY_MODES = ['mono', 'stereo', 'pingpong', 'multitap'];
-export const DELAY_MODE_LABELS = { mono: 'Mono (ein Echo)', stereo: 'Stereo (Zeit je Seite)', pingpong: 'Ping-Pong (abwechselnd L/R)', multitap: 'Multi-Tap (mehrere Echos)' };
+// Phase 20e (additiv): Modus `reverse` = Blöcke der Länge `time` rückwärts (Worklet `timebuffer`, Planer dsp-lib/reverse-delay.js);
+// ohne Worklet baut der Graph den Modus `mono`. Low-/High-Cut und Modulation wirken dort nicht (Entscheidung C, UI blendet sie aus).
+// Phase 20f (additiv): Modus `granular` = Körner aus dem Puffer (Planer dsp-lib/granular-delay.js, gleiches Worklet); Felder grain*,
+// ohne Worklet Modus `mono`; Low-/High-Cut und Modulation wirken dort ebenfalls nicht.
+export const DELAY_MODES = ['mono', 'stereo', 'pingpong', 'multitap', 'reverse', 'granular'];
+export const DELAY_MODE_LABELS = { mono: 'Mono (ein Echo)', stereo: 'Stereo (Zeit je Seite)', pingpong: 'Ping-Pong (abwechselnd L/R)', multitap: 'Multi-Tap (mehrere Echos)', reverse: 'Reverse (rückwärts)', granular: 'Granular (Körner)' };
+/** Modi mit Filter und Modulation in der Rückkopplung (alle außer `reverse` und `granular`). */
+const DELAY_FILTER_MODES = ['mono', 'stereo', 'pingpong', 'multitap'];
 /**
  * Multi-Tap (Phase 14b): Liste `taps` je { on, time (s), level (0–1, linear), panorama (−1 … +1), feedback (0–0,95) } (+ unbekannte Felder bleiben, AE-18).
  * Die Engine baut die ersten DELAY_TAPS_MAX_BUILD Taps, die Daten behalten bis DELAY_TAPS_MAX_KEEP (wie die PEQ-Bänder).
@@ -259,6 +270,8 @@ export function delayTailSeconds(p) {
     }
     return Math.min(30, m + depthS);
   }
+  if (mode === 'reverse') return reverseDelayTailSeconds(p);   // 20e: 2 Blöcke + je Rückkopplung ein Block, ohne Modulation
+  if (mode === 'granular') return granularDelayTailSeconds(p);   // 20f: größte Kornverzögerung + Kornlänge, je Rückkopplung eine Verzögerung
   const T = mode === 'stereo' ? Math.max(t(p?.timeL), t(p?.timeR ?? 0.33)) : t(p?.time);
   const g = fb + cross;
   const repeats = g > 0 ? Math.ceil(Math.log(0.001) / Math.log(g)) : 1;
@@ -290,6 +303,7 @@ export function delayMultibandTail(p) {
 const delayCost = p => {
   if (delayIsLegacy(p)) return { base: 4, measured: true };
   const m = delayMode(p);
+  if (m === 'reverse' || m === 'granular') return { base: 6, measured: false, estimate: 'plan-p20' };   // 20e/20f: Worklet `timebuffer` (Planwert wie die übrigen Time-Buffer-Module)
   if (m === 'multitap') return { base: 3 + 7 * delayActiveTaps(p).length, measured: false, estimate: 'delay' };   // Hochmischer/Summe + je Tap Delay, 2 Biquads, Pegel, Panner, Rückkopplung, Sättigung
   return { base: m === 'mono' ? 8 : m === 'stereo' ? 16 : 15, measured: false, estimate: 'delay' };
 };
@@ -330,6 +344,23 @@ export const crusherValues = q => ({
   jitter: _clamp(0, 1, _fin(q?.jitter, 0)),
   mix: _clamp(0, 1, _fin(q?.mix, 1))
 });
+/**
+ * Stutter (Phase 20b): Werte für Worklet, Graph und Tests, geklemmt (Rechenkern audio/dsp-lib/stutter.js, eine Wahrheit).
+ * at/length in ms; count ganzzahlig 1–64; infinite (Daten 'on'/'off') → boolesch; spacing × Länge; fade Anteil; pitchStep Halbtöne; probability, mix 0…1.
+ */
+export const stutterValues = q => stutterParams(q);
+
+/**
+ * Beat Repeat (Phase 20c): Werte für Worklet, Graph und Tests, geklemmt (Rechenkern audio/dsp-lib/beat-repeat.js, eine Wahrheit).
+ * { interval, offset, length (Fenster, ms), count, infinite (boolesch), chance, decay, mix }.
+ */
+export const beatRepeatValues = q => beatRepeatParams(q);
+
+/**
+ * Retrigger (Phase 20d): Werte für Worklet, Graph und Tests, geklemmt (Rechenkern audio/dsp-lib/retrigger.js, eine Wahrheit).
+ * { sensitivity, threshold (dB), holdoff (ms), preroll (ms), length (Fenster, ms), count, infinite (boolesch), chance, decay, mix }.
+ */
+export const retriggerValues = q => retriggerParams(q);
 /**
  * Frequenzschieber (Phase 16): Werte für den Graphen, geklemmt — eine Wahrheit für Engine und Tests.
  * shift in Hz (−1000 … +1000; negativ = nach unten), mix 0…1.
@@ -476,9 +507,9 @@ export function vibratoSwing(cents, f, shape = 'sine') {
   const a = shape === 'triangle' ? dev / (4 * ff) : dev / (2 * Math.PI * ff);
   return Math.min(VIBRATO_MAX_SWING, a);
 }
-/** LFO-Formen der Phase-12-Module (modsources.js LFO_SHAPES); Sample&Hold erst mit P20. */
-const LFO_WAVE_OPTIONS = { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck', saw: 'Sägezahn' };
-const lfoWaveParam = () => ({ def: 'sine', enum: ['sine', 'triangle', 'square', 'saw'], label: 'Wellenform', ui: { options: LFO_WAVE_OPTIONS } });
+/** LFO-Formen (modsources.js LFO_SHAPES): Auto-Pan (P12a) und Auto-Filter (20g); `sh` = Sample&Hold (20g, zufällige Stufen). */
+const LFO_WAVE_OPTIONS = { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck', saw: 'Sägezahn', sh: 'Sample & Hold' };
+const lfoWaveParam = (ui = {}) => ({ def: 'sine', enum: ['sine', 'triangle', 'square', 'saw', 'sh'], label: 'Wellenform', ui: { options: LFO_WAVE_OPTIONS, ...ui } });
 
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
@@ -542,17 +573,23 @@ export const MODULES = [
     tail: p => delayTailSeconds(p),
     params: {
       mode: { def: 'mono', enum: DELAY_MODES, label: 'Modus', ui: { options: DELAY_MODE_LABELS } },
-      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['mono', 'pingpong'] } } },
-      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['mono', 'stereo', 'pingpong'] } } },
+      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['mono', 'pingpong', 'reverse', 'granular'] } } },
+      feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['mono', 'stereo', 'pingpong', 'reverse', 'granular'] } } },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       timeL: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit links', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
       timeR: { def: 0.33, range: [0, 2], unit: 's', label: 'Zeit rechts', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
       crossFeedback: { def: 0, range: [0, 0.95], label: 'Kreuz-Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['stereo'] } } },
-      lowCut: { def: DELAY_LOWCUT_OFF, range: [DELAY_LOWCUT_OFF, 2000], unit: 'Hz', label: 'Low-Cut (je Wiederholung)', ui: { min: 20, max: 2000, step: 5, scale: 'log', digits: 0 } },
-      highCut: { def: DELAY_HIGHCUT_OFF, range: [500, DELAY_HIGHCUT_OFF], unit: 'Hz', label: 'High-Cut (je Wiederholung)', ui: { min: 500, max: 20000, step: 50, scale: 'log', digits: 0 } },
-      modRate: { def: 0.5, range: [0.05, 5], unit: 'Hz', label: 'Modulation: Rate', ui: { min: 0.05, max: 5, step: 0.05 } },
-      modDepth: { def: 0, range: [0, DELAY_MOD_MAX_MS], unit: 'ms', label: 'Modulation: Tiefe', ui: { min: 0, max: DELAY_MOD_MAX_MS, step: 0.1, digits: 1 } },
-      taps: { def: DELAY_DEFAULT_TAPS, tapList: true, label: 'Taps', ui: { showIf: { mode: ['multitap'] } } }      // Phase 14b
+      lowCut: { def: DELAY_LOWCUT_OFF, range: [DELAY_LOWCUT_OFF, 2000], unit: 'Hz', label: 'Low-Cut (je Wiederholung)', ui: { min: 20, max: 2000, step: 5, scale: 'log', digits: 0, showIf: { mode: DELAY_FILTER_MODES } } },
+      highCut: { def: DELAY_HIGHCUT_OFF, range: [500, DELAY_HIGHCUT_OFF], unit: 'Hz', label: 'High-Cut (je Wiederholung)', ui: { min: 500, max: 20000, step: 50, scale: 'log', digits: 0, showIf: { mode: DELAY_FILTER_MODES } } },
+      modRate: { def: 0.5, range: [0.05, 5], unit: 'Hz', label: 'Modulation: Rate', ui: { min: 0.05, max: 5, step: 0.05, showIf: { mode: DELAY_FILTER_MODES } } },
+      modDepth: { def: 0, range: [0, DELAY_MOD_MAX_MS], unit: 'ms', label: 'Modulation: Tiefe', ui: { min: 0, max: DELAY_MOD_MAX_MS, step: 0.1, digits: 1, showIf: { mode: DELAY_FILTER_MODES } } },
+      taps: { def: DELAY_DEFAULT_TAPS, tapList: true, label: 'Taps', ui: { showIf: { mode: ['multitap'] } } },     // Phase 14b
+      // Phase 20f (additiv): Granular-Delay; `time` = Verzögerung der Kornmitte, `feedback`/`wet` wie oben
+      grainSize: { def: 80, range: GRAIN_SIZE_RANGE, unit: 'ms', label: 'Korn: Größe', ui: { min: 10, max: 500, step: 1, scale: 'log', digits: 0, showIf: { mode: ['granular'] } } },
+      grainDensity: { def: 20, range: GRAIN_DENSITY_RANGE, unit: '/s', label: 'Korn: Dichte', ui: { min: 1, max: 100, step: 1, scale: 'log', digits: 0, showIf: { mode: ['granular'] } } },
+      grainSpray: { def: 30, range: GRAIN_SPRAY_RANGE, unit: 'ms', label: 'Korn: Streuung (Spray)', ui: { min: 0, max: 250, step: 1, digits: 0, showIf: { mode: ['granular'] } } },
+      grainPitch: { def: 0, range: GRAIN_PITCH_RANGE, unit: 'Halbtöne', label: 'Korn: Tonhöhe', ui: { min: -12, max: 12, step: 0.5, signed: true, digits: 1, showIf: { mode: ['granular'] } } },
+      grainPitchRandom: { def: 0, range: GRAIN_PITCH_RANDOM_RANGE, unit: 'Halbtöne', label: 'Korn: Tonhöhen-Zufall', ui: { min: 0, max: 12, step: 0.1, digits: 1, showIf: { mode: ['granular'] } } }
     } },
   { key: 'chorus', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Chorus', layerOrder: 90, consumers: ALL_CONSUMERS, cost: chorusCost,
     params: {
@@ -726,6 +763,7 @@ export const MODULES = [
       frequency: { def: 600, range: [50, 10000], unit: 'Hz', label: 'Grundfrequenz', ui: { min: 50, max: 10000, step: 10, scale: 'log', digits: 0 } },
       depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       rate: { def: 2, range: [0.1, 10], unit: 'Hz', label: 'Rate (LFO)', ui: { min: 0.1, max: 10, step: 0.1 } },
+      waveform: lfoWaveParam({ showIf: { source: ['lfo'] } }),   // 20g: LFO-Form (Standard Sinus = Klang wie vor 20g)
       resonance: { def: 3, range: [0.5, 20], label: 'Resonanz (Q)', ui: { min: 0.5, max: 20, step: 0.5 } },
       sensitivity: sensitivityParam()
     } },
@@ -932,6 +970,61 @@ export const MODULES = [
     params: {
       rate: { def: 1, range: TEMPO_RANGE, unit: '×', label: 'Tempo', ui: { min: 0.5, max: 2, step: 0.01, scale: 'log', digits: 2 } },
       keepPitch: { def: 'on', enum: ['on', 'off'], label: 'Tonhöhe', ui: { options: { on: 'halten (Time-Stretch)', off: 'folgt dem Tempo (wie ein Band)' } } }
+    } },
+  // Phase 20b: Stutter im Worklet `timebuffer` (Rechenkern audio/dsp-lib/stutter.js). Je Durchlauf ein Ereignis: `at` ms nach Beginn wird das Segment
+  // [at, at + Länge] festgehalten und `count`-mal (oder ∞ bis zum Durchlaufende) wiederholt; Rate = Abstand der Starts × Länge; Mix 100 % ersetzt das
+  // trockene Signal während der Wiederholungen. Loop Repeat = ∞, Random Repeat = Wahrscheinlichkeit je Ereignis, Pitch Stutter = pitchStep je Wiederholung.
+  // layerOrder 5: hinter dem Tonhöhen-Knoten (0), vor den Filtern (10) (Entscheidung Nutzer 2026-11-06; beatRepeat 6, retrigger 7).
+  // Ohne Worklet: übersprungen (Fallback 'none'). Alle Regler live: Mix sofort (geglättet), die übrigen ab dem nächsten Ereignis.
+  { key: 'stutter', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'time', label: 'Stutter', layerOrder: 5, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['timebuffer'], cost: () => ({ base: 6, measured: false, estimate: 'plan-p20' }), tail: p => stutterTailSeconds(p),
+    params: {
+      at: { def: 0, range: STUTTER_AT_RANGE, unit: 'ms', label: 'Einsatz nach Start', ui: { min: 0, max: 5000, step: 5, digits: 0 } },
+      length: { def: 80, range: STUTTER_LENGTH_RANGE, unit: 'ms', label: 'Länge', ui: { min: 5, max: 500, step: 1, digits: 0 } },
+      infinite: { def: 'off', enum: ['off', 'on'], label: 'Wiederholungen', ui: { options: { off: 'feste Anzahl', on: '∞ bis zum Ende (Loop Repeat)' } } },
+      count: { def: 4, range: STUTTER_COUNT_RANGE, label: 'Anzahl', ui: { min: 1, max: 64, step: 1, digits: 0, showIf: { infinite: ['off'] } } },
+      spacing: { def: 1, range: STUTTER_SPACING_RANGE, label: 'Rate (Abstand der Wiederholungen)', ui: { min: 1, max: 4, step: 0.05, digits: 0, display: { factor: 100, unit: '%' } } },   // 100 % = lückenlos (Prozentanzeige ist 0…1 vorbehalten)
+      fade: { def: 0.1, range: STUTTER_FADE_RANGE, label: 'Fade je Wiederholung', ui: { min: 0, max: 0.5, step: 0.01, percent: true } },
+      pitchStep: { def: 0, range: STUTTER_STEP_RANGE, unit: 'Halbtöne', label: 'Tonhöhe je Wiederholung', ui: { min: -12, max: 12, step: 0.5, signed: true, digits: 1 } },
+      probability: { def: 1, range: [0, 1], label: 'Wahrscheinlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 20c: Beat Repeat (Buffer Repeat) im Worklet `timebuffer` (Rechenkern audio/dsp-lib/beat-repeat.js). Raster über die ganze Quelle: alle
+  // `interval` ms (ab `offset`) wird das Fenster (`length`) ab dem Ereignis festgehalten (wie Ableton) und `count`-mal lückenlos wiederholt, höchstens bis zum
+  // nächsten Ereignis (Gate ≤ Intervall; ∞ füllt bis dorthin). Wahrscheinlichkeit je Ereignis, Decay = Pegelabfall je Wiederholung, Mix wie Stutter.
+  // Fade fest (10 %, mind. 1 ms), keine Tonhöhe (Stutter). layerOrder 6: hinter Stutter (5), vor den Filtern (10) (Entscheidung Nutzer 2026-11-06).
+  // Ohne Worklet: übersprungen (Fallback 'none'). Alle Regler live: Mix sofort (geglättet), die übrigen ab dem nächsten Ereignis.
+  { key: 'beatRepeat', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'time', label: 'Beat Repeat', layerOrder: 6, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['timebuffer'], cost: () => ({ base: 6, measured: false, estimate: 'plan-p20' }), tail: p => beatRepeatTailSeconds(p),
+    params: {
+      interval: { def: 500, range: BEATREPEAT_INTERVAL_RANGE, unit: 'ms', label: 'Intervall', ui: { min: 50, max: 8000, step: 10, scale: 'log', digits: 0 } },
+      offset: { def: 0, range: BEATREPEAT_OFFSET_RANGE, unit: 'ms', label: 'Versatz (erstes Ereignis)', ui: { min: 0, max: 8000, step: 5, digits: 0 } },
+      length: { def: 125, range: BEATREPEAT_WINDOW_RANGE, unit: 'ms', label: 'Fenster', ui: { min: 5, max: 500, step: 1, digits: 0 } },
+      infinite: { def: 'off', enum: ['off', 'on'], label: 'Wiederholungen', ui: { options: { off: 'feste Anzahl', on: '∞ bis zum nächsten Ereignis (Gate)' } } },
+      count: { def: 3, range: BEATREPEAT_COUNT_RANGE, label: 'Anzahl', ui: { min: 1, max: 64, step: 1, digits: 0, showIf: { infinite: ['off'] } } },
+      chance: { def: 1, range: [0, 1], label: 'Wahrscheinlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      decay: { def: 0, range: BEATREPEAT_DECAY_RANGE, label: 'Abklingen je Wiederholung', ui: { min: 0, max: 0.9, step: 0.01, percent: true } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 20d: Retrigger im Worklet `timebuffer` (Rechenkern audio/dsp-lib/retrigger.js). Eine integrierte Onset-Erkennung (schnelle gegen langsame
+  // Hüllkurve, wie der Transient Shaper) löst bei jedem Anschlag aus: das Fenster ab `preroll` ms vor der Erkennung wird festgehalten und `count`-mal
+  // lückenlos wiederholt (wie Beat Repeat). Ein neuer Onset nach der Totzeit schneidet laufende Wiederholungen ab (∞ = bis zum nächsten Onset).
+  // Wahrscheinlichkeit je Onset, Decay je Wiederholung, Mix wie Stutter. layerOrder 7: hinter Beat Repeat (6), vor den Filtern (10)
+  // (Entscheidung Nutzer 2026-11-06). Ohne Worklet: übersprungen (Fallback 'none'). Alle Regler live: Mix sofort (geglättet), Erkennung sofort,
+  // die übrigen ab dem nächsten Ereignis.
+  { key: 'retrigger', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'time', label: 'Retrigger', layerOrder: 7, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['timebuffer'], cost: () => ({ base: 6, measured: false, estimate: 'plan-p20' }), tail: p => retriggerTailSeconds(p),
+    params: {
+      sensitivity: { def: 0.5, range: RETRIGGER_SENS_RANGE, label: 'Empfindlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      threshold: { def: -40, range: RETRIGGER_THRESHOLD_RANGE, unit: 'dB', label: 'Schwelle', ui: { min: -60, max: 0, step: 1 } },
+      holdoff: { def: 100, range: RETRIGGER_HOLDOFF_RANGE, unit: 'ms', label: 'Totzeit', ui: { min: 10, max: 2000, step: 5, scale: 'log', digits: 0 } },
+      preroll: { def: 3, range: RETRIGGER_PREROLL_RANGE, unit: 'ms', label: 'Vorlauf vor dem Anschlag', ui: { min: 0, max: 20, step: 0.5, digits: 1 } },
+      length: { def: 125, range: RETRIGGER_WINDOW_RANGE, unit: 'ms', label: 'Fenster', ui: { min: 5, max: 500, step: 1, digits: 0 } },
+      infinite: { def: 'off', enum: ['off', 'on'], label: 'Wiederholungen', ui: { options: { off: 'feste Anzahl', on: '∞ bis zum nächsten Anschlag' } } },
+      count: { def: 3, range: RETRIGGER_COUNT_RANGE, label: 'Anzahl', ui: { min: 1, max: 64, step: 1, digits: 0, showIf: { infinite: ['off'] } } },
+      chance: { def: 1, range: [0, 1], label: 'Wahrscheinlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      decay: { def: 0, range: RETRIGGER_DECAY_RANGE, label: 'Abklingen je Wiederholung', ui: { min: 0, max: 0.9, step: 0.01, percent: true } },
+      mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
     } }
 ];
 

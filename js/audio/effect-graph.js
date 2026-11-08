@@ -7,6 +7,9 @@
 import { makeDynamicsNode } from './engine/dynamics-node.js';
 import { makeFlangerNode, makePhaserNode, phaserStages } from './engine/delayline-node.js';
 import { makeCrusherNode } from './engine/crusher-node.js';
+import { makeTimebufferNode } from './engine/timebuffer-node.js';
+import { reverseDelayParams, REVDELAY_BUFFER_SECONDS } from './dsp-lib/reverse-delay.js';
+import { granularDelayParams, GRDELAY_BUFFER_SECONDS } from './dsp-lib/granular-delay.js';
 import { crushQuantize } from './dsp-lib/crusher.js';
 import { compressorLatencySamples } from './engine/compressor-probe.js';
 import { waveShaperLatencySamples } from './engine/waveshaper-probe.js';
@@ -18,8 +21,8 @@ import { isWorkletReady } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
 import { reverbIsLegacy, reverbIRKey, reverbNormalize } from './ir-synth.js';   // P19a; reverbNormalize: Nachbesserung 19a Teil 2
 import { defaultModules, peqActiveBands, chorusVoices, chorusIsMulti, vibratoSwing, WIDTH_DECOR_DELAY_S, MS_EQ_DEF, DOPPLER_C, DOPPLER_MAX_DELAY_S,
-  delayIsLegacy, delayMode, delayLoopGains, crusherValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, reverbBuiltMode, reverbGateParams, shimmerValues, reverseValues, reverbIRSig, REVERSE_PREROLL_RANGE, SHIMMER_LOOP_HP, SHIMMER_LOOP_LP, SHIMMER_LOOP_SAMPLES, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
-import { makeEnvelopeFollower, makePhasedWave } from './engine/modsources.js';
+  delayIsLegacy, delayMode, delayLoopGains, crusherValues, stutterValues, beatRepeatValues, retriggerValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, reverbBuiltMode, reverbGateParams, shimmerValues, reverseValues, reverbIRSig, REVERSE_PREROLL_RANGE, SHIMMER_LOOP_HP, SHIMMER_LOOP_LP, SHIMMER_LOOP_SAMPLES, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
+import { makeEnvelopeFollower, makePhasedWave, makeShSource, shSetRate, shStartOffset } from './engine/modsources.js';
 import { motionWindows } from './engine/timebase.js';
 
 // ─── DEFAULT EFFECTS ─────────────────────────────────────────
@@ -614,6 +617,20 @@ function _phasedOsc(ctx, tr, shape, phaseDeg, rate) {
   return o;
 }
 
+/** Feste Seeds der Sample&Hold-LFOs (20g, Entscheidung F: fest je Bau) — je Modul eine eigene Folge, damit zwei S&H-Module nicht gleich springen. */
+const SH_SEED_AUTOPAN = 0x53A7, SH_SEED_AUTOFILTER = 0x53F1;
+
+/**
+ * Sample&Hold-LFO (Phase 20g): geloopte Stufenquelle (modsources.js makeShSource), gestartet mit Startphase (360° = eine Stufe) und in `tr`
+ * eingetragen. Rückgabe: { node, setRate(hz, smooth) } — Rate über playbackRate (shSetRate: geglättet mit Ankerwert).
+ */
+function _shLfo(ctx, tr, seed, phaseDeg, rate) {
+  const src = makeShSource(ctx, { seed, rate });
+  src.start(0, shStartOffset(ctx, phaseDeg));
+  if (tr) tr.push(src);
+  return { node: src, setRate: (hz, smooth) => shSetRate(ctx, src, hz, smooth) };
+}
+
 /**
  * Stereo-Tremolo (Phase 12a): je Kanal ein Gain = DC + LFO·Tiefe wie beim Mono-Tremolo, der rechte LFO läuft um `phase` Grad voraus
  * (beide LFOs aus PeriodicWave, gleich gestartet → fester Versatz). Mono-Quellen werden dabei zweikanalig (L = R = −3,01 dB vor der Modulation, wie am terminalen Panner).
@@ -664,10 +681,10 @@ function _panCurveFor(side) {
 /**
  * Auto-Pan (Phase 12a, Entscheidung „eigene Gains“): Breite (Mitte/Seite: L' = a·L + b·R, R' = b·L + a·R mit a = (1+w)/2, b = (1−w)/2),
  * dann je Kanal ein Gain, dessen Wert eine WaveShaper-Kurve aus dem Panwert (LFO · Tiefe) bildet. Startphase über PeriodicWave.
- * Live: Rate, Tiefe, Breite. Nicht glättbar: Form und Startphase (Neubau mit Überblendung).
+ * Live: Rate, Tiefe, Breite. Nicht glättbar: Form und Startphase (Neubau mit Überblendung). Form `sh` (20g): Stufenquelle, Startphase 360° = eine Stufe.
  */
 function _buildAutoPan(ctx, p, tr) {
-  const shape = ['sine', 'triangle', 'square', 'saw'].includes(p.waveform) ? p.waveform : 'sine';
+  const shape = ['sine', 'triangle', 'square', 'saw', 'sh'].includes(p.waveform) ? p.waveform : 'sine';
   const ph = _cl(0, 360, Number.isFinite(p.phase) ? p.phase : 0);
   const { input, split } = _stereoSplit(ctx);
   const merge = ctx.createChannelMerger(2);
@@ -678,7 +695,9 @@ function _buildAutoPan(ctx, p, tr) {
   split.connect(aR, 1); split.connect(bL, 1);                       // R → rechts (a), R → links (b)
   aL.connect(panL); bL.connect(panL); aR.connect(panR); bR.connect(panR);
   panL.connect(merge, 0, 0); panR.connect(merge, 0, 1);
-  const lfo = _phasedOsc(ctx, tr, shape, ph, _cl(0.01, 20, p.rate ?? 0.5));
+  // 20g: `sh` → Stufenquelle (Startphase = Verschiebung innerhalb einer Stufe); alle übrigen Formen unverändert (bit-gleich)
+  const sh = shape === 'sh' ? _shLfo(ctx, tr, SH_SEED_AUTOPAN, ph, _cl(0.01, 20, p.rate ?? 0.5)) : null;
+  const lfo = sh ? sh.node : _phasedOsc(ctx, tr, shape, ph, _cl(0.01, 20, p.rate ?? 0.5));
   const depthGain = ctx.createGain();
   const shL = ctx.createWaveShaper(), shR = ctx.createWaveShaper();
   shL.curve = _panCurveFor('l'); shR.curve = _panCurveFor('r');
@@ -687,7 +706,7 @@ function _buildAutoPan(ctx, p, tr) {
   const apply = (q, sm) => {
     const set = _setter(ctx, sm);
     const w = _cl(0, 1, q.width ?? 1);
-    set(lfo.frequency, _cl(0.01, 20, q.rate ?? 0.5));
+    if (sh) sh.setRate(_cl(0.01, 20, q.rate ?? 0.5), sm); else set(lfo.frequency, _cl(0.01, 20, q.rate ?? 0.5));
     set(depthGain.gain, _cl(0, 1, q.depth ?? 1));
     set(aL.gain, (1 + w) / 2); set(aR.gain, (1 + w) / 2);
     set(bL.gain, (1 - w) / 2); set(bR.gain, (1 - w) / 2);
@@ -1193,6 +1212,10 @@ function _buildWahwah(ctx, p, tr) {
   return seg;
 }
 
+/** Auto-Filter-Wellenform (20g); unbekannt → sine. Signatur: Form ist nicht glättbar (Neubau); `lfo` (ohne Zusatz) = Sinus wie vor 20g. */
+const _autoFilterWave = q => (['sine', 'triangle', 'square', 'saw', 'sh'].includes(q.waveform) ? q.waveform : 'sine');
+const _autoFilterSig = q => (q.source === 'envelope' ? 'env' : (_autoFilterWave(q) === 'sine' ? 'lfo' : `lfo|${_autoFilterWave(q)}`));
+
 /**
  * Auto-Filter (P10c): Biquad (Tief-/Band-/Hochpass), Grundfrequenz moduliert über `detune` (Cent → exponentiell wie das Gehör):
  * LFO: ± Tiefe·2400 Cent; Hüllkurve: 0 … +Tiefe·4800 Cent (laut = Filter öffnet sich). Resonanz = lineare Güte Q
@@ -1207,7 +1230,13 @@ function _buildAutoFilter(ctx, p, tr) {
     inp = ctx.createGain(); inp.connect(filter);
     envCtl = _buildEnvelopeControl(ctx, tr, inp, depthGain, 'Auto-Filter');
   }
-  if (!envCtl) { lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.connect(depthGain); lfo.start(); if (tr) tr.push(lfo); }
+  // 20g: Wellenform nur bei Steuerung LFO; `sine` (Standard, auch der Hüllkurven-Ersatz) = Graph wie vor 20g (bit-gleich)
+  const wf = wantEnv ? 'sine' : _autoFilterWave(p);
+  let sh = null;
+  if (!envCtl && wf === 'sh') {
+    sh = _shLfo(ctx, tr, SH_SEED_AUTOFILTER, 0, Math.max(0.1, Math.min(10, p.rate ?? 2)));
+    lfo = sh.node; lfo.connect(depthGain);
+  } else if (!envCtl) { lfo = ctx.createOscillator(); lfo.type = wf === 'saw' ? 'sawtooth' : wf; lfo.connect(depthGain); lfo.start(); if (tr) tr.push(lfo); }
   depthGain.connect(filter.detune);
   const apply = (q, sm) => {
     const set = _setter(ctx, sm);
@@ -1218,11 +1247,12 @@ function _buildAutoFilter(ctx, p, tr) {
     set(filter.Q, type === 'bandpass' ? qLin : 20 * Math.log10(qLin));
     const depth = Math.max(0, Math.min(1, q.depth ?? 0.7));
     set(depthGain.gain, depth * (envCtl ? 4800 : 2400));
-    if (lfo) set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
+    if (sh) sh.setRate(Math.max(0.1, Math.min(10, q.rate ?? 2)), sm);
+    else if (lfo) set(lfo.frequency, Math.max(0.1, Math.min(10, q.rate ?? 2)));
     if (envCtl) set(envCtl.scale.gain, _sensGain(q.sensitivity));
   };
   apply(p, false);
-  const seg = _inst('autoFilter', { input: inp, output: filter }, p, { apply, sig: q => (q.source === 'envelope' ? 'env' : 'lfo') });
+  const seg = _inst('autoFilter', { input: inp, output: filter }, p, { apply, sig: _autoFilterSig });
   if (wantEnv && !envCtl) seg.fallback = 'lfo';
   return seg;
 }
@@ -1254,6 +1284,78 @@ function _buildCrusher(ctx, p, tr) {
   apply(p, false);
   const seg = _inst('crusher', { input, output }, p, { apply, sig: q => String(crusherValues(q).bits) });
   seg.fallback = 'native';
+  return seg;
+}
+
+/**
+ * Stutter (Phase 20b, layerOrder 5): Worklet `timebuffer` im Modus 'stutter' (Planer audio/dsp-lib/stutter.js). Der Knoten bekommt die
+ * Zeitbasis über arm() (13d-Vertrag wie Bewegungen und Reverse-Hall: Ereignis je Durchlauf relativ zum Durchlaufbeginn) und hält sie bei
+ * der Musik-Pause an (hold). Mix live über den Parameter `wet` (geglättet, wirkt auch auf eine laufende Wiederholung), die übrigen Regler
+ * gehen über den Port und gelten ab dem nächsten Ereignis (kein Neubau). Ohne Worklet: Durchgang, `fallback = 'none'`, Hinweis in der Konsole
+ * (wie Gated-Hall/Noise Gate; das Ereignis sb:fx-fallback zeigt in budget.js einen Text zur Hüllkurven-Steuerung und passt hier nicht).
+ */
+function _buildStutter(ctx, p, tr) {
+  const v = stutterValues(p);
+  const node = makeTimebufferNode(ctx, { mode: 'stutter', params: v, dry: 1, wet: v.mix, seed: 0x57A7 });
+  if (!node) {
+    console.warn('[audio] Stutter: Worklet "timebuffer" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('stutter', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  const apply = (q, live) => { const w = stutterValues(q); node.update({ wet: w.mix }); if (live) node.setParams(w); };
+  const seg = _inst('stutter', { input: node.input, output: node.output }, p, { apply });
+  seg.arm = ({ timing }) => node.arm(timing);
+  seg.hold = () => node.hold();
+  return seg;
+}
+
+/**
+ * Beat Repeat (Phase 20c, layerOrder 6): Worklet `timebuffer` im Modus 'beatRepeat' (Planer audio/dsp-lib/beat-repeat.js). Aufbau wie
+ * _buildStutter: Zeitbasis über arm() (Raster relativ zum Durchlaufbeginn), hold() bei der Musik-Pause, Mix live über `wet`, übrige Regler
+ * über den Port ab dem nächsten Ereignis. Ohne Worklet: Durchgang, `fallback = 'none'`, Hinweis in der Konsole (wie Stutter).
+ */
+function _buildBeatRepeat(ctx, p, tr) {
+  const v = beatRepeatValues(p);
+  const node = makeTimebufferNode(ctx, { mode: 'beatRepeat', params: v, dry: 1, wet: v.mix, seed: 0xBEA7 });
+  if (!node) {
+    console.warn('[audio] Beat Repeat: Worklet "timebuffer" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('beatRepeat', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  const apply = (q, live) => { const w = beatRepeatValues(q); node.update({ wet: w.mix }); if (live) node.setParams(w); };
+  const seg = _inst('beatRepeat', { input: node.input, output: node.output }, p, { apply });
+  seg.arm = ({ timing }) => node.arm(timing);
+  seg.hold = () => node.hold();
+  return seg;
+}
+
+/**
+ * Retrigger (Phase 20d, layerOrder 7): Worklet `timebuffer` im Modus 'retrigger' (Planer audio/dsp-lib/retrigger.js, Onset-Erkennung im
+ * Prozessor). Aufbau wie _buildBeatRepeat: Zeitbasis über arm() (Durchlauf für die Wahrscheinlichkeit, Durchlaufende für ∞/Loop, Seek leert
+ * Puffer und Erkennung), hold() bei der Musik-Pause, Mix live über `wet`, übrige Regler über den Port (Erkennung sofort, Wiederholungen ab dem
+ * nächsten Ereignis). Ohne Worklet: Durchgang, `fallback = 'none'`, Hinweis in der Konsole (wie Stutter).
+ */
+function _buildRetrigger(ctx, p, tr) {
+  const v = retriggerValues(p);
+  const node = makeTimebufferNode(ctx, { mode: 'retrigger', params: v, dry: 1, wet: v.mix, seed: 0x2E7A });
+  if (!node) {
+    console.warn('[audio] Retrigger: Worklet "timebuffer" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('retrigger', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  const apply = (q, live) => { const w = retriggerValues(q); node.update({ wet: w.mix }); if (live) node.setParams(w); };
+  const seg = _inst('retrigger', { input: node.input, output: node.output }, p, { apply });
+  seg.arm = ({ timing }) => node.arm(timing);
+  seg.hold = () => node.hold();
   return seg;
 }
 
@@ -1647,7 +1749,61 @@ function _delayLoop(ctx, explicitMono) {
   return { d, hp, lp, fb, guard, out: lp };
 }
 function _buildDelay(ctx, p, tr) {
+  if (delayMode(p) === 'reverse') return _buildDelayReverse(ctx, p, tr);
+  if (delayMode(p) === 'granular') return _buildDelayGranular(ctx, p, tr);
   return delayIsLegacy(p) ? _buildDelayLegacy(ctx, p) : _buildDelayV2(ctx, p, tr);
+}
+/**
+ * Reverse-Delay (Phase 20e, Modus `reverse`): Worklet `timebuffer` im Modus 'reverseDelay' (Planer audio/dsp-lib/reverse-delay.js).
+ * Blöcke der Länge `time` rückwärts, 50 % überlappend mit komplementären Hann-Flanken; Rückkopplung im Worklet (Wiederholungen wechseln
+ * rückwärts/vorwärts, Entscheidung B). Low-/High-Cut und Modulation wirken nicht (Entscheidung C). Dry/Wet über die Worklet-Parameter
+ * (dry = 1 − wet, live, geglättet); Zeit und Rückkopplung über den Port (Zeit ab dem nächsten Kopfstart, Rückkopplung sofort).
+ * Kanäle: fest stereo hinter dem StereoPanner des Knotens (Mono −3,01 dB, M-3, Entscheidung D).
+ * Zeitbasis: arm() erkennt den Neustart (Seek leert den Ring), hold() wirkt nicht.
+ * Ohne Worklet (Entscheidung Phase 20): bisheriges Delay im Modus `mono` (_buildDelayLegacy: Zeit, Rückkopplung, Wet), `fallback = 'mono'`,
+ * Hinweis in der Konsole. Die Signatur bleibt 'reverse' (kein Neubau bei jeder Änderung).
+ */
+function _buildDelayReverse(ctx, p, tr) {
+  const vals = q => { const v = reverseDelayParams(q); return { time: v.time, feedback: delayLoopGains(q).fb, wet: v.wet }; };
+  const v = vals(p);
+  const node = makeTimebufferNode(ctx, { mode: 'reverseDelay', maxSeconds: REVDELAY_BUFFER_SECONDS, params: v, dry: 1 - v.wet, wet: v.wet, seed: 0x2E5D });
+  if (!node) {
+    console.warn('[audio] Reverse-Delay: Worklet "timebuffer" nicht verfügbar — Modus mono');
+    const seg = _buildDelayLegacy(ctx, p);
+    seg.fallback = 'mono';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  const apply = (q, live) => { const w = vals(q); node.update({ dry: 1 - w.wet, wet: w.wet }); if (live) node.setParams(w); };
+  const seg = _inst('delay', { input: node.input, output: node.output }, p, { apply, sig: _delaySig });
+  seg.arm = ({ timing }) => node.arm(timing);
+  seg.hold = () => node.hold();
+  return seg;
+}
+/**
+ * Granular-Delay (Phase 20f, Modus `granular`): Worklet `timebuffer` im Modus 'granularDelay' (Planer audio/dsp-lib/granular-delay.js).
+ * Körner (Hann-Fenster) aus dem Puffer im festen Abstand 1/Dichte, Verzögerung der Kornmitte = `time` ± Spray, Tonhöhe über die Kopf-Rate,
+ * Kornpegel 1/√Überlappung (Entscheidung C), alle Kanäle an derselben Position (D). Rückkopplung im Worklet wie Reverse. Low-/High-Cut und
+ * Modulation wirken nicht. Dry/Wet über die Worklet-Parameter (dry = 1 − wet), übrige Regler über den Port (ab dem nächsten Korn).
+ * Zufall: fester Seed je Bau 0x6A1F (Entscheidung E: jede Wiedergabe gleich). Zeitbasis wie Reverse (Seek leert, hold() wirkt nicht).
+ * Ohne Worklet (Entscheidung Phase 20): bisheriges Delay im Modus `mono` (_buildDelayLegacy), `fallback = 'mono'`, Hinweis in der Konsole.
+ */
+function _buildDelayGranular(ctx, p, tr) {
+  const vals = q => ({ ...granularDelayParams(q), feedback: delayLoopGains(q).fb });
+  const v = vals(p);
+  const node = makeTimebufferNode(ctx, { mode: 'granularDelay', maxSeconds: GRDELAY_BUFFER_SECONDS, params: v, dry: 1 - v.wet, wet: v.wet, seed: 0x6A1F });
+  if (!node) {
+    console.warn('[audio] Granular-Delay: Worklet "timebuffer" nicht verfügbar — Modus mono');
+    const seg = _buildDelayLegacy(ctx, p);
+    seg.fallback = 'mono';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  const apply = (q, live) => { const w = vals(q); node.update({ dry: 1 - w.wet, wet: w.wet }); if (live) node.setParams(w); };
+  const seg = _inst('delay', { input: node.input, output: node.output }, p, { apply, sig: _delaySig });
+  seg.arm = ({ timing }) => node.arm(timing);
+  seg.hold = () => node.hold();
+  return seg;
 }
 function _buildDelayV2(ctx, p, tr) {
   const mode = delayMode(p);
@@ -2290,6 +2446,13 @@ export function buildTerminalPanner(ctx, pan) {
  */
 function _collectSegments(ctx, effects, tr, omit, rev = null) {
   const segs = [];
+
+  // Stutter (Phase 20b, layerOrder 5): direkt hinter dem Tonhöhen-Knoten am Layer-Kopf, vor den Filtern.
+  if (effects.stutter?.enabled)    segs.push(_buildStutter(ctx, effects.stutter, tr));
+  // Beat Repeat (Phase 20c, layerOrder 6): direkt nach Stutter.
+  if (effects.beatRepeat?.enabled) segs.push(_buildBeatRepeat(ctx, effects.beatRepeat, tr));
+  // Retrigger (Phase 20d, layerOrder 7): direkt nach Beat Repeat.
+  if (effects.retrigger?.enabled)  segs.push(_buildRetrigger(ctx, effects.retrigger, tr));
 
   if (effects.highpass?.enabled)
     segs.push(_buildBiquadModule(ctx, effects.highpass, 'highpass', 'highpass', { fMin: 20, fMax: 5000, fDef: 20, qMin: 0.1, qMax: 10, qDef: 0.7 }));
