@@ -5,12 +5,13 @@
  */
 
 import { makeDynamicsNode } from './engine/dynamics-node.js';
-import { makeFlangerNode, makePhaserNode, phaserStages } from './engine/delayline-node.js';
+import { makeFlangerNode, makePhaserNode, makeCombBankNode, phaserStages } from './engine/delayline-node.js';
 import { makeCrusherNode } from './engine/crusher-node.js';
 import { makeTimebufferNode } from './engine/timebuffer-node.js';
 import { reverseDelayParams, REVDELAY_BUFFER_SECONDS } from './dsp-lib/reverse-delay.js';
 import { granularDelayParams, GRDELAY_BUFFER_SECONDS } from './dsp-lib/granular-delay.js';
 import { crushQuantize } from './dsp-lib/crusher.js';
+import { modalLimiterCurve, MODAL_LIMIT_SCALE } from './dsp-lib/modal.js';
 import { compressorLatencySamples } from './engine/compressor-probe.js';
 import { waveShaperLatencySamples } from './engine/waveshaper-probe.js';
 import { buildDistortionCurveV2, distortionDrive, distortionBias, distortionNeedsDcBlock, waveshaperKnots,
@@ -21,9 +22,11 @@ import { isWorkletReady } from './context.js';
 import { getGenericIR, getIRBuffer } from './ir-data.js';
 import { reverbIsLegacy, reverbIRKey, reverbNormalize } from './ir-synth.js';   // P19a; reverbNormalize: Nachbesserung 19a Teil 2
 import { defaultModules, peqActiveBands, chorusVoices, chorusIsMulti, vibratoSwing, WIDTH_DECOR_DELAY_S, MS_EQ_DEF, DOPPLER_C, DOPPLER_MAX_DELAY_S,
-  delayIsLegacy, delayMode, delayLoopGains, crusherValues, stutterValues, beatRepeatValues, retriggerValues, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, reverbBuiltMode, reverbGateParams, shimmerValues, reverseValues, reverbIRSig, REVERSE_PREROLL_RANGE, SHIMMER_LOOP_HP, SHIMMER_LOOP_LP, SHIMMER_LOOP_SAMPLES, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
+  delayIsLegacy, delayMode, delayLoopGains, crusherValues, stutterValues, beatRepeatValues, retriggerValues, combKernel, resonatorKernel, tunedKernel, modalKernel, freqShiftValues, freqShiftSig, FREQ_SHIFT_LOOP_SAMPLES, FREQ_SHIFT_LOOP_HP, FREQ_SHIFT_LOOP_LP, FREQ_SHIFT_LOOP_FADE_S, reverbBuiltMode, reverbGateParams, shimmerValues, reverseValues, reverbIRSig, REVERSE_PREROLL_RANGE, SHIMMER_LOOP_HP, SHIMMER_LOOP_LP, SHIMMER_LOOP_SAMPLES, distortionIsLegacy, distortionMode, DISTORTION_TONE_OFF, delayActiveTaps, DMB_BANDS, delayMultibandCross, delayMultibandBand, DELAY_TAP_RANGES, DELAY_MIN_S, DELAY_LOWCUT_OFF, DELAY_HIGHCUT_OFF, DELAY_MOD_MAX_MS, pitchActive, pitchValues, PITCH_PV_LATENCY, PITCH_VOICE_LATENCY } from './engine/registry.js';
 import { makeEnvelopeFollower, makePhasedWave, makeShSource, shSetRate, shStartOffset } from './engine/modsources.js';
 import { motionWindows } from './engine/timebase.js';
+import { splitBranches, splitLevelGain, freqSplitCross, branchChain, branchSoundingKeys, branchLatencySamples } from './engine/registry.js';   // P22
+import { fillLayerParams, effectiveEnumParams } from './engine/schema.js';   // P22: Zweigketten wie Layer auffüllen
 
 // ─── DEFAULT EFFECTS ─────────────────────────────────────────
 
@@ -1288,6 +1291,106 @@ function _buildCrusher(ctx, p, tr) {
 }
 
 /**
+ * Kammfilter (Phase 21a, layerOrder 37): Prozessor `combbank-processor` im Worklet `delayline` (Rechenkern dsp-lib/combbank.js), ein Kamm.
+ * Alle Regler live (der Kern glättet Verzögerung, Rückkopplung, Mix und Ausgang über 10 ms; kein Neubau). Ausgang fest stereo (Mono → L = R, −3,01 dB).
+ * Ohne Worklet: Durchgang, `fallback = 'none'`, Hinweis in der Konsole (Entscheidung C = a, P21; wie Stutter — das Ereignis sb:fx-fallback
+ * zeigt in budget.js den Hüllkurven-Text und passt hier nicht).
+ */
+function _buildComb(ctx, p, tr) {
+  const node = makeCombBankNode(ctx, combKernel(p));
+  if (!node) {
+    console.warn('[audio] Kammfilter: Worklet "delayline" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('comb', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  return _inst('comb', { input: node.input, output: node.output }, p, { apply: q => node.update(combKernel(q)) });
+}
+
+/**
+ * Resonator (Phase 21b, layerOrder 106): dieselbe Kamm-Bank wie `comb` (Prozessor `combbank-processor`), bis 8 Kämme auf k · Grundton (gestreckt durch
+ * die Inharmonizität), Pegelkompensation `wg` und weicher Limiter auf dem Nass-Signal (resonatorKernel). Kernwerte hängen von der Abtastrate ab
+ * (Hermite-Verlust, Grenzfrequenz) → ctx.sampleRate. Alle Regler live, kein Neubau. Ohne Worklet: Durchgang, `fallback = 'none'` (C = a, wie `comb`).
+ */
+function _buildResonator(ctx, p, tr) {
+  const sr = ctx.sampleRate;
+  const node = makeCombBankNode(ctx, resonatorKernel(p, sr));
+  if (!node) {
+    console.warn('[audio] Resonator: Worklet "delayline" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('resonator', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  return _inst('resonator', { input: node.input, output: node.output }, p, { apply: q => node.update(resonatorKernel(q, sr)) });
+}
+
+/**
+ * Tuned Resonator (Phase 21c, layerOrder 107): dieselbe Kamm-Bank, ein Kamm je Akkordton auf Note/Oktave/Feinstimmung (A4 = 440 Hz), Akkordtyp
+ * und Umkehrung (tunedKernel). Gain-Staging wie Resonator. Alle Regler live, kein Neubau (Kämme blenden ein/aus, Stimmung gleitet 10 ms).
+ * Ohne Worklet: Durchgang, `fallback = 'none'` (C = a).
+ */
+function _buildTunedResonator(ctx, p, tr) {
+  const sr = ctx.sampleRate;
+  const node = makeCombBankNode(ctx, tunedKernel(p, sr));
+  if (!node) {
+    console.warn('[audio] Tuned Resonator: Worklet "delayline" nicht verfügbar — Modul übersprungen');
+    const pass = ctx.createGain();
+    const seg = _inst('tunedResonator', { input: pass, output: pass }, p, { apply: () => {} });
+    seg.fallback = 'none';
+    return seg;
+  }
+  if (tr) tr.push({ stop() { node.dispose(); } });
+  return _inst('tunedResonator', { input: node.input, output: node.output }, p, { apply: q => node.update(tunedKernel(q, sr)) });
+}
+
+/**
+ * Modal (Phase 21d, layerOrder 108): 16 native Bandpass-Biquads (Moden, modalKernel), immer gebaut (E = a); Moden außerhalb von Modenzahl,
+ * Tabelle oder Grenzfrequenz haben Pegel 0. Signalweg (= modalReference in dsp-lib/modal.js):
+ *   input (StereoPanner pan 0) → Biquad i → Pegel i → Gruppe i % 2 → Teiler → Panorama L/R (B = a) → Zusammenführung
+ *   → WaveShaper (combSoft-Kennlinie über ±8, ohne Oversampling, keine Latenz) → × 8 · Mix · Ausgang → output;  input → × (1 − Mix) · Ausgang → output.
+ * Hochmischen wie die Kamm-Bank (delayline-node.js): StereoPanner bei pan 0 — Stereo bleibt bit-gleich, Mono wird L = R = x/√2 und damit so laut
+ * wie ein Mono-Signal hinter dem Panner am Kettenende (mit 'speakers'-Hochmischung, L = R = x, wäre eine Mono-Quelle schon bei Mix 0 um +3 dB lauter).
+ * Alle Regler live (Frequenz, Q, Pegel, Panorama, Mix gleiten mit SMOOTH_TC), kein Neubau. Kein Worklet, kein Fallback nötig.
+ */
+function _buildModal(ctx, p) {
+  const sr = ctx.sampleRate, S = MODAL_LIMIT_SCALE;
+  const input = ctx.createStereoPanner(), output = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  input.pan.value = 0;
+  const stereo = n => { n.channelCount = 2; n.channelCountMode = 'explicit'; n.channelInterpretation = 'speakers'; return n; };
+  const groups = [stereo(ctx.createGain()), stereo(ctx.createGain())];
+  const merger = ctx.createChannelMerger(2);
+  const pans = groups.map(g => {
+    const split = ctx.createChannelSplitter(2), l = ctx.createGain(), r = ctx.createGain();
+    g.connect(split); split.connect(l, 0); split.connect(r, 1); l.connect(merger, 0, 0); r.connect(merger, 0, 1);
+    return [l, r];
+  });
+  const shaper = ctx.createWaveShaper();
+  shaper.curve = modalLimiterCurve(); shaper.oversample = 'none';
+  merger.connect(shaper).connect(wet).connect(output);
+  input.connect(dry).connect(output);
+  const k0 = modalKernel(p, sr);
+  const modes = k0.modes.map(m => {
+    const bq = ctx.createBiquadFilter(), g = ctx.createGain();
+    bq.type = 'bandpass';
+    input.connect(bq).connect(g).connect(groups[m.group]);
+    return { bq, g };
+  });
+  const apply = (q, sm) => {
+    const set = _setter(ctx, sm), k = modalKernel(q, sr);
+    k.modes.forEach((m, i) => { set(modes[i].bq.frequency, m.f); set(modes[i].bq.Q, m.Q); set(modes[i].g.gain, m.gain); });
+    const a = Math.sqrt(1 + k.width), b = Math.sqrt(1 - k.width);
+    set(pans[0][0].gain, a); set(pans[0][1].gain, b); set(pans[1][0].gain, b); set(pans[1][1].gain, a);
+    set(wet.gain, S * k.mix * k.out); set(dry.gain, (1 - k.mix) * k.out);
+  };
+  apply(p, false);
+  return _inst('modal', { input, output }, p, { apply });
+}
+
+/**
  * Stutter (Phase 20b, layerOrder 5): Worklet `timebuffer` im Modus 'stutter' (Planer audio/dsp-lib/stutter.js). Der Knoten bekommt die
  * Zeitbasis über arm() (13d-Vertrag wie Bewegungen und Reverse-Hall: Ereignis je Durchlauf relativ zum Durchlaufbeginn) und hält sie bei
  * der Musik-Pause an (hold). Mix live über den Parameter `wet` (geglättet, wirkt auch auf eine laufende Wiederholung), die übrigen Regler
@@ -2461,6 +2564,8 @@ function _collectSegments(ctx, effects, tr, omit, rev = null) {
   if (effects.notch?.enabled)      segs.push(_buildNotch(ctx, effects.notch));
   if (effects.bandpass?.enabled)
     segs.push(_buildBiquadModule(ctx, effects.bandpass, 'bandpass', 'bandpass', { fMin: 20, fMax: 20000, fDef: 1000, qMin: 0.1, qMax: 30, qDef: 1 }, { bandpass: true }));
+  // Kammfilter (Phase 21a, layerOrder 37): hinter dem Bandpass, vor dem Wah-Wah.
+  if (effects.comb?.enabled)       segs.push(_buildComb(ctx, effects.comb, tr));
   if (effects.wahwah?.enabled)     segs.push(_buildWahwah(ctx, effects.wahwah, tr));
   if (effects.autoFilter?.enabled) segs.push(_buildAutoFilter(ctx, effects.autoFilter, tr));
   if (effects.eq10?.enabled)       segs.push(_buildEQ10(ctx, effects.eq10));
@@ -2492,6 +2597,12 @@ function _collectSegments(ctx, effects, tr, omit, rev = null) {
   if (effects.phaser?.enabled)     segs.push(_buildPhaser(ctx, effects.phaser, tr));
   // Vibrato (Phase 12b): Modulationsstufe hinter dem Flanger (layerOrder 104), vor Hall/Delay.
   if (effects.vibrato?.enabled)    segs.push(_buildVibrato(ctx, effects.vibrato, tr));
+  // Resonator (Phase 21b, layerOrder 106): nach dem Vibrato, vor dem Hall (Entscheidung E = a).
+  if (effects.resonator?.enabled)  segs.push(_buildResonator(ctx, effects.resonator, tr));
+  // Tuned Resonator (Phase 21c, layerOrder 107): direkt nach dem Resonator, vor dem Hall.
+  if (effects.tunedResonator?.enabled) segs.push(_buildTunedResonator(ctx, effects.tunedResonator, tr));
+  // Modal (Phase 21d, layerOrder 108): nach dem Tuned Resonator, vor dem Hall; nativ, läuft immer.
+  if (effects.modal?.enabled)      segs.push(_buildModal(ctx, effects.modal));
 
   // `omit` (Phase 3b): Schlüssel, die NICHT gebaut werden, obwohl sie klingen würden — der geteilte Reverb-Send übernimmt den
   // Hall (engine/reverb-hub.js). Die Exklusivität bleibt erhalten: ein überlagertes Modul wird auch dann nicht gebaut.
@@ -2520,7 +2631,116 @@ function _collectSegments(ctx, effects, tr, omit, rev = null) {
   if (effects.utility?.enabled)    segs.push(_buildUtility(ctx, effects.utility));
   // Doppler (Phase 13f, layerOrder 148): hinter Utility, vor dem Spatial-Panner.
   if (effects.doppler?.enabled)    segs.push(_buildDoppler(ctx, effects.doppler));
+  // Splitter (Phase 22, layerOrder 149/149.5, Entscheidung B = a): am Layer-Ende, direkt vor dem Spatial-Panner.
+  if (effects.freqSplit?.enabled)  segs.push(_buildSplitter(ctx, effects.freqSplit, tr, 'freqSplit'));
+  if (effects.transientSplit?.enabled) segs.push(_buildSplitter(ctx, effects.transientSplit, tr, 'transientSplit'));
   return segs;
+}
+
+// ─── SPLITTER-ROUTING (Phase 22) ─────────────────────────────
+//
+// Aufbau (beide Splitter):  input = Hochmischer (StereoPanner pan 0, wie Multiband: Mono → L = R mit −3,01 dB) → Aufteilung →
+//   je Zweig: [Ausgleichsverzögerung] → [Tonhöhe] → Kette (buildLayerChain, Layer-Regeln) → Pegel → Summe = output.
+// Aufteilung: freqSplit = LR4-Weiche (2 oder 3 Bänder; Summe = Allpass, Betrag flach); transientSplit = Worklet `dynamics` Modus 4
+//   (Ausgang 0 Anschlag, 1 Ausklang; Summe = Eingang). Ohne Worklet: alles in den Ausklang-Zweig (`fallback = 'sustain'`).
+// Laufzeitausgleich (Entscheidung C = a): jeder Zweig wird auf die Latenz des längsten verzögert (registry.branchLatencySamples; Tonhöhe
+//   nach dem tatsächlich gebauten Knoten). Reverse-Hall im Zweig (Entscheidung D = a): ohne vorberechnete Variante → nur der trockene Anteil.
+// Live: Weichen, Pegel, Splitter-Regler und alle live-fähigen Werte der Zweigmodule. Anderer Aufbau eines Zweigs (Bänder, Module an/aus,
+//   Latenz) → update() meldet false → die Runtime baut den Layer neu und überblendet. Zeitbasis (arm/hold) wird an die Zweigmodule durchgereicht.
+
+/** Wirksame, aufgefüllte Parameter einer Zweigkette (wie resolvePlan je Layer). */
+const _branchFull = (p, b) => effectiveEnumParams(fillLayerParams(branchChain(p, b)));
+
+/** Strukturunterschrift eines Splitters: gebaute Zweige, je Zweig klingende Module und Latenz. */
+function _splitStruct(key, p, sr) {
+  return JSON.stringify(splitBranches(key, p).map(b => { const c = branchChain(p, b); return [b, branchSoundingKeys(c), branchLatencySamples(c, sr)]; }));
+}
+
+function _buildBranch(ctx, full, tr) {
+  const input = ctx.createGain(), level = ctx.createGain();
+  let pitch = null, pitchMissing = false;
+  if (pitchActive(full.pitchShift)) {
+    pitch = buildPitchNode(ctx, full.pitchShift, 2);
+    if (pitch) tr?.push({ stop() { pitch.dispose?.(); } });
+    else { pitchMissing = true; console.warn('[pipeline] Splitter-Zweig: Tonhöhe ohne Worklet nicht verfügbar — Zweig ohne Tonhöhe'); }
+  }
+  const lc = buildLayerChain(ctx, full, { track: tr });
+  // Latenz des Zweigs nach dem, was tatsächlich gebaut wurde (ohne Tonhöhen-Knoten zählt die Tonhöhe nicht).
+  const noPitch = { ...full, pitchShift: { ...full.pitchShift, enabled: false } };
+  const latency = branchLatencySamples(noPitch, ctx.sampleRate) + (pitch ? (Number(pitch.latency) || 0) : 0);
+  return { input, level, pitch, pitchMissing, lc, latency, modules: lc ? lc.modules : [] };
+}
+
+function _buildSplitter(ctx, p, tr, key) {
+  const up = _monoUp(ctx), sum = ctx.createGain();
+  const names = splitBranches(key, p);
+  const fulls = names.map(b => _branchFull(p, b));
+  const branches = fulls.map(f => _buildBranch(ctx, f, tr));
+  const maxL = Math.max(0, ...branches.map(r => r.latency));
+  // Verdrahtung je Zweig: input → [Ausgleich] → [Tonhöhe] → [Kette] → Pegel → Summe
+  branches.forEach((r, i) => {
+    let tail = r.input;
+    const pad = maxL - r.latency;
+    if (pad > 0) {
+      const d = ctx.createDelay(Math.max(0.1, pad / ctx.sampleRate + 0.01));
+      d.delayTime.value = pad / ctx.sampleRate;
+      tail.connect(d); tail = d;
+    }
+    if (r.pitch) { tail.connect(r.pitch.input); tail = r.pitch.output; }
+    if (r.lc) { tail.connect(r.lc.input); tail = r.lc.output; }
+    tail.connect(r.level); r.level.connect(sum);
+    r.level.gain.value = splitLevelGain(p, names[i]);
+  });
+  // Aufteilung
+  let setSplit = () => {}, fallback = null, dyn = null;
+  if (key === 'freqSplit') {
+    const [f1, f2] = freqSplitCross(p);
+    if (names.length === 2) {
+      const xo = buildCrossover2(ctx, f1);
+      up.connect(xo.input); xo.low.connect(branches[0].input); xo.high.connect(branches[1].input);
+      setSplit = (q, set) => xo.setFrequency(freqSplitCross(q)[0], set);
+    } else {
+      const xo = buildCrossover3(ctx, f1, f2);
+      up.connect(xo.input); xo.outputs.forEach((o, i) => o.connect(branches[i].input));
+      setSplit = (q, set) => { const [a, b] = freqSplitCross(q); xo.setFrequencies(a, b, set); };
+    }
+  } else {
+    dyn = makeDynamicsNode(ctx, 'split', p);
+    if (dyn) {
+      tr?.push({ stop() { dyn.dispose(); } });
+      up.connect(dyn.input); dyn.node.connect(branches[0].input, 0); dyn.node.connect(branches[1].input, 1);
+      setSplit = q => dyn.update(q);
+    } else {
+      up.connect(branches[1].input);   // ohne Worklet: alles im Ausklang-Zweig
+      fallback = 'sustain';
+      console.warn('[pipeline] Transient-Splitter: Worklet `dynamics` nicht verfügbar — alles läuft durch den Ausklang-Zweig');
+    }
+  }
+  const st0 = _splitStruct(key, p, ctx.sampleRate);
+  const subs = branches.flatMap(r => r.modules);
+  const seg = { key, input: up, output: sum, branches: names, latencySamples: maxL };
+  if (fallback) seg.fallback = fallback;
+  if (branches.some(r => r.pitchMissing)) seg.pitchFallback = true;
+  seg.update = np => {
+    if (_splitStruct(key, np, ctx.sampleRate) !== st0) return false;
+    const set = _setter(ctx, true);
+    setSplit(np, set);
+    let ok = true;
+    names.forEach((b, i) => {
+      set(branches[i].level.gain, splitLevelGain(np, b));
+      const f = _branchFull(np, b), r = branches[i];
+      if (r.pitch && !r.pitch.update(f.pitchShift)) ok = false;
+      for (const m of r.modules) if (ok && !m.update(f[m.key])) ok = false;
+    });
+    return ok;
+  };
+  // Zeitbasis (13d): nur wenn ein Zweigmodul eine Bewegung hat (sonst kein arm — die Runtime zählt planbare Module).
+  const armable = subs.filter(m => typeof m.arm === 'function');
+  if (armable.length) {
+    seg.arm = a => { for (const m of armable) m.arm(a); };
+    seg.hold = t => { for (const m of armable) m.hold?.(t); };
+  }
+  return seg;
 }
 
 /**

@@ -38,7 +38,7 @@ import { workletsForPlan, fallbackWorklets } from './worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './waveshaper-probe.js';
 import { effectiveActiveKeys } from './schema.js';
-import { moduleTail, moduleCost, moduleLatency, pitchActive, pitchValues, isPlanLevelKey, tempoCounterParams, TEMPO_COUNTER_TAIL_S } from './registry.js';
+import { moduleTail, moduleCost, moduleLatency, pitchActive, pitchValues, isPlanLevelKey, tempoCounterParams, TEMPO_COUNTER_TAIL_S, withBranchSteps } from './registry.js';
 import { makeTiming, planHorizon } from './timebase.js';
 
 /** Vorgabewerte der Überblendung. */
@@ -227,8 +227,9 @@ export class PipelineRuntime {
   async prepare(plan) {
     const ids = workletsForPlan(plan, this.caps);
     if (ids.length) { const fb = fallbackWorklets(await ensureWorklets(this.ctx, ids)); if (fb.length) await ensureWorklets(this.ctx, fb); }   // P17b: stft → pitch
-    if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(this.ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
-    if (planNeedsWaveShaperProbe(plan)) await ensureWaveShaperLatency(this.ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
+    const xp = withBranchSteps(plan);   // P22: Zweige der Splitter (Laufzeitausgleich braucht die Messwerte)
+    if (planNeedsCompressorProbe(xp)) await ensureCompressorLatency(this.ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
+    if (planNeedsWaveShaperProbe(xp)) await ensureWaveShaperLatency(this.ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
   }
 
   /**

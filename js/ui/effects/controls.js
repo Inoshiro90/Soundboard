@@ -117,7 +117,26 @@ export function createSelectControl({ idBase, moduleLabel, spec, values, getValu
   if (nullable) { const o = el('option', null, { value: '' }); o.textContent = spec.ui?.emptyLabel ?? 'Standard'; select.appendChild(o); }
   for (const v of values) { const o = el('option', null, { value: v }); o.textContent = spec.ui?.options?.[v] ?? v; select.appendChild(o); }
   root.append(label, select);
-  const sync = () => { select.value = getValue() ?? ''; };
-  select.addEventListener('change', () => setValue(nullable && select.value === '' ? null : select.value));
+  // 21c (AE-18): ein gespeicherter Wert außerhalb der Liste (z. B. aus einer späteren Version) bekommt einen eigenen Eintrag, damit das Feld
+  // ihn zeigt und ein Speichern ohne Auswahl ihn nicht überschreibt. Bekannte, nur nicht angebotene Werte (ui.offer) tragen ihre Beschriftung.
+  // Der Eintrag verschwindet, sobald ein Wert aus der Liste gewählt ist.
+  let extra = null;
+  const sync = () => {
+    const v = getValue();
+    const outside = v != null && v !== '' && !values.includes(v);
+    if (outside) {
+      if (!extra) { extra = el('option', null, { value: String(v) }); extra.dataset.fxUnknown = '1'; select.appendChild(extra); }
+      extra.value = String(v);
+      const known = spec.ui?.options?.[v] ?? (Array.isArray(spec.enum) && spec.enum.includes(v) ? String(v) : null);
+      const std = spec.ui?.options?.[spec.def] ?? spec.def;
+      extra.textContent = known ?? `Unbekannt: ${v} (wirkt wie ${std})`;
+    } else if (extra) { extra.remove(); extra = null; }
+    select.value = outside ? String(v) : (v ?? '');
+  };
+  select.addEventListener('change', () => {
+    if (extra && select.value === extra.value) return;     // unbekannten Wert unverändert lassen (auch Zahlwerte behalten ihren Typ)
+    setValue(nullable && select.value === '' ? null : select.value);
+    if (extra) { extra.remove(); extra = null; }
+  });
   return { root, sync, select };
 }

@@ -3,18 +3,20 @@
  * Registriert als: 'dynamics-processor'
  *
  * Ein Eingang, ein Ausgang, gleiche Kanalzahl wie der Eingang (Mono bleibt Mono — die Pegelbilanz der Kette ändert sich nicht, M-3).
+ * Ausnahme Modus 4 (Transient-Splitter, Phase 22c): zwei Ausgänge, je 2 Kanäle (`outputChannelCount: [2, 2]`), Ausgang 0 = Anschlag, 1 = Ausklang;
+ *   Parameter `sensitivity` (0…1) und `hold` (s). Summe beider Ausgänge = Eingang.
  * Parameter (k-rate): mode 0 = Gate, 1 = Expander, 3 = Transient Shaper (tAttack/tSustain in dB, sensitivity/mix 0…1, release in s; keine Latenz), 2 = Limiter (threshold = Ceiling, release in s, inputGain in dB, lookahead in s; Latenz = Lookahead); threshold/range/hysteresis in dB; attack/hold/release in Sekunden; ratio; scHp in Hz.
  * Seitenkette (Nachbesserung 19a, Teil 5): mit `processorOptions.sidechain` zwei Eingänge. Eingang 1 steuert bei Gate/Expander die Erkennung;
  *   ohne Signal dort (nicht verbunden oder Quelle beendet) gilt Stille, das Gate schließt. Ohne die Option unverändert (ein Eingang).
  * Rechenkern: audio/dsp-lib/dynamics.js (per `import`, wie envfollower.js: Chrome/Firefox/Node [S], Safari/iOS offen [H]).
  */
-import { Dynamics, Limiter, Transient } from '../audio/dsp-lib/dynamics.js';
+import { Dynamics, Limiter, Transient, TransientSplit } from '../audio/dsp-lib/dynamics.js';
 
 const K = 'k-rate';
 class DynamicsProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'mode',       defaultValue: 0,      minValue: 0,     maxValue: 3,    automationRate: K },
+      { name: 'mode',       defaultValue: 0,      minValue: 0,     maxValue: 4,    automationRate: K },
       { name: 'threshold',  defaultValue: -50,    minValue: -100,  maxValue: 0,    automationRate: K },
       { name: 'range',      defaultValue: -80,    minValue: -100,  maxValue: 0,    automationRate: K },
       { name: 'attack',     defaultValue: 0.005,  minValue: 0.0001, maxValue: 5,   automationRate: K },
@@ -41,6 +43,8 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     this._dyn = new Dynamics(sampleRate, 2);
     this._lim = new Limiter(sampleRate, 2);
     this._tr = new Transient(sampleRate, 2);
+    this._ts = new TransientSplit(sampleRate, 2);   // P22c: Modus 4, zwei Ausgänge
+    this._sp = { sensitivity: 0.5, hold: 0.02 };
     this._tp = { attackDb: 0, sustainDb: 0, sensitivity: 0.5, release: 0.15, mix: 1 };
     this._lp = { ceilingDb: -1, inputGainDb: 0, release: 0.08, lookahead: 0.005 };
     this._zero = [new Float32Array(128), new Float32Array(128)];
@@ -51,6 +55,14 @@ class DynamicsProcessor extends AudioWorkletProcessor {
     if (!this._alive) return false;
     const inp = inputs[0], out = outputs[0];
     if (!out || !out.length) return true;
+    if (params.mode[0] >= 3.5) {                       // P22c: Transient-Splitter (Ausgang 0 = Anschlag, 1 = Ausklang; keine Latenz, ohne Eingang Stille)
+      const o2 = outputs[1] || [];
+      if (!inp || !inp.length) { for (const ch of out) ch.fill(0); for (const ch of o2) ch.fill(0); return true; }
+      const sp = this._sp;
+      sp.sensitivity = params.sensitivity[0]; sp.hold = params.hold[0];
+      this._ts.process(inp, out, o2, out[0].length, sp);
+      return true;
+    }
     if (params.mode[0] >= 2.5) {                       // Transient Shaper (keine Latenz: ohne Eingang Stille)
       if (!inp || !inp.length) { for (const ch of out) ch.fill(0); return true; }
       const tp = this._tp;

@@ -12,13 +12,15 @@
  */
 import { MODULES, NUM_RANGES, IR_IMPULSE_NAMES, defaultModule } from '../../audio/engine/registry.js';
 import { createModuleCard } from './module-card.js';
-import { normalizeModule as schemaNormalize, shadowed } from '../../audio/engine/schema.js';
+import { normalizeModule as schemaNormalize, shadowed, isKeepableEnumValue } from '../../audio/engine/schema.js';
 import { MODULE_BY_KEY } from '../../audio/engine/registry.js';
 
 /** Registry-Module, die das Formular erzeugt (Reihenfolge = Registry). */
 export const generatedModules = () => MODULES.filter(m => m.ui?.generated);
 
-/** Eingehende Modulwerte → gültiger Editor-Zustand: fehlend/ungültig → Default, Zahlen auf den Registry-Bereich geklemmt. */
+/** Eingehende Modulwerte → gültiger Editor-Zustand: fehlend/ungültig → Default, Zahlen auf den Registry-Bereich geklemmt.
+ *  Aufzählungen wie schema.js (21c, AE-18): ein unbekannter Wert einer späteren Version bleibt erhalten (das Auswahlfeld zeigt ihn als
+ *  „Unbekannt“), damit Speichern ihn nicht überschreibt. */
 function normalizeModule(def, src) {
   if (def.params.bands) return schemaNormalize(def.key, src);                       // EQ-Bänder: eine Wahrheit (schema.js)
   const out = defaultModule(def.key);
@@ -29,11 +31,12 @@ function normalizeModule(def, src) {
     if (spec.impulse) { out[p] = IR_IMPULSE_NAMES.includes(v) ? v : null; }               // wie schema.js: bekannter Name, sonst „nicht gesetzt“
     else if (spec.tapList) { out[p] = schemaNormalize(def.key, { [p]: v })[p]; }          // Tap-Liste (14b): eine Wahrheit (schema.js)
     else if (spec.pointList) { out[p] = schemaNormalize(def.key, { [p]: v })[p]; }        // Kurvenpunkte (15b): eine Wahrheit (schema.js)
+    else if (spec.branch) { out[p] = schemaNormalize(def.key, { [p]: v })[p]; }           // Zweig eines Splitters (22d): eine Wahrheit (schema.js, rekursiv)
     else if (typeof spec.def === 'number') {
       if (!Number.isFinite(v)) continue;
       const r = NUM_RANGES[`${def.key}.${p}`];
       out[p] = r ? Math.min(r[1], Math.max(r[0], v)) : v;
-    } else if (Array.isArray(spec.enum)) { if (spec.enum.includes(v)) out[p] = v; }   // Aufzählung: nur erlaubte Werte, sonst Default
+    } else if (Array.isArray(spec.enum)) { if (spec.enum.includes(v) || isKeepableEnumValue(v)) out[p] = v; }   // Aufzählung: erlaubte Werte; unbekannte, erhaltbare bleiben (AE-18, 21c), sonst Default
     else if (typeof v === typeof spec.def) out[p] = v;
   }
   return out;

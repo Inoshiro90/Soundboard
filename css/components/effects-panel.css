@@ -878,3 +878,19 @@
 @media (pointer: coarse) {
   .fx-eq10-freqs > summary, .fx-eq10-freqs__num, .fx-eq10-freqs__reset { min-height: 44px; }
 }
+
+/* ── Splitter-Zweige (Phase 22d): Tabs je Zweig, genau ein Zweig sichtbar (auch mobil) ── */
+.fx-split { margin-top: var(--space-2); border-top: var(--border-whisper); padding-top: var(--space-2); }
+.fx-split__tabs { display: flex; gap: var(--space-1); overflow-x: auto; scrollbar-width: thin; margin-bottom: var(--space-2); }
+.fx-split__tab {
+  flex: 0 0 auto; min-height: var(--h-btn); padding: 0 var(--space-3); border: var(--border-whisper); border-radius: 6px;
+  background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: var(--text-badge); font-weight: var(--fw-medium); cursor: pointer;
+}
+.fx-split__tab[aria-selected="true"] { background: var(--badge-bg); color: var(--color-accent-active); border-color: var(--color-accent); }
+.fx-split__tab:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.fx-split__tab[hidden], .fx-split__panel[hidden] { display: none !important; }
+.fx-split__panel { padding-left: var(--space-2); border-left: 2px solid var(--badge-bg); }
+/* Ausgeschaltete Module im Zweig: nur der Schalter (kompakte Liste); eingeschaltete zeigen ihre Regler. */
+.fx-split__panel .fx-card.is-off .fx-card__body { display: none; }
+.fx-split__panel .fx-card { margin-bottom: var(--space-1); }
+.fx-split__hint { margin: var(--space-2) 0 0; font-size: var(--text-badge); color: var(--text-secondary); }

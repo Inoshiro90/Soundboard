@@ -41,10 +41,11 @@ import { workletsForPlan, fallbackWorklets } from './engine/worklets.js';
 import { ensureCompressorLatency, planNeedsCompressorProbe } from './engine/compressor-probe.js';
 import { ensureWaveShaperLatency, planNeedsWaveShaperProbe } from './engine/waveshaper-probe.js';
 import { PipelineRuntime } from './engine/runtime.js';
-import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive, isPlanLevelKey, tempoValues, TEMPO_COUNTER_TAIL_S, reverbBuiltMode } from './engine/registry.js';
+import { MODULE_KEYS, MODULES, REMOVED_KEYS, moduleTail, pitchActive, isPlanLevelKey, tempoValues, TEMPO_COUNTER_TAIL_S, reverbBuiltMode, withBranchSteps } from './engine/registry.js';
 import { describeSend } from './engine/reverb-hub.js';
 import {
-  fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev
+  fillLayerParams, sparsifyParams, splitLayerParams, effectiveActiveKeys, stageScores, addToBag, cleanX, inheritX, isUnsafeKey, readRev,
+  effectiveEnumParams
 } from './engine/schema.js';
 
 export { fillLayerParams, sparsifyParams };
@@ -321,7 +322,8 @@ export function resolvePlan(effects) {
       if (!st || !st.enabled) continue;
       st.layers.forEach((layer, layerIndex) => {
         if (!layer.enabled) return;
-        const params = fillLayerParams(layer.params);
+        // AE-18 (21c, F = b): unbekannte Aufzählungswerte (spätere Versionen) bleiben in den Daten, die Engine nutzt den Standard.
+        const params = effectiveEnumParams(fillLayerParams(layer.params));
         steps.push({
           index: steps.length, stage, layerId: layer.id, layerIndex, presetId: layer.presetId,
           params, active: _layerSounds(params)   // P17f: Tempo zählt nicht (Plan-Ebene); ohne Tempo identisch zu hasActiveModules
@@ -470,8 +472,9 @@ export function prefixPlan(plan, until) {
 export async function preparePipelineContext(ctx, plan, caps = TARGET_CAPS.sound) {
   const ids = workletsForPlan(plan, caps);
   if (ids.length) { const fb = fallbackWorklets(await ensureWorklets(ctx, ids)); if (fb.length) await ensureWorklets(ctx, fb); }   // P17b: stft → pitch
-  if (planNeedsCompressorProbe(plan)) await ensureCompressorLatency(ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
-  if (planNeedsWaveShaperProbe(plan)) await ensureWaveShaperLatency(ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
+  const xp = withBranchSteps(plan);   // P22: Zweige der Splitter (Laufzeitausgleich braucht die Messwerte)
+  if (planNeedsCompressorProbe(xp)) await ensureCompressorLatency(ctx.sampleRate);   // Dry-Pfad der Parallelkompression (11c)
+  if (planNeedsWaveShaperProbe(xp)) await ensureWaveShaperLatency(ctx.sampleRate);   // Dry-Pfad der Verzerrung v2 (15a)
 }
 
 /**

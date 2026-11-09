@@ -236,3 +236,84 @@ export class Transient {
     this.ef = ef < DENORMAL_FLOOR ? 0 : ef; this.es = es < DENORMAL_FLOOR ? 0 : es; this.g = Math.abs(g - 1) < 1e-12 ? 1 : g;
   }
 }
+
+/**
+ * Transient-Splitter (Klasse `TransientSplit`, mode 4, Phase 22c): dieselben Hüllkurven wie der Transient Shaper (schnelle und langsame Hüllkurve
+ * des stereo gekoppelten, gehaltenen Spitzenpegels; Verhältnis d in dB). Anschlag-Anteil seit 22e als weiche Schwelle (Entscheidung A = a,
+ * Hörpunkt 18: vorher sättigte d / sensDb bei Einsätzen aus der Stille fast immer auf 1, 20 % ↔ 90 % unterschieden sich um 0,7 dB):
+ *   Anteil = clamp((d − Schwelle) / TS_SENS_WIDTH_DB, 0, 1),  Schwelle = TS_SENS_RANGE_DB · (1 − Empfindlichkeit) − TS_SENS_OFFSET_DB.
+ * Einsätze aus der Stille erreichen d ≈ 29 dB [S, Node]; die breite Kennlinie öffnet die Maske je nach Abstand zur Schwelle nur teilweise, so dass
+ * der Regler über den ganzen Weg gleichmäßig wirkt. Zusätzlich wird d auf den stärksten Einsatz der letzten Sekunden normiert (unten, B = b), damit
+ * hallende Aufnahmen (d 10–22 dB) genauso reagieren. Werte per Rastersuche über harte/weiche Schritte, gezupfte Töne, nachgebaute Hallschritte und
+ * eine Theater-Aufnahme (nur lokal gemessen): je 10 % ≥ 1 dB, s. docs/phase22-routing.md.
+ * Daraus eine Maske m: steigt sofort auf den Anteil, hält ihn `hold` Sekunden, fällt dann mit TS_MASK_RELEASE_S; geglättet mit 0,5 ms (klickfrei).
+ *   Anschlag = x · m, Ausklang = x − Anschlag  →  Anschlag + Ausklang = x (bis auf Rundung, unabhängig von m).
+ * Unter −80 dBFS (schnelle Hüllkurve) ist m = 0 (alles Ausklang). Langsame Hüllkurve mit festem Release TS_SLOW_RELEASE_S. Keine Latenz.
+ * Mono-Eingang: beide Ausgabekanäle bekommen das Mono-Signal (der Splitter mischt vorher hoch, effect-graph.js). Ohne Allokation in process().
+ */
+export const TS_SLOW_RELEASE_S = 0.15, TS_MASK_RELEASE_S = 0.03;
+/** 22e: Kennlinie der Empfindlichkeit (dB). */
+export const TS_SENS_RANGE_DB = 34, TS_SENS_OFFSET_DB = 6, TS_SENS_WIDTH_DB = 42;
+/**
+ * 22e, Entscheidung B = b: anpassende Erkennung. d wird auf den stärksten Einsatz der letzten Sekunden normiert:
+ *   dRef = max(d, dRef) mit Rückgang zum Boden TS_ADAPT_MIN_DB (Zeitkonstante TS_ADAPT_RELEASE_S);  dn = d · TS_ADAPT_NORM_DB / dRef.
+ * Der stärkste Einsatz zählt damit wie ein trockener Einsatz aus der Stille (d ≈ 29 dB) — in hallenden Räumen (d 10–22 dB) wirkt der Regler
+ * wie bei trockenen Aufnahmen. Start dRef = TS_ADAPT_NORM_DB (erster Einsatz eines Sounds wird wie trocken bewertet). Der Boden verhindert, dass
+ * Rauschschwankungen in stationärem Material zu Anschlägen aufgeblasen werden.
+ */
+export const TS_ADAPT_NORM_DB = 29, TS_ADAPT_MIN_DB = 12, TS_ADAPT_RELEASE_S = 2;
+
+export class TransientSplit {
+  constructor(sampleRate, maxChannels = 2) {
+    this.sr = sampleRate; this.chs = maxChannels;
+    const c = t => 1 - Math.exp(-1 / (sampleRate * t));
+    this.aF = c(T_FAST_ATTACK_S); this.rF = c(T_FAST_RELEASE_S); this.aS = c(T_SLOW_ATTACK_S); this.rS = c(TS_SLOW_RELEASE_S);
+    this.cG = c(T_GAIN_SMOOTH_S); this.cR = c(TS_MASK_RELEASE_S); this.cD = c(TS_ADAPT_RELEASE_S);
+    this.holdN = Math.max(1, Math.round(sampleRate * T_HOLD_S));
+    this.reset();
+  }
+
+  reset() { this.ef = 0; this.es = 0; this.hp = 0; this.hc = 0; this.mh = 0; this.mc = 0; this.m = 0; this.dr = TS_ADAPT_NORM_DB; }
+
+  /**
+   * @param {Float32Array[]} inp  @param {Float32Array[]} outT Anschlag  @param {Float32Array[]} outS Ausklang  @param {number} n
+   * @param {{sensitivity:number, hold:number}} p  sensitivity 0…1, hold in Sekunden
+   */
+  process(inp, outT, outS, n, p) {
+    const chs = Math.min(inp.length, this.chs);
+    const thr = TS_SENS_RANGE_DB * (1 - clamp(p.sensitivity, 0, 1)) - TS_SENS_OFFSET_DB, invW = 1 / TS_SENS_WIDTH_DB;
+    const holdM = Math.round(clamp(p.hold, 0, 1) * this.sr);
+    const aF = this.aF, rF = this.rF, aS = this.aS, rS = this.rS, cG = this.cG, cR = this.cR, holdN = this.holdN;
+    let ef = this.ef, es = this.es, hp = this.hp, hc = this.hc, mh = this.mh, mc = this.mc, m = this.m, dr = this.dr;
+    const cD = this.cD;
+    const nOut = Math.max(outT.length, outS.length);
+    for (let i = 0; i < n; i++) {
+      let pk = 0;
+      for (let c = 0; c < chs; c++) { const x = inp[c][i]; const a = Number.isFinite(x) ? (x < 0 ? -x : x) : 0; if (a > pk) pk = a; }
+      if (pk >= hp) { hp = pk; hc = holdN; } else if (hc > 0) hc--; else hp = pk;
+      ef += (hp > ef ? aF : rF) * (hp - ef);
+      es += (hp > es ? aS : rS) * (hp - es);
+      let target = 0;
+      if (ef > T_FLOOR) {
+        const d = 20 * Math.log10((ef + 1e-9) / (es + 1e-9));
+        if (d > dr) dr = d; else dr += (TS_ADAPT_MIN_DB - dr) * cD;        // Bezug: stärkster Einsatz, langsam zurück zum Boden
+        const v = (d * TS_ADAPT_NORM_DB / dr - thr) * invW;
+        target = v <= 0 ? 0 : v >= 1 ? 1 : v;
+      } else dr += (TS_ADAPT_MIN_DB - dr) * cD;
+      // Halten: neuer Höchstwert sofort, sonst `hold` lang stehen lassen, dann mit TS_MASK_RELEASE_S zum aktuellen Anteil.
+      if (target >= mh) { mh = target; mc = holdM; } else if (mc > 0) mc--; else mh += (target - mh) * cR;
+      m += (mh - m) * cG;
+      for (let c = 0; c < nOut; c++) {
+        const src = inp[c < chs ? c : chs - 1];
+        const x0 = src ? src[i] : 0, x = Number.isFinite(x0) ? x0 : 0;
+        let t = x * m; if (Math.abs(t) < DENORMAL_FLOOR) t = 0;
+        let s = x - t; if (Math.abs(s) < DENORMAL_FLOOR) s = 0;
+        if (outT[c]) outT[c][i] = t;
+        if (outS[c]) outS[c][i] = s;
+      }
+    }
+    this.hp = hp < DENORMAL_FLOOR ? 0 : hp; this.hc = hc;
+    this.ef = ef < DENORMAL_FLOOR ? 0 : ef; this.es = es < DENORMAL_FLOOR ? 0 : es;
+    this.mh = mh < 1e-9 ? 0 : mh; this.mc = mc; this.m = m < 1e-9 ? 0 : m; this.dr = dr;
+  }
+}

@@ -9,12 +9,16 @@
  * Vorwahl beim Einschalten (Phase 17e): `def.ui.enableSet = { feld: wert }` — nur wenn der Nutzer das Modul einschaltet und alle Felder noch dem Standard
  * entsprechen (neu eingeschaltetes Modul); gespeicherte Daten und ein erneutes Einschalten bereits eingestellter Module bleiben unberührt.
  * Vorschlagswerte (Phase 15a): `ui.suggest` an einer Aufzählung, siehe `suggest()`.
+ * Zweige (Phase 22d): alle Parameter mit `spec.branch` eines Splitters werden EIN Tab-Block (ui/effects/split-branches.js) unter den Reglern; `ui.showIf`
+ * eines Zweigs blendet seinen Tab aus. `opts.idBase` (Karten in einem Zweig): eigene ID-Basis; `opts.branch`: Karte gehört zu diesem Zweig — dann
+ * `data-fx-branch-module` statt `data-fx-module`, damit Abfragen auf Layer-Karten eindeutig bleiben.
  */
 import { el, createNumberControl, createSelectControl } from './controls.js';
 import { createBandsControl } from './eq10-bands.js';
 import { createParamEqControl } from './param-eq.js';
 import { createDelayTapsControl } from './delay-taps.js';
 import { createDistortionPointsControl } from './distortion-points.js';
+import { createSplitBranchesControl } from './split-branches.js';
 import { IR_IMPULSE_NAMES } from '../../audio/engine/registry.js';
 
 /**
@@ -23,9 +27,9 @@ import { IR_IMPULSE_NAMES } from '../../audio/engine/registry.js';
  * @returns {{key:string, root:HTMLElement, sync:()=>void, setNote:(text:string|null)=>void}}
  *   `setNote` zeigt/entfernt einen Hinweis unter dem Kartenkopf (z. B. „überlagert“); der Schalter verweist per `aria-describedby` darauf.
  */
-export function createModuleCard(def, api) {
-  const idBase = `fxg-${def.key}`;
-  const root = el('section', 'fx-group fx-card', { 'data-fx-module': def.key, 'aria-labelledby': idBase + '-title' });
+export function createModuleCard(def, api, opts = {}) {
+  const idBase = opts.idBase || `fxg-${def.key}`;
+  const root = el('section', 'fx-group fx-card', { ...(opts.branch ? { 'data-fx-branch-module': def.key, 'data-fx-in-branch': opts.branch } : { 'data-fx-module': def.key }), 'aria-labelledby': idBase + '-title' });
 
   const head = el('div', 'fx-group__head');
   const lab = el('label', 'fx-check-label', { id: idBase + '-title' });
@@ -35,12 +39,14 @@ export function createModuleCard(def, api) {
 
   const note = el('p', 'fx-card__note', { id: idBase + '-note', hidden: true });
   const body = el('div', 'fx-controls fx-card__body', { 'data-fx-body': true });
-  const controls = [], conditional = [];
+  const controls = [], conditional = [], branchParams = [];
   const shown = cond => Object.entries(cond).every(([f, vals]) => vals.includes(api.get(f)));
   const infoEl = typeof def.ui?.info === 'function' ? el('p', 'fx-card__info', { id: idBase + '-info', hidden: true }) : null;
   const values = () => Object.fromEntries(Object.keys(def.params).map(k => [k, api.get(k)]));
+  let branchCtl = null;
   const refresh = () => {
     for (const { root: r, cond } of conditional) r.hidden = !shown(cond);
+    branchCtl?.refresh();
     if (infoEl) { const t = def.ui.info(values()); infoEl.textContent = t || ''; infoEl.hidden = !t; }
   };
   // Vorschlag (Phase 15a, `ui.suggest = { when: [Werte…], set: { feld: wert }, onlyIf?: { feld: [Werte…] } }`): wechselt der Nutzer in einen der Werte
@@ -61,6 +67,7 @@ export function createModuleCard(def, api) {
   };
   for (const [param, spec] of Object.entries(def.params)) {
     if (spec.ui?.hidden) continue;
+    if (spec.branch) { branchParams.push(param); continue; }           // Zweige (P22d): gesammelt als Tab-Block nach den Reglern
     if (spec.bandList) {                                               // Parametrischer EQ (P10d): Bandtabelle
       const c = createParamEqControl({ idBase: `${idBase}-${param}`, moduleLabel: def.label, getBands: () => api.get(param), setBands: v => api.set(param, v) });
       controls.push(c); body.appendChild(c.root); head.appendChild(c.headExtra);
@@ -93,6 +100,12 @@ export function createModuleCard(def, api) {
       controls.push(c); body.appendChild(c.root);
       if (spec.ui?.showIf) { c.root.dataset.fxShowIf = Object.keys(spec.ui.showIf).join(','); conditional.push({ root: c.root, cond: spec.ui.showIf }); }
     }
+  }
+
+  if (branchParams.length) {
+    branchCtl = createSplitBranchesControl({ idBase: `${idBase}-br`, def, params: branchParams, getBranch: n => api.get(n),
+      shown: n => !def.params[n].ui?.showIf || shown(def.params[n].ui.showIf), createCard: createModuleCard });
+    controls.push(branchCtl); body.appendChild(branchCtl.root);
   }
 
   const applyEnabled = on => { sw.checked = on; body.toggleAttribute('inert', !on); root.classList.toggle('is-off', !on); };

@@ -15,7 +15,7 @@
  *   cost       Kostenpunkte je Instanz (AE-13′). `measured:false` ⇒ noch NICHT gemessen (M-1-Methode, Suite 13);
  *              der Wert `null` heißt „unbekannt“, nicht „kostenlos“ (gilt für `noise`, nur Quelle). Pitch: Zahl steht in der Modul-Registry (pitchShift).
  */
-import { MODULES, pitchActive, pitchAlgorithm, reverbBuiltMode, delayMode } from './registry.js';
+import { MODULES, pitchActive, pitchAlgorithm, reverbBuiltMode, delayMode, withBranchSteps } from './registry.js';
 
 export const WORKLETS = {
   pitch: {
@@ -37,7 +37,8 @@ export const WORKLETS = {
     url: './js/worklets/dynamics.js', processor: 'dynamics-processor', imports: true, fallback: 'none',
     cost: { base: 5, measured: false, estimate: 'envfollower' }   // Schätzwert: gleiche Größenordnung wie der Hüllkurvenfolger; M-1 steht aus
   },
-  // P12c: Kurzzeit-Verzögerung mit sample-genauer Rückkopplung (Flanger; P12d: Phaser; Basis für P21 Comb/Resonator). Rechenkern dsp-lib/delayline.js.
+  // P12c: Kurzzeit-Verzögerung mit sample-genauer Rückkopplung (Flanger; P12d: Phaser). Rechenkern dsp-lib/delayline.js.
+  // P21a: zweiter Prozessor `combbank-processor` (Kamm-Bank, dsp-lib/combbank.js) für `comb` (21a), `resonator` (21b) und `tunedResonator` (21c); ohne Worklet werden beide übersprungen (nicht 'native').
   delayline: {
     url: './js/worklets/delayline.js', processor: 'delayline-processor', imports: true, fallback: 'native',
     cost: { base: 7, measured: false, estimate: 'delayline' }   // Schätzwert (Hermite-Interpolation je Sample und Kanal); M-1 steht aus
@@ -76,6 +77,10 @@ export function workletsOfModule(key) {
  */
 export function workletsForPlan(plan, caps) {
   const ids = new Set();
+  // P22: Zweigketten der Splitter wie eigene Schritte prüfen (virtuelle Schritte, Tiefe 1); ohne Splitter derselbe Plan.
+  plan = withBranchSteps(plan);
+  // P22: Transient-Splitter im Worklet `dynamics` (Modus 4); ohne Worklet läuft alles durch den Ausklang-Zweig.
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.transientSplit?.enabled)) for (const id of workletsOfModule('transientSplit')) ids.add(id);
   // Pitch: je aktivem Schritt das Worklet seines Algorithmus (P17b: `legacy` → `pitch`, sonst `stft`).
   if (plan?.hasPitch && caps?.pitch === 'worklet') {
     for (const s of plan.steps || []) {
@@ -117,6 +122,19 @@ export function workletsForPlan(plan, caps) {
   // P20d: Retrigger im selben Worklet; ohne Worklet wird das Modul übersprungen (Fallback 'none').
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.retrigger?.enabled)) {
     for (const id of workletsOfModule('retrigger')) ids.add(id);
+  }
+  // P21a: Kammfilter im Worklet `delayline` (Prozessor combbank-processor); ohne Worklet wird das Modul übersprungen (Fallback 'none' des Moduls,
+  // der Registry-Fallback 'native' des Worklets gilt nur für Flanger/Phaser).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.comb?.enabled)) {
+    for (const id of workletsOfModule('comb')) ids.add(id);
+  }
+  // P21b: Resonator in derselben Kamm-Bank; ohne Worklet übersprungen (Fallback 'none' des Moduls).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.resonator?.enabled)) {
+    for (const id of workletsOfModule('resonator')) ids.add(id);
+  }
+  // P21c: Tuned Resonator in derselben Kamm-Bank; ohne Worklet übersprungen (Fallback 'none' des Moduls).
+  if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.tunedResonator?.enabled)) {
+    for (const id of workletsOfModule('tunedResonator')) ids.add(id);
   }
   // P20e/P20f: Delay-Modi `reverse` und `granular` im selben Worklet; ohne Worklet baut der Graph den Modus `mono` (Entscheidung Phase 20).
   if (caps?.pitch === 'worklet' && plan?.steps?.some(s => s.params?.delay?.enabled && ['reverse', 'granular'].includes(delayMode(s.params.delay)))) ids.add('timebuffer');

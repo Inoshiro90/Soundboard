@@ -14,12 +14,16 @@ import { isWorkletReady } from '../context.js';
 const SMOOTH_TC = 0.02;
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
-/** @param {'gate'|'expander'|'limiter'|'transient'} kind  @param {object} p Modulparameter (Gate/Expander: threshold, range, attack, hold, release, hysteresis, ratio, scHp; Limiter: threshold = Ceiling, inputGain, release in s, lookahead in ms) */
+/** `split` (Phase 22c): Transient-Splitter mit zwei Ausgängen (Anschluss `node.connect(ziel, 0|1)`), Rückgabe zusätzlich `node`.
+ * @param {'gate'|'expander'|'limiter'|'transient'|'split'} kind  @param {object} p Modulparameter (Gate/Expander: threshold, range, attack, hold, release, hysteresis, ratio, scHp; Limiter: threshold = Ceiling, inputGain, release in s, lookahead in ms) */
 export function makeDynamicsNode(ctx, kind, p = {}, { sidechain = false } = {}) {
   if (!isWorkletReady(ctx, 'dynamics')) return null;
   const lookaheadMs = Math.min(20, Math.max(1, num(p.lookahead, 5)));
   // Parameterwerte je Art (Namen = AudioParams des Prozessors). Unverändert gegenüber Phase 11, nur als Objekt statt Einzelaufrufen.
   const values = q => {
+    if (kind === 'split') {                             // Phase 22c: Transient-Splitter, sensitivity 0…1, hold in ms
+      return { sensitivity: num(q.sensitivity, 0.5), hold: Math.max(0, num(q.hold, 20) / 1000) };
+    }
     if (kind === 'transient') {                         // Phase 11d: attack/sustain in dB, sensitivity/mix 0…1, release in ms
       return { tAttack: num(q.attack, 0), tSustain: num(q.sustain, 0), sensitivity: num(q.sensitivity, 0.5),
         release: Math.max(0.005, num(q.release, 150) / 1000), mix: num(q.mix, 1) };
@@ -42,14 +46,17 @@ export function makeDynamicsNode(ctx, kind, p = {}, { sidechain = false } = {}) 
   // Startwerte (Phase 12e) über `parameterData`: gelten ab dem ersten Block. Bis Phase 12 kamen sie per setValueAtTime, und das
   // greift in der Node-Engine erst einen Block später [S, 12c] — der erste Block lief dort mit den Standardwerten des Prozessors (Modus 0 = Gate).
   const start = finite({
-    mode: kind === 'gate' ? 0 : kind === 'expander' ? 1 : kind === 'limiter' ? 2 : 3,
+    mode: kind === 'gate' ? 0 : kind === 'expander' ? 1 : kind === 'limiter' ? 2 : kind === 'split' ? 4 : 3,
     ...(kind === 'limiter' ? { lookahead: lookaheadMs / 1000 } : {}),
     ...values(p)
   });
   const sc = !!sidechain && (kind === 'gate' || kind === 'expander');
   let node;
   try {
-    node = new AudioWorkletNode(ctx, 'dynamics-processor', sc
+    node = new AudioWorkletNode(ctx, 'dynamics-processor', kind === 'split'
+      // P22c: zwei Ausgänge (0 = Anschlag, 1 = Ausklang), fest stereo (der Splitter mischt am Eingang hoch).
+      ? { numberOfInputs: 1, numberOfOutputs: 2, outputChannelCount: [2, 2], channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers', parameterData: start }
+      : sc
       // Zwei Eingänge: Die Ausgangskanalzahl folgt dann nicht mehr dem Eingang (Spezifikation: sonst 1) → fest stereo; Mono-Eingang
       // verteilt das Worklet auf beide Kanäle (wie das Up-Mix „speakers“ Mono → Stereo).
       ? { numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2], parameterData: start, processorOptions: { sidechain: true } }
@@ -65,7 +72,7 @@ export function makeDynamicsNode(ctx, kind, p = {}, { sidechain = false } = {}) 
   // Seitenkette: Anschluss per `src.connect(sidechain.node, 0, sidechain.input)`.
   const sidechainIn = sc ? { node, input: 1 } : null;
   return {
-    input: node, output: node, sidechain: sidechainIn,
+    input: node, output: node, node, sidechain: sidechainIn,
     latencySamples: kind === 'limiter' ? Math.min(Math.ceil(ctx.sampleRate * 0.02), Math.max(1, Math.round(lookaheadMs / 1000 * ctx.sampleRate))) : 0,
     update(np = {}) { if (!disposed) apply(np); },
     dispose() { if (disposed) return; disposed = true; try { node.disconnect(); } catch (e) { /* bereits getrennt */ } try { node.port.postMessage('dispose'); } catch (e) { /* Port schon zu */ } }   // Prozessor beenden (Fix A)

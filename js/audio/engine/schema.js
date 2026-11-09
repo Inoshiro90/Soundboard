@@ -15,7 +15,7 @@
 import {
   MODULES, MODULE_KEYS, MODULE_BY_KEY, NUM_RANGES, REMOVED_KEYS, CURRENT_REV, EXCLUSIVE_GROUPS,
   defaultModule, defaultModules, IR_IMPULSE_NAMES, PEQ_TYPES, PEQ_RANGES, PEQ_MAX_KEEP, DELAY_TAP_RANGES, DELAY_TAPS_MAX_KEEP,
-  WS_POINTS_MAX, WS_POINT_RANGES
+  WS_POINTS_MAX, WS_POINT_RANGES, SPLIT_KEYS, isBranchModuleKey
 } from './registry.js';
 
 export const MAX_X_BYTES = 262144;
@@ -87,7 +87,109 @@ const _bool = (val, fallback) => (typeof val === 'boolean' ? val : fallback);
 const _enum = (val, allowed, fallback) => (allowed.includes(val) ? val : fallback);
 
 /**
- * Normalisiert EIN Modul streng gegen die Registry: alle Felder vorhanden, Zahlen geklemmt, Enums gültig.
+ * AE-18 bei Aufzählungen (Phase 21c, Entscheidung F = b, 2026-11-08): ein gespeicherter Aufzählungswert, den diese Version nicht kennt
+ * (z. B. ein Akkordtyp oder Modus einer späteren Version), bleibt im Feld ERHALTEN, solange er ein kurzer Text oder eine endliche Zahl ist.
+ * Andere Typen (null, Objekte, Listen, Wahrheitswerte, NaN, leere oder sehr lange Texte) → Standard wie bisher. Die Engine nutzt für unbekannte Werte
+ * den Standard (effectiveEnumParams in resolvePlan) — gespeichert bleibt der Originalwert.
+ */
+export const ENUM_KEEP_MAX_LEN = 64;
+export const isKeepableEnumValue = v => (typeof v === 'string' && v.length > 0 && v.length <= ENUM_KEEP_MAX_LEN) || (typeof v === 'number' && Number.isFinite(v));
+const _enumKeep = (val, allowed, fallback) => (allowed.includes(val) || isKeepableEnumValue(val) ? val : fallback);
+/** Kennt die Engine den Wert? Auch die Textform zählt (eine Zahl 24 bei Aufzählung ['12','24']), damit sich am Verhalten bekannter
+ *  Daten nichts ändert — nur wirklich unbekannte Werte werden für die Engine auf den Standard abgebildet. */
+const _enumKnown = (val, allowed) => allowed.includes(val) || (typeof val === 'number' && allowed.includes(String(val)));
+/** Alle Aufzählungsfelder der Registry: [Modul, Feld, erlaubte Werte, Standard]. */
+const ENUM_FIELDS = MODULES.flatMap(m => Object.entries(m.params).filter(([, sp]) => Array.isArray(sp.enum)).map(([f, sp]) => [m.key, f, sp.enum, sp.def]));
+
+/**
+ * Wirksame Parameter für die Engine (AE-18, 21c): unbekannte Aufzählungswerte → Standard. Gibt dasselbe Objekt zurück, wenn nichts
+ * abzubilden ist (bekannte Daten: identisch, kein Klangwechsel); sonst eine flache Kopie mit kopierten betroffenen Modulen. Die
+ * Eingabe wird nie verändert.
+ */
+export function effectiveEnumParams(params) {
+  if (!isObj(params)) return params;
+  let out = params;
+  for (const [key, f, allowed, def] of ENUM_FIELDS) {
+    const m = params[key];
+    if (!isObj(m) || !(f in m) || _enumKnown(m[f], allowed)) continue;
+    if (out === params) out = { ...params };
+    if (out[key] === m) out[key] = { ...m };
+    out[key][f] = def;
+  }
+  // P22: Zweigketten der Splitter ebenso (Tiefe 1: Ketten enthalten keine Splitter, BRANCH_MODULE_KEYS).
+  for (const key of SPLIT_KEYS) {
+    const m = out[key];
+    if (!isObj(m)) continue;
+    for (const [f, spec] of Object.entries(MODULE_BY_KEY[key].params)) {
+      if (!spec.branch || !isObj(m[f]) || !isObj(m[f].chain)) continue;
+      const ec = effectiveEnumParams(m[f].chain);
+      if (ec === m[f].chain) continue;
+      if (out === params) out = { ...params };
+      if (out[key] === params[key]) out[key] = { ...params[key] };
+      out[key][f] = { ...out[key][f], chain: ec };
+    }
+  }
+  return out;
+}
+
+// ─── ZWEIGE DER SPLITTER (Phase 22a) ────────────────────────
+
+const _KNOWN_BRANCH = new Set(['chain', 'x']);
+const _cloneSafe = v => { const c = _safeClone(v); if (isObj(c)) for (const u of UNSAFE_KEYS) delete c[u]; return c; };
+
+/** Teilt die Rohkette eines Zweigs: erlaubte Module (Objekte) ↔ Rest (Splitter = Tiefengrenze, nicht erlaubte, unbekannte, Nicht-Objekte). */
+function _splitChain(rawChain) {
+  const allowed = {}, rest = {};
+  if (!isObj(rawChain)) return { allowed, rest };
+  for (const [k, v] of Object.entries(rawChain)) {
+    if (isUnsafeKey(k)) continue;
+    if (isBranchModuleKey(k) && isObj(v)) allowed[k] = v; else rest[k] = v;
+  }
+  return { allowed, rest };
+}
+
+/** Zusatzfelder des Zweig-Objekts und vorhandener Beutel → Beutel `x` des Zweigs (AE-18). */
+function _branchX(s, modules, params) {
+  const xin = inheritX(s.x), fields = {};
+  for (const [f, v] of Object.entries(s)) if (!_KNOWN_BRANCH.has(f) && !isUnsafeKey(f)) fields[f] = v;
+  return cleanX({
+    modules: addToBag(addToBag({}, xin.modules), modules),
+    params: addToBag(addToBag({}, xin.params), params),
+    fields: addToBag(addToBag({}, xin.fields), fields)
+  });
+}
+
+/**
+ * Normalisiert einen Zweig `{ chain, x? }` streng (Importklemmung): erlaubte Module über normalizeModule (alle Felder, geklemmt); unbekannte
+ * Felder bekannter Module → `x.params`; alles Übrige der Kette → `x.modules` (wird nicht gebaut, bleibt erhalten); Zusatzfelder → `x.fields`.
+ */
+export function normalizeBranch(raw) {
+  const s = isObj(raw) ? raw : {};
+  const { allowed, rest } = _splitChain(s.chain);
+  const chain = {}, extraParams = {};
+  for (const [k, v] of Object.entries(allowed)) {
+    chain[k] = normalizeModule(k, v);
+    const spec = MODULE_BY_KEY[k].params, extra = {};
+    for (const [f, val] of Object.entries(v)) if (f !== 'enabled' && !(f in spec) && !isUnsafeKey(f)) extra[f] = val;
+    if (Object.keys(extra).length) extraParams[k] = extra;
+  }
+  const x = _branchX(s, rest, extraParams);
+  return x ? { chain, x } : { chain };
+}
+
+/** Sparsame Speicherform eines Zweigs (wie sparsifyParams je Layer): nur aktive erlaubte Module; der Rest der Kette → `x.modules`. Ohne Klemmung. */
+export function sparsifyBranch(raw) {
+  const s = isObj(raw) ? raw : {};
+  const { allowed, rest } = _splitChain(s.chain);
+  const chain = {};
+  for (const [k, v] of Object.entries(allowed)) if (v.enabled === true) { const c = _cloneSafe(v); if (c !== undefined) chain[k] = c; }
+  const x = _branchX(s, rest, {});
+  return x ? { chain, x } : { chain };
+}
+
+/**
+ * Normalisiert EIN Modul streng gegen die Registry: alle Felder vorhanden, Zahlen geklemmt, Enums gültig oder (seit 21c, AE-18)
+ * ein unbekannter, erhaltbarer Wert (isKeepableEnumValue) — die Engine bildet ihn auf den Standard ab (effectiveEnumParams).
  * Identisch zum früheren filt()/irReverb/eq10-Zweig von normalizeEffectsObject().
  * @returns {object|null} null bei unbekanntem Modul
  */
@@ -165,10 +267,12 @@ export function normalizeModule(key, raw) {
     } else if (spec.range) {
       o[field] = _num(s[field], spec.range, d[field]);
     } else if (spec.enum) {
-      o[field] = _enum(s[field], spec.enum, d[field]);
+      o[field] = _enumKeep(s[field], spec.enum, d[field]);   // AE-18 (21c): unbekannte, aber erhaltbare Werte bleiben
     } else if (spec.tapList) {
       // Tap-Liste (14b): bis DELAY_TAPS_MAX_KEEP Objekte bleiben erhalten (die Engine baut die ersten DELAY_TAPS_MAX_BUILD); Nicht-Objekte entfallen.
       o[field] = (Array.isArray(s[field]) ? s[field] : d[field]).filter(isObj).slice(0, DELAY_TAPS_MAX_KEEP).map(normalizeDelayTap);
+    } else if (spec.branch) {
+      o[field] = normalizeBranch(s[field] ?? d[field]);   // P22: Zweig eines Splitters (rekursiv, Tiefe 1)
     } else if (spec.pointList) {
       // Kurvenpunkte (15b): bis WS_POINTS_MAX Objekte bleiben erhalten (Reihenfolge wie gespeichert; die Engine sortiert); Nicht-Objekte entfallen.
       o[field] = (Array.isArray(s[field]) ? s[field] : d[field]).filter(isObj).slice(0, WS_POINTS_MAX).map(normalizeShaperPoint);
@@ -240,6 +344,8 @@ export function sparsifyParams(params) {
     if (m && typeof m === 'object' && m.enabled === true) {
       const c = clone(m);
       for (const u of UNSAFE_KEYS) delete c[u];            // eigene „__proto__“-Schlüssel aus importierten Daten nie speichern/weiterreichen
+      // P22: Zweige der Splitter ebenfalls sparsam (nur aktive erlaubte Module; der Rest bleibt im Beutel des Zweigs).
+      for (const [f, spec] of Object.entries(MODULE_BY_KEY[key].params)) if (spec.branch && f in c) c[f] = sparsifyBranch(c[f]);
       out[key] = c;
     }
   }

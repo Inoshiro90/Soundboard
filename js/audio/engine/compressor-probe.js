@@ -52,7 +52,8 @@ export function ensureCompressorLatency(sampleRate) {
 
 /** Braucht der Plan die Messung (Parallelkompression mit Dry-Pfad)? */
 export function planNeedsCompressorProbe(plan) {
-  return !!plan?.steps?.some(s => { const c = s.params?.compressor; return c?.enabled && Number.isFinite(c.mix) && c.mix < 1; });
+  // P22: in einem Splitter-Zweig (virtueller Schritt, registry.withBranchSteps) zählt jeder aktive Kompressor — seine Latenz wird ausgeglichen.
+  return !!plan?.steps?.some(s => { const c = s.params?.compressor; return c?.enabled && (!!s.branchOf || (Number.isFinite(c.mix) && c.mix < 1)); });
 }
 
 /** Nur für Tests: Messwert setzen/zurücksetzen. */

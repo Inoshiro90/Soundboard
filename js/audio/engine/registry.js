@@ -48,6 +48,10 @@ import { beatRepeatParams, beatRepeatTailSeconds, BEATREPEAT_INTERVAL_RANGE, BEA
 import { reverseDelayTailSeconds } from '../dsp-lib/reverse-delay.js';
 import { granularDelayTailSeconds, GRAIN_SIZE_RANGE, GRAIN_DENSITY_RANGE, GRAIN_SPRAY_RANGE, GRAIN_PITCH_RANGE, GRAIN_PITCH_RANDOM_RANGE } from '../dsp-lib/granular-delay.js';
 import { retriggerParams, retriggerTailSeconds, RETRIGGER_SENS_RANGE, RETRIGGER_THRESHOLD_RANGE, RETRIGGER_HOLDOFF_RANGE, RETRIGGER_PREROLL_RANGE, RETRIGGER_WINDOW_RANGE, RETRIGGER_COUNT_RANGE, RETRIGGER_DECAY_RANGE } from '../dsp-lib/retrigger.js';
+import { COMB_MAX, COMB_SPREAD_MAX, feedbackT60, bankPowerGain } from '../dsp-lib/combbank.js';
+import { modalSection, modalPowerGain, MODAL_LIMIT_SCALE } from '../dsp-lib/modal.js';
+import { compressorLatencySamples } from './compressor-probe.js';   // P22: Laufzeitausgleich der Splitter-Zweige
+import { waveShaperLatencySamples } from './waveshaper-probe.js';
 
 /** Schlüssel, die frühere Versionen kannten und das Pipeline-Modell bewusst NICHT mehr trägt (Backup: `…:pre-pipeline`). */
 export const REMOVED_KEYS = ['envelope', 'pan', 'output', 'analyzer'];
@@ -135,8 +139,8 @@ const haasCost = () => ({ base: 3, measured: false, estimate: 'stereo' });
 const dopplerCost = () => ({ base: 4, measured: false, estimate: 'stereo' });
 /**
  * Hall-Modi (Phase 19c, Entscheidung E1 = a, 2026-11-03) — eine Wahrheit für Registry, Engine, Hub und Tests.
- * Die Aufzählung kennt schon alle im Plan P19 vorgesehenen Werte, damit die Normalisierung (schema.js setzt unbekannte Aufzählungswerte
- * auf den Standard, Befund 8) Daten späterer Teilphasen nicht verwirft (AE-18). Gebaut und angeboten werden seit 19e alle vier Modi.
+ * Die Aufzählung kennt schon alle im Plan P19 vorgesehenen Werte, damit die Normalisierung (schema.js setzte bis 21c unbekannte Aufzählungswerte
+ * auf den Standard, Befund 8; seit 21c bleiben sie erhalten, AE-18) Daten späterer Teilphasen nicht verwirft. Gebaut und angeboten werden seit 19e alle vier Modi.
  *   room    Standard = bisheriger Hall (bit-gleich), sendfähig.
  *   gated   Wet-Pfad hinter dem Hall-Kern durch das Gate des Moduls `noiseGate` (Worklet `dynamics`), gesteuert vom Hallsignal selbst.
  *           Nicht sendfähig (das Gate ist nicht linear) → immer pro Stimme.
@@ -361,6 +365,297 @@ export const beatRepeatValues = q => beatRepeatParams(q);
  * { sensitivity, threshold (dB), holdoff (ms), preroll (ms), length (Fenster, ms), count, infinite (boolesch), chance, decay, mix }.
  */
 export const retriggerValues = q => retriggerParams(q);
+
+/**
+ * Kammfilter (Phase 21a): Werte für Graph und Tests, geklemmt. frequency in Hz (Kammabstand), feedback −0,99…0,99 (negativ: tiefster Gipfel bei
+ * f/2, nur ungerade Vielfache), damping 0…1 (Tiefpass in der Schleife), mix 0…1, output in dB (Entscheidung F = b, P21: Regler „Ausgang“).
+ */
+export const COMB_FREQ_RANGE = [20, 5000];
+export const COMB_FB_RANGE = [-0.99, 0.99];
+export const COMB_OUTPUT_RANGE = [-24, 12];
+/** Größter Nachklang eines Resonanz-Moduls in s (Exportlänge; die Schleife klingt danach weiter, ist aber ≥ 60 dB unter dem Einsatz). */
+export const RESONANCE_TAIL_MAX = 10;
+export const combValues = q => ({
+  frequency: _clamp(COMB_FREQ_RANGE[0], COMB_FREQ_RANGE[1], _fin(q?.frequency, 220)),
+  feedback: _clamp(COMB_FB_RANGE[0], COMB_FB_RANGE[1], _fin(q?.feedback, 0.7)),
+  damping: _clamp(0, 1, _fin(q?.damping, 0.2)),
+  mix: _clamp(0, 1, _fin(q?.mix, 0.5)),
+  output: _clamp(COMB_OUTPUT_RANGE[0], COMB_OUTPUT_RANGE[1], _fin(q?.output, 0))
+});
+/** Kernwerte der Kamm-Bank (dsp-lib/combbank.js) für das Modul `comb`: ein Kamm (Verhältnis 1), direkte Rückkopplung. */
+export function combKernel(q) {
+  const v = combValues(q), ratios = new Array(COMB_MAX).fill(0);
+  ratios[0] = 1;
+  return { f0: v.frequency, ratios, decay: 0, fb: v.feedback, damp: v.damping, spread: 0, mix: v.mix, out: Math.pow(10, v.output / 20) };
+}
+/** Nachklang des Kammfilters: RT60 aus Rückkopplung und Periode (ohne Dämpfung, also Obergrenze), höchstens RESONANCE_TAIL_MAX. Negative Rückkopplung
+ * kehrt nur das Vorzeichen je Periode um, der Betrag fällt gleich schnell. */
+export function combTailSeconds(q) {
+  const v = combValues(q);
+  if (v.mix <= 0) return 0;
+  return Math.min(RESONANCE_TAIL_MAX, feedbackT60(v.frequency, v.feedback));
+}
+/**
+ * Resonator (Phase 21b): Werte für Graph und Tests, geklemmt. frequency = Grundton in Hz, combs = Anzahl Kämme 1–8 (ganzzahlig), decay = RT60 in s
+ * (jeder Kamm, ohne Dämpfung), inharmonicity 0…1 (Streckung der Obertöne wie bei einer Saite, Entscheidung A/B = a), spread = Stereo-Breite in Cent,
+ * damping 0…1, mix 0…1, output in dB (F = b). Bereiche und Standardwerte: Entscheidung D = a (21b).
+ */
+export const RESONATOR_FREQ_RANGE = [20, 2000];
+export const RESONATOR_COMBS_RANGE = [1, 8];
+export const RESONATOR_DECAY_RANGE = [0.1, 30];
+export const RESONATOR_SPREAD_RANGE = [0, COMB_SPREAD_MAX];
+/** Inharmonizität 1 entspricht B = 0,05 (r_k = k · √(1 + B · k²)); quadratische Abbildung B = 0,05 · inh², damit kleine, saitenähnliche Werte
+ * (B ≈ 10⁻⁴ … 10⁻³) fein einstellbar sind. */
+export const RESONATOR_B_MAX = 0.05;
+/** Kämme oberhalb dieser Frequenz bleiben aus (sonst klemmt der Kern sie auf 0,45 · sr, und mehrere Kämme fielen auf eine Frequenz). */
+export const RESONATOR_FREQ_LIMIT = 19000;
+/** Höchste Pegelkompensation (dB) — entspricht dem Bereich des Worklet-Parameters `wg` (≤ 16). */
+export const RESONATOR_COMP_MAX_DB = 24;
+export const resonatorValues = q => ({
+  frequency: _clamp(RESONATOR_FREQ_RANGE[0], RESONATOR_FREQ_RANGE[1], _fin(q?.frequency, 110)),
+  combs: Math.round(_clamp(RESONATOR_COMBS_RANGE[0], RESONATOR_COMBS_RANGE[1], _fin(q?.combs, 4))),
+  decay: _clamp(RESONATOR_DECAY_RANGE[0], RESONATOR_DECAY_RANGE[1], _fin(q?.decay, 2)),
+  inharmonicity: _clamp(0, 1, _fin(q?.inharmonicity, 0)),
+  spread: _clamp(RESONATOR_SPREAD_RANGE[0], RESONATOR_SPREAD_RANGE[1], _fin(q?.spread, 10)),
+  damping: _clamp(0, 1, _fin(q?.damping, 0.3)),
+  mix: _clamp(0, 1, _fin(q?.mix, 0.5)),
+  output: _clamp(COMB_OUTPUT_RANGE[0], COMB_OUTPUT_RANGE[1], _fin(q?.output, 0))
+});
+/** Frequenzverhältnisse der Kämme: r_k = k · √(1 + B · k²), B = RESONATOR_B_MAX · inh²; Kämme über RESONATOR_FREQ_LIMIT (bzw. 0,45 · sr) aus (0). */
+export function resonatorRatios(v, sr = 48000) {
+  const B = RESONATOR_B_MAX * v.inharmonicity * v.inharmonicity, fMax = Math.min(RESONATOR_FREQ_LIMIT, 0.45 * sr);
+  const r = new Array(COMB_MAX).fill(0);
+  for (let k = 1; k <= v.combs; k++) { const x = k * Math.sqrt(1 + B * k * k); if (v.frequency * x <= fMax) r[k - 1] = x; }
+  return r;
+}
+/**
+ * Dämpfung des Reglers → Kern-Dämpfung (Phase 21e, Entscheidung A = a, nur `resonator`): bis RESONATOR_DAMP_KNEE unverändert (Standard 30 % und
+ * alle Einstellungen darunter klingen wie in 21b), darüber weich bis RESONATOR_DAMP_TOP bei 100 % — d' = K + (T − K) · (1 − (1 − u)^p),
+ * u = (d − K)/(1 − K), p = (1 − K)/(T − K) (Steigung 1 am Knie, kein Knick). Hörliste 21/26: Kern-Dämpfung 1 (a = 0,03) lässt bei 110 Hz/2 s den
+ * Grundton nur 0,48 s, den 2. Oberton 0,18 s nachklingen — der Resonanzton verschwindet. Kern 0,6: Grundton 1,68 s, 4. Oberton 0,52 s.
+ * Kamm-Kern, `comb` und `tunedResonator` unverändert.
+ */
+export const RESONATOR_DAMP_KNEE = 0.3;
+export const RESONATOR_DAMP_TOP = 0.6;
+export function resonatorDampKernel(d) {
+  const K = RESONATOR_DAMP_KNEE, T = RESONATOR_DAMP_TOP;
+  if (!(d > K)) return d;
+  const u = Math.min(1, (d - K) / (1 - K)), p = (1 - K) / (T - K);
+  return K + (T - K) * (1 - Math.pow(1 - u, p));
+}
+/** Pegelkompensation (linear): 1/√(Leistungsverstärkung der Bank für weißes Rauschen), höchstens RESONATOR_COMP_MAX_DB (Entscheidung „Pegel“ = a, 21b).
+ * Hängt nur von Grundton, Kammzahl, Inharmonizität, Decay und Dämpfung ab (nicht von Mix, Ausgang, Breite) — Ergebnis wird gecacht (Simulation ≈ 5 ms). */
+const _resCompCache = new Map();
+export function resonatorCompensation(v, sr = 48000) {
+  const ratios = resonatorRatios(v, sr);
+  const key = [sr, v.frequency, v.decay, v.damping, ...ratios].join('|');
+  let c = _resCompCache.get(key);
+  if (c === undefined) {
+    const e = bankPowerGain({ f0: v.frequency, ratios, decay: v.decay, fb: 0, damp: resonatorDampKernel(v.damping) }, sr);
+    c = e > 0 ? Math.min(Math.pow(10, RESONATOR_COMP_MAX_DB / 20), 1 / Math.sqrt(e)) : 1;
+    if (_resCompCache.size > 256) _resCompCache.clear();
+    _resCompCache.set(key, c);
+  }
+  return c;
+}
+/** Kernwerte der Kamm-Bank für das Modul `resonator` (sr = Abtastrate des Kontexts; Hermite-Verlust und Grenzfrequenz hängen davon ab). */
+export function resonatorKernel(q, sr = 48000) {
+  const v = resonatorValues(q);
+  return { f0: v.frequency, ratios: resonatorRatios(v, sr), decay: v.decay, fb: 0, damp: resonatorDampKernel(v.damping), spread: v.spread, mix: v.mix,
+    out: Math.pow(10, v.output / 20), wg: resonatorCompensation(v, sr), lim: 1 };
+}
+/** Nachklang: RT60 = Decay (ohne Dämpfung, also Obergrenze), höchstens RESONANCE_TAIL_MAX. */
+export function resonatorTailSeconds(q) {
+  const v = resonatorValues(q);
+  return v.mix > 0 ? Math.min(RESONANCE_TAIL_MAX, v.decay) : 0;
+}
+/** Kosten (Planwert bis M-1, Entscheidung E = a, 21b): 3 + ⌈Kämme / 4⌉ → 4 oder 5 Punkte. */
+export const resonatorCost = p => ({ base: 3 + Math.ceil(resonatorValues(p).combs / 4), measured: false, estimate: 'plan-p21' });
+/**
+ * Tuned Resonator (Phase 21c): dieselbe Kamm-Bank wie `resonator`, ein Kamm je Akkordton (jeder Kamm bringt alle Obertöne seines Tons mit).
+ * Stimmung gleichstufig, A4 = 440 Hz (G = a): f = 440 · 2^((Halbton − 9) / 12 + (Oktave − 4) + Feinstimmung / 1200) ist der Grundton des
+ * Akkords; die Akkordtöne liegen als Verhältnisse 2^(n / 12) darüber. Oktaven nach wissenschaftlicher Zählung (C4 = eingestrichenes c).
+ * Umkehrung k (Entscheidung C = b): die k tiefsten Töne eine Oktave höher; höchstens (Zahl verschiedener Tonklassen − 1), darüber wirkt der
+ * höchste erlaubte Wert (gespeichert bleibt der Wert). Einzelton und Oktave haben keine Umkehrung.
+ * Notennamen deutsch (A = a): c, cis, d, dis, e, f, fis, g, gis, a, ais, h — gespeichert als Schlüssel, beschriftet mit Doppelnamen.
+ */
+export const TUNED_NOTES = ['c', 'cis', 'd', 'dis', 'e', 'f', 'fis', 'g', 'gis', 'a', 'ais', 'h'];
+export const TUNED_NOTE_LABELS = { c: 'C', cis: 'Cis / Des', d: 'D', dis: 'Dis / Es', e: 'E', f: 'F', fis: 'Fis / Ges', g: 'G', gis: 'Gis / As', a: 'A', ais: 'Ais / B', h: 'H' };
+/** Akkordtypen (G = a) als Halbtonabstände über dem Grundton. „Dur7“ = Dominantseptakkord (C7: große Terz, Quinte, kleine Septime). */
+export const TUNED_CHORDS = {
+  single: [0], octave: [0, 12], fifth: [0, 7], major: [0, 4, 7], minor: [0, 3, 7], sus4: [0, 5, 7],
+  dom7: [0, 4, 7, 10], min7: [0, 3, 7, 10], dim: [0, 3, 6], aug: [0, 4, 8]
+};
+export const TUNED_CHORD_KEYS = Object.keys(TUNED_CHORDS);
+export const TUNED_CHORD_LABELS = { single: 'Einzelton', octave: 'Oktave', fifth: 'Quinte', major: 'Dur', minor: 'Moll', sus4: 'sus4', dom7: 'Dur7 (Dominantsept)', min7: 'Moll7', dim: 'vermindert', aug: 'übermäßig' };
+/** Akkordtypen mit mindestens zwei Tonklassen — nur dort ist die Umkehrung sichtbar und wirksam. */
+export const TUNED_INVERTIBLE = TUNED_CHORD_KEYS.filter(k => new Set(TUNED_CHORDS[k].map(n => n % 12)).size > 1);
+export const TUNED_A4 = 440;
+export const TUNED_OCTAVE_RANGE = [1, 6];
+export const TUNED_INVERSION_RANGE = [0, 3];
+export const TUNED_FINE_RANGE = [-50, 50];
+export const tunedValues = q => ({
+  note: TUNED_NOTES.includes(q?.note) ? q.note : 'a',
+  octave: Math.round(_clamp(TUNED_OCTAVE_RANGE[0], TUNED_OCTAVE_RANGE[1], _fin(q?.octave, 2))),
+  chord: TUNED_CHORD_KEYS.includes(q?.chord) ? q.chord : 'single',
+  inversion: Math.round(_clamp(TUNED_INVERSION_RANGE[0], TUNED_INVERSION_RANGE[1], _fin(q?.inversion, 0))),
+  fine: _clamp(TUNED_FINE_RANGE[0], TUNED_FINE_RANGE[1], _fin(q?.fine, 0)),
+  decay: _clamp(RESONATOR_DECAY_RANGE[0], RESONATOR_DECAY_RANGE[1], _fin(q?.decay, 2)),
+  spread: _clamp(RESONATOR_SPREAD_RANGE[0], RESONATOR_SPREAD_RANGE[1], _fin(q?.spread, 10)),
+  damping: _clamp(0, 1, _fin(q?.damping, 0.3)),
+  mix: _clamp(0, 1, _fin(q?.mix, 0.5)),
+  output: _clamp(COMB_OUTPUT_RANGE[0], COMB_OUTPUT_RANGE[1], _fin(q?.output, 0))
+});
+/** Grundton des Akkords in Hz (A4 = 440 Hz, gleichstufig). */
+export function tunedRootFrequency(v) {
+  return TUNED_A4 * Math.pow(2, (TUNED_NOTES.indexOf(v.note) - 9) / 12 + (v.octave - 4) + v.fine / 1200);
+}
+/** Halbtonabstände der klingenden Akkordtöne über dem Grundton nach der Umkehrung (aufsteigend sortiert). */
+export function tunedSemitones(v) {
+  const base = TUNED_CHORDS[v.chord];
+  const k = Math.min(v.inversion, new Set(base.map(n => n % 12)).size - 1);
+  return base.map((n, i) => (i < k ? n + 12 : n)).sort((a, b) => a - b);
+}
+/** Verhältnisse je Kamm (ein Kamm je Ton, Rest 0 = aus); Töne über RESONATOR_FREQ_LIMIT (bzw. 0,45 · sr) bleiben aus. */
+export function tunedRatios(v, sr = 48000) {
+  const f0 = tunedRootFrequency(v), fMax = Math.min(RESONATOR_FREQ_LIMIT, 0.45 * sr);
+  const r = new Array(COMB_MAX).fill(0);
+  tunedSemitones(v).forEach((n, i) => { const x = Math.pow(2, n / 12); if (f0 * x <= fMax) r[i] = x; });
+  return r;
+}
+/** Pegelkompensation wie beim Resonator (1/√ Leistungsverstärkung, höchstens RESONATOR_COMP_MAX_DB), eigener Cache. */
+const _tunedCompCache = new Map();
+export function tunedCompensation(v, sr = 48000) {
+  const f0 = tunedRootFrequency(v), ratios = tunedRatios(v, sr);
+  const key = [sr, f0, v.decay, v.damping, ...ratios].join('|');
+  let c = _tunedCompCache.get(key);
+  if (c === undefined) {
+    const e = bankPowerGain({ f0, ratios, decay: v.decay, fb: 0, damp: v.damping }, sr);
+    c = e > 0 ? Math.min(Math.pow(10, RESONATOR_COMP_MAX_DB / 20), 1 / Math.sqrt(e)) : 1;
+    if (_tunedCompCache.size > 256) _tunedCompCache.clear();
+    _tunedCompCache.set(key, c);
+  }
+  return c;
+}
+/** Kernwerte der Kamm-Bank für `tunedResonator` (sr = Abtastrate des Kontexts). */
+export function tunedKernel(q, sr = 48000) {
+  const v = tunedValues(q);
+  return { f0: tunedRootFrequency(v), ratios: tunedRatios(v, sr), decay: v.decay, fb: 0, damp: v.damping, spread: v.spread, mix: v.mix,
+    out: Math.pow(10, v.output / 20), wg: tunedCompensation(v, sr), lim: 1 };
+}
+/** Nachklang wie beim Resonator: RT60 = Decay, höchstens RESONANCE_TAIL_MAX. */
+export function tunedTailSeconds(q) {
+  const v = tunedValues(q);
+  return v.mix > 0 ? Math.min(RESONANCE_TAIL_MAX, v.decay) : 0;
+}
+/** Kosten (Planwert bis M-1, wie Resonator): 3 + ⌈Töne / 4⌉ → höchstens 4 Töne = 4 Punkte. */
+export const tunedCost = p => ({ base: 3 + Math.ceil(TUNED_CHORDS[tunedValues(p).chord].length / 4), measured: false, estimate: 'plan-p21' });
+/**
+ * Modal (Phase 21d): bis 16 parallele Bandpass-Biquads (Moden) mit Frequenzverhältnissen, relativen Zerfällen und Pegeln aus einem
+ * Materialsatz; nativ (kein Worklet, läuft immer). Rechenkern und Herleitung: audio/dsp-lib/modal.js. Entscheidungen Nutzer (2026-11-08,
+ * „A = a und b als Metall (Glocke) und Metall (Klangstab), B = a, C = a, D = a, E = a, G = a“).
+ * Materialtabellen (Daten): Verhältnisse rₖ zum Grundton, relativer Nachklang dₖ (RT60 der Mode = Abklingzeit · dₖ, vor der Dämpfung),
+ * Pegel aₖ. Herkunft der Verhältnisse:
+ *   bell     — Teiltöne einer gestimmten Kirchenglocke nach Rossing (Hum 0,5, Prime 1, Terz 1,183, Quinte 1,506, Nominal 2, …) [Literatur];
+ *              Grundton = Prime (Schlagton), die Hum-Mode liegt eine Oktave darunter.
+ *   bar      — Biegeschwingungen eines frei-frei gelagerten Stabs (Euler-Bernoulli): (βₙ / β₁)², cos β · cosh β = 1 [berechnet].
+ *   glass    — Biegemoden eines dünnen Rings/Glases nach Rayleigh: n (n² − 1) / √(n² + 1), n = 2 … 17, auf n = 2 bezogen [berechnet].
+ *   wood     — dieselben Stab-Verhältnisse wie `bar` (unabgestimmter Holzstab), aber kurze, stark frequenzabhängige Zerfälle.
+ *   membrane — ideale Kreismembran: Nullstellen j_mn der Bessel-Funktionen, auf j_01 bezogen, die 16 tiefsten [berechnet].
+ *   string   — steife Saite n · √(1 + B n²), B = 0,0002 [Formel; B gesetzt].
+ * Relative Zerfälle und Pegel sind gesetzte Näherungen für typische Klangfarben [H] (Hörliste Abschnitt D).
+ */
+const _beam = [1, 2.7565, 5.4039, 8.933, 13.3443, 18.6379, 24.8138, 31.8719, 39.8123, 48.635, 58.3399, 68.9271, 80.3966, 92.7483, 105.9823, 120.0986];
+const _pow = (rs, e) => rs.map(r => Math.round(Math.pow(r, e) * 1e4) / 1e4);
+const _glass = [1, 2.8284, 5.4233, 8.7706, 12.8663, 17.7088, 23.2974, 29.6319, 36.712, 44.5377, 53.1089, 62.4255, 72.4875, 83.295, 94.8478, 107.146];
+const _membrane = [1, 1.5933, 2.1355, 2.2954, 2.6531, 2.9173, 3.1555, 3.5001, 3.5985, 3.6475, 4.0589, 4.1317, 4.2304, 4.601, 4.6101, 4.8319];
+const _string = Array.from({ length: 16 }, (_, i) => Math.round((i + 1) * Math.sqrt(1 + 0.0002 * (i + 1) * (i + 1)) * 1e4) / 1e4);
+export const MODAL_MATERIALS = {
+  bell: {
+    ratios: [0.5, 1, 1.183, 1.506, 2, 2.514, 2.662, 3.011, 4.166, 5.433, 6.796, 8.215],
+    decay: [1.6, 1, 0.8, 0.6, 0.85, 0.5, 0.45, 0.45, 0.35, 0.28, 0.22, 0.18],
+    level: [0.6, 0.8, 1, 0.5, 0.9, 0.4, 0.35, 0.5, 0.3, 0.25, 0.2, 0.15] },
+  bar: { ratios: _beam, decay: _pow(_beam, -0.25), level: _pow(_beam, -0.5) },
+  glass: { ratios: _glass, decay: _pow(_glass, -0.2), level: _pow(_glass, -0.6) },
+  wood: { ratios: _beam, decay: _pow(_beam, -1), level: _pow(_beam, -0.7) },
+  membrane: { ratios: _membrane, decay: _pow(_membrane, -0.7), level: _pow(_membrane, -0.5) },
+  string: { ratios: _string, decay: _pow(_string, -0.5), level: _string.map((_, i) => Math.round(1e4 / (i + 1)) / 1e4) }
+};
+export const MODAL_MATERIAL_KEYS = Object.keys(MODAL_MATERIALS);
+export const MODAL_MATERIAL_LABELS = { bell: 'Metall (Glocke)', bar: 'Metall (Klangstab)', glass: 'Glas', wood: 'Holz', membrane: 'Membran', string: 'Saite' };
+export const MODAL_MAX = 16;
+export const MODAL_FREQ_RANGE = [20, 5000];
+export const MODAL_DECAY_RANGE = [0.05, 10];
+export const MODAL_MODES_RANGE = [1, MODAL_MAX];
+/** Dämpfung 1 verkürzt den Nachklang einer Mode mit dem Verhältnis r um r^MODAL_DAMP_EXP (bezogen auf r = 1). */
+export const MODAL_DAMP_EXP = 1.5;
+/** Grenzen des Nachklangs je Mode (s): oben wie der lange Resonator-Bereich; unten mindestens 3 Perioden (Q ≳ 1,4, Pole bleiben komplex). */
+export const MODAL_MODE_RT_MAX = 30;
+export const MODAL_MODE_PERIODS_MIN = 3;
+export const modalValues = q => ({
+  material: MODAL_MATERIAL_KEYS.includes(q?.material) ? q.material : 'bell',
+  frequency: _clamp(MODAL_FREQ_RANGE[0], MODAL_FREQ_RANGE[1], _fin(q?.frequency, 220)),
+  decay: _clamp(MODAL_DECAY_RANGE[0], MODAL_DECAY_RANGE[1], _fin(q?.decay, 1.5)),
+  modes: Math.round(_clamp(MODAL_MODES_RANGE[0], MODAL_MODES_RANGE[1], _fin(q?.modes, 8))),
+  damping: _clamp(0, 1, _fin(q?.damping, 0.3)),
+  width: _clamp(0, 1, _fin(q?.width, 0.3)),
+  mix: _clamp(0, 1, _fin(q?.mix, 0.5)),
+  output: _clamp(COMB_OUTPUT_RANGE[0], COMB_OUTPUT_RANGE[1], _fin(q?.output, 0))
+});
+/**
+ * Moden (immer MODAL_MAX Einträge, Reihenfolge der Tabelle): { f, rt60, level, on }. Aus sind Moden jenseits der Modenzahl, jenseits der
+ * Tabellenlänge und über RESONATOR_FREQ_LIMIT bzw. 0,45 · sr. Ausgeschaltete Moden behalten eine gültige Frequenz (der Biquad läuft weiter).
+ */
+export function modalModes(v, sr = 48000) {
+  const m = MODAL_MATERIALS[v.material], fMax = Math.min(RESONATOR_FREQ_LIMIT, 0.45 * sr), out = [];
+  for (let i = 0; i < MODAL_MAX; i++) {
+    const has = i < m.ratios.length, r = has ? m.ratios[i] : m.ratios[m.ratios.length - 1];
+    const f = Math.min(fMax, v.frequency * r);
+    const rt = _clamp(MODAL_MODE_PERIODS_MIN / f, MODAL_MODE_RT_MAX, v.decay * (has ? m.decay[i] : 1) * Math.pow(r, -MODAL_DAMP_EXP * v.damping));
+    out.push({ f, rt60: rt, level: has ? m.level[i] : 0, on: has && i < v.modes && v.frequency * r <= fMax });
+  }
+  return out;
+}
+/**
+ * Höchste Pegelkompensation von `modal` (dB). Phase 21e (Entscheidung E: „+48 dB falls ohne Nachteile, sonst +36“): +36 dB. Der Standard
+ * (1,5 s, 8 Moden) braucht +30,6 … +36 dB und behält damit seinen Rauschpegel. +48 dB hätte einen Nachteil gegenüber +36: ein Ton genau auf einer
+ * Mode läuft stärker in den Limiter (Glas, 4 Moden, 10 s, Sinus −20 dBFS: Klirr 40,9 % statt 28,6 %; bei +24 dB 2,0 %) [S, Node].
+ * Unabhängig von RESONATOR_COMP_MAX_DB (dort begrenzt der Worklet-Parameter `wg` ≤ 16; die Biquad-Bank ist nativ ohne diese Grenze).
+ */
+export const MODAL_COMP_MAX_DB = 36;
+/** Pegelkompensation (linear): 1/√(Leistungsverstärkung für weißes Rauschen, mono, geschlossene Form), höchstens MODAL_COMP_MAX_DB. */
+const _modalCompCache = new Map();
+export function modalCompensation(v, sr = 48000) {
+  const key = [sr, v.material, v.frequency, v.decay, v.modes, v.damping].join('|');
+  let c = _modalCompCache.get(key);
+  if (c === undefined) {
+    const e = modalPowerGain(modalModes(v, sr).map(m => ({ section: modalSection(m.f, m.rt60, sr), g: m.on ? m.level : 0 })));
+    c = e > 0 ? Math.min(Math.pow(10, MODAL_COMP_MAX_DB / 20), 1 / Math.sqrt(e)) : 1;
+    if (_modalCompCache.size > 256) _modalCompCache.clear();
+    _modalCompCache.set(key, c);
+  }
+  return c;
+}
+/**
+ * Kernwerte für den Graphen und die Referenzrechnung: { modes: [{ f, Q, gain, group }] × 16, width, mix, out }.
+ * gain = Pegel · Kompensation / MODAL_LIMIT_SCALE (Vorskalierung des Limiters), 0 = aus; group = i % 2 (Panorama-Gruppe, B = a).
+ */
+export function modalKernel(q, sr = 48000) {
+  const v = modalValues(q), wg = modalCompensation(v, sr);
+  return {
+    modes: modalModes(v, sr).map((m, i) => ({ f: m.f, Q: modalSection(m.f, m.rt60, sr).Q, gain: m.on ? m.level * wg / MODAL_LIMIT_SCALE : 0, group: i % 2 })),
+    width: v.width, mix: v.mix, out: Math.pow(10, v.output / 20)
+  };
+}
+/** Nachklang: längster Nachklang einer klingenden Mode, höchstens RESONANCE_TAIL_MAX. */
+export function modalTailSeconds(q) {
+  const v = modalValues(q);
+  if (!(v.mix > 0)) return 0;
+  const rt = Math.max(0, ...modalModes(v).filter(m => m.on).map(m => m.rt60));
+  return Math.min(RESONANCE_TAIL_MAX, rt);
+}
+/** Kosten (Planwert bis M-1): 3 Punkte bis 8 Moden, 4 darüber. */
+export const modalCost = p => ({ base: modalValues(p).modes > 8 ? 4 : 3, measured: false, estimate: 'plan-p21' });
 /**
  * Frequenzschieber (Phase 16): Werte für den Graphen, geklemmt — eine Wahrheit für Engine und Tests.
  * shift in Hz (−1000 … +1000; negativ = nach unten), mix 0…1.
@@ -511,6 +806,150 @@ export function vibratoSwing(cents, f, shape = 'sine') {
 const LFO_WAVE_OPTIONS = { sine: 'Sinus', triangle: 'Dreieck', square: 'Rechteck', saw: 'Sägezahn', sh: 'Sample & Hold' };
 const lfoWaveParam = (ui = {}) => ({ def: 'sine', enum: ['sine', 'triangle', 'square', 'saw', 'sh'], label: 'Wellenform', ui: { options: LFO_WAVE_OPTIONS, ...ui } });
 
+/**
+ * Bedien-Raster der Regler (Phase 21e, Hörliste 52/55; Entscheidungen B = a, C = a, D = a). Nur UI: Ziehen und Tasten rasten auf das Band
+ * (ui/effects/control-math.js `ui.grid`), Anzeige mit den Nachkommastellen des Bands; gespeicherte Werte bleiben unverändert.
+ *   UI_GRID_SECONDS  — Zeiten in Sekunden: unter 1 s 0,05 s, 1–5 s 0,1 s, ab 5 s 0,5 s.
+ *   UI_GRID_PITCH_HZ — Grundton (Resonator, Modal): unter 100 Hz 0,1 Hz (bei 20 Hz ist 1 Hz ≈ 87 Cent), darüber ganze Hz.
+ *   UI_GRID_LFO_HZ   — LFO-Raten bis 10 Hz: unter 1 Hz 0,01 Hz (langsame Bewegungen), darüber 0,1 Hz.
+ *   UI_DISPLAY_MS    — Delay-Zeiten (Daten in s) in ms anzeigen; Raster bleibt 10 ms (ein Sekundenraster wäre für Delays zu grob).
+ */
+const UI_GRID_SECONDS = [{ below: 1, step: 0.05 }, { below: 5, step: 0.1 }, { step: 0.5 }];
+const UI_GRID_PITCH_HZ = [{ below: 100, step: 0.1 }, { step: 1 }];
+const UI_GRID_LFO_HZ = [{ below: 1, step: 0.01 }, { step: 0.1 }];
+const UI_DISPLAY_MS = { factor: 1000, unit: 'ms' };
+
+/**
+ * Splitter-Routing (Phase 22, Entscheidungen 2026-11-09: A = a, B = a, C = a, D = a, E = a, F = a; Pegel am Splitter).
+ * Zwei Container-Module teilen das Signal in Zweige, bearbeiten jeden Zweig mit einer Mini-Kette und summieren wieder:
+ *   freqSplit       LR4-Weiche (engine/crossover.js), 2 oder 3 Bänder (`bandCount`; nicht `bands` — so heißen die Bänderlisten der EQs), Zweige `low`, `mid`, `high` (bei 2 Bändern `low`, `high`;
+ *                   Weiche `crossLow`; `mid` und `crossHigh` bleiben gespeichert).
+ *   transientSplit  Worklet `dynamics` (Modus 4, zwei Ausgänge): Anschlag = x · m, Ausklang = x − Anschlag (Summe = Original); Zweige
+ *                   `transient`, `sustain`. Ohne Worklet läuft alles durch den Ausklang-Zweig.
+ * Datenform je Zweig: `{ chain, x? }` — `chain` ist ein sparsames Effektobjekt (nur Module aus BRANCH_MODULE_KEYS); alles andere (Splitter in
+ * einem Zweig = Tiefengrenze 1, nicht erlaubte und unbekannte Module) bleibt in `x.modules` erhalten und wird nicht gebaut (AE-18).
+ * Der Pegel je Zweig steht AM SPLITTER (`lowLevel` …, dB; Entscheidung Nutzer 2026-11-09, damit Makros, Regler und Klemmung ohne Sonderweg
+ * greifen). Untergrenze SPLIT_LEVEL_MUTE_DB = stumm.
+ * Reihenfolge im Zweig = Layer-Regel (Tonhöhe als Knoten am Kopf, dann layerOrder); die Layer-Reihenfolge der Pipeline bleibt unberührt.
+ * Laufzeitausgleich (C = a): Zweige mit weniger Latenz werden auf den längsten verzögert (branchLatencySamples), damit die Summe
+ * phasenrichtig bleibt.
+ */
+export const SPLIT_KEYS = ['freqSplit', 'transientSplit'];
+/** Erlaubte Module in einem Zweig (Entscheidung A = a). */
+export const BRANCH_MODULE_KEYS = ['eq', 'eq10', 'paramEq', 'highpass', 'lowpass', 'notch', 'bandpass', 'comb', 'distortion', 'crusher', 'delay',
+  'reverb', 'irReverb', 'pitchShift', 'resonator', 'tunedResonator', 'modal', 'compressor', 'noiseGate', 'expander'];
+const _BRANCH_SET = new Set(BRANCH_MODULE_KEYS);
+export const isBranchModuleKey = k => _BRANCH_SET.has(k);
+export const SPLIT_BRANCHES = { freqSplit: ['low', 'mid', 'high'], transientSplit: ['transient', 'sustain'] };
+export const SPLIT_LEVEL_RANGE = [-60, 12];
+export const SPLIT_LEVEL_MUTE_DB = -60;
+export const FREQSPLIT_LOW_RANGE = [20, 8000];
+export const FREQSPLIT_HIGH_RANGE = [100, 16000];
+export const TSPLIT_HOLD_RANGE = [0, 200];
+export const isSplitKey = k => SPLIT_KEYS.includes(k);
+/** Gebaute Zweige eines Splitters (freqSplit mit 2 Bändern: Tief und Hoch). */
+export function splitBranches(key, p) {
+  if (key === 'freqSplit') return String(p?.bandCount ?? '3') === '2' ? ['low', 'high'] : ['low', 'mid', 'high'];
+  return SPLIT_BRANCHES[key] ? SPLIT_BRANCHES[key].slice() : [];
+}
+/** Pegel (linear) eines Zweigs: dB am Splitter (`<zweig>Level`), Untergrenze = stumm. */
+export function splitLevelGain(p, branch) {
+  const v = Number(p?.[branch + 'Level']);
+  const db = Number.isFinite(v) ? Math.max(SPLIT_LEVEL_RANGE[0], Math.min(SPLIT_LEVEL_RANGE[1], v)) : 0;
+  return db <= SPLIT_LEVEL_MUTE_DB ? 0 : Math.pow(10, db / 20);
+}
+/** Weichen des Frequenz-Splitters (Hz), sortiert (f1 ≤ f2); geklemmt auf die Datenbereiche. */
+export function freqSplitCross(p) {
+  const n = (v, r, d) => (Number.isFinite(Number(v)) ? Math.max(r[0], Math.min(r[1], Number(v))) : d);
+  const a = n(p?.crossLow, FREQSPLIT_LOW_RANGE, 250), b = n(p?.crossHigh, FREQSPLIT_HIGH_RANGE, 2500);
+  return a <= b ? [a, b] : [b, a];
+}
+const _isObjR = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** Sparsame Kette eines Zweigs: nur erlaubte Module als Objekte (Kopie der Referenzen, keine Normalisierung). */
+export function branchChain(p, branch) {
+  const c = p?.[branch]?.chain;
+  const out = {};
+  if (!_isObjR(c)) return out;
+  for (const k of BRANCH_MODULE_KEYS) if (_isObjR(c[k])) out[k] = c[k];
+  return out;
+}
+/** Klingende Module einer Zweigkette (aktiv, nicht überlagert, Tonhöhe nur wenn pitchActive) in Registry-Reihenfolge. */
+export function branchSoundingKeys(chain) {
+  const on = BRANCH_MODULE_KEYS.filter(k => chain?.[k]?.enabled === true && (k !== 'pitchShift' || pitchActive(chain.pitchShift)));
+  const dead = new Set();
+  for (const g of EXCLUSIVE_GROUPS) { const act = g.members.filter(k => on.includes(k)); for (let i = 1; i < act.length; i++) dead.add(act[i]); }
+  return MODULE_KEYS.filter(k => on.includes(k) && !dead.has(k));
+}
+/** Latenz (Samples) einer Zweigkette: Tonhöhe, nativer Kompressor (Probe), WaveShaper-Oversampling und Tape-Grundverzögerung. */
+export function branchLatencySamples(chain, sampleRate = 48000) {
+  let n = 0;
+  for (const k of branchSoundingKeys(chain)) {
+    const q = chain[k];
+    if (k === 'pitchShift') n += pitchLatency(q);
+    else if (k === 'compressor') n += compressorLatencySamples(sampleRate);
+    else if (k === 'distortion') {
+      const os = ['none', '2x', '4x'].includes(q.oversample) ? q.oversample : '4x';
+      n += waveShaperLatencySamples(sampleRate, os);
+      if (!distortionIsLegacy(q) && distortionMode(q) === 'tape') n += Math.round(TAPE_BASE_DELAY_S * sampleRate);
+    } else n += moduleLatency(k, q, sampleRate) || 0;
+  }
+  return n;
+}
+/** Latenz des ganzen Splitters = längster Zweig (die anderen werden ausgeglichen). */
+function splitLatencySamples(key, p, sampleRate = 48000) {
+  let m = 0;
+  for (const b of splitBranches(key, p)) m = Math.max(m, branchLatencySamples(branchChain(p, b), sampleRate));
+  return m;
+}
+/** Nachklang (s): je Zweig Maximum der Modul-Nachklänge, Tonhöhe addiert (wie planTailSeconds je Schritt); Maximum über die Zweige plus Ausgleich. */
+function splitTailSeconds(key, p) {
+  let t = 0;
+  for (const b of splitBranches(key, p)) {
+    const c = branchChain(p, b);
+    let bt = 0;
+    for (const k of branchSoundingKeys(c)) if (k !== 'pitchShift') bt = Math.max(bt, moduleTail(k, c[k]));
+    if (c.pitchShift && pitchActive(c.pitchShift)) bt += moduleTail('pitchShift', c.pitchShift);
+    t = Math.max(t, bt);
+  }
+  return t + splitLatencySamples(key, p, 22050) / 22050;   // Ausgleichsverzögerung, längster Fall wie bei der Tonhöhe
+}
+/**
+ * Kosten (Punkte): Hochmischer (1) + Weiche (2 Bänder: 4 Biquads, 3 Bänder: 9) bzw. Worklet `dynamics` + je Zweig die Summe der klingenden
+ * Module + 1 je Ausgleichsverzögerung. Gemessen nur, wenn alle Zweigmodule gemessen sind; das Worklet ist ein Schätzwert (wie Transient Shaper).
+ */
+function splitCost(key, p) {
+  const brs = splitBranches(key, p);
+  let base = 1 + (key === 'freqSplit' ? (brs.length === 2 ? 4 : 9) : DYNAMICS_WORKLET_POINTS);
+  let measured = key === 'freqSplit';
+  const lat = brs.map(b => branchLatencySamples(branchChain(p, b)));
+  const maxL = Math.max(0, ...lat);
+  brs.forEach((b, i) => {
+    const c = branchChain(p, b);
+    for (const k of branchSoundingKeys(c)) { const mc = moduleCost(k, c[k]); base += mc.base || 0; if (!mc.measured) measured = false; }
+    if (lat[i] < maxL) base += 1;
+  });
+  return measured ? { base, measured: true } : { base, measured: false, estimate: 'splitter' };
+}
+/**
+ * P22: Plan um virtuelle Schritte der Zweigketten erweitern (nur für Vorbereitungen: Worklets, Proben). REIN. Ohne Splitter: derselbe Plan.
+ * Virtuelle Schritte tragen `branchOf = { step, key, branch }` und sparsame Parameter (nur erlaubte Module).
+ */
+export function withBranchSteps(plan) {
+  const extra = [];
+  for (const s of plan?.steps || []) {
+    for (const key of SPLIT_KEYS) {
+      const p = s.params?.[key];
+      if (!p?.enabled) continue;
+      for (const b of splitBranches(key, p)) extra.push({ index: s.index, layerId: s.layerId, branchOf: { step: s.index, key, branch: b }, params: branchChain(p, b) });
+    }
+  }
+  if (!extra.length) return plan;
+  return { ...plan, steps: [...plan.steps, ...extra], hasPitch: !!plan.hasPitch || extra.some(e => pitchActive(e.params.pitchShift)) };
+}
+const splitBranchParam = label => ({ def: { chain: {} }, branch: true, label });
+const splitLevelParam = label => ({ def: 0, range: SPLIT_LEVEL_RANGE, unit: 'dB', label, ui: { min: -60, max: 12, step: 0.5, signed: true } });
+const FREQSPLIT_BANDS_OPTIONS = { '2': '2 Bänder (Tief/Hoch)', '3': '3 Bänder (Tief/Mitte/Hoch)' };
+
 export const MODULES = [
   { key: 'lowpass', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Tiefpass', layerOrder: 20, consumers: ALL_CONSUMERS, cost: stageCost,
     params: { frequency: { def: 20000, range: [20, 20000], unit: 'Hz', label: 'Grenzfrequenz', ui: { min: 100, max: 20000, step: 50, scale: 'log', digits: 0 } }, Q: filterQdB(0.7, [0.1, 20], { min: 0.1, max: 10, step: 0.1, digits: 1 }), slope: slopeParam(), mix: mixParam() } },
@@ -543,7 +982,7 @@ export const MODULES = [
     tail: p => { if (reverbBuiltMode(p) === 'reverse') return reverseValues(p).preRoll; const s = reverbIsLegacy(p) ? (p?.duration ?? 2.2) : reverbIRSeconds(p); return reverbBuiltMode(p) === 'shimmer' ? shimmerTailSeconds(p, s) : s; },
     params: {
       amount: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
-      duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer', ui: { min: 0.1, max: 10, step: 0.1 } },
+      duration: { def: 2.2, range: [0.05, 10], unit: 's', label: 'Dauer', ui: { min: 0.1, max: 10, grid: UI_GRID_SECONDS, fineDigits: 2 } },   // fineDigits wie vor 21e (Makro-Rundung)
       decay: { def: 2.0, range: [0.1, 10], label: 'Abklingen', ui: { min: 0.1, max: 6, step: 0.1 } },
       // P19a (additiv): Standardwerte = neutral → bisherige IR, bit-gleich. Sobald ein Feld abweicht, gilt die neue Synthese
       // (ir-synth.js): `duration` ist dann die Nachhallzeit RT60, `decay` die Kurvenform (Entscheidung R2).
@@ -565,7 +1004,7 @@ export const MODULES = [
       shimmerInterval: { def: 12, range: [-24, 24], unit: 'Halbtöne', label: 'Shimmer: Intervall', ui: { min: -24, max: 24, step: 1, signed: true, digits: 0, showIf: { mode: ['shimmer'] } } },
       shimmerFeedback: { def: 0.4, range: [0, SHIMMER_FB_MAX], label: 'Shimmer: Rückkopplung', ui: { min: 0, max: SHIMMER_FB_MAX, step: 0.01, percent: true, showIf: { mode: ['shimmer'] } } },
       // P19e (additiv): Vorlauf des Reverse-Halls = Latenz beim Auslösen. Nicht live: wirkt beim nächsten Start (Neubau). Startwert [H].
-      preRoll: { def: REVERSE_PREROLL_DEF, range: REVERSE_PREROLL_RANGE, unit: 's', label: 'Reverse: Vorlauf', ui: { min: 0.3, max: 2, step: 0.05, digits: 2, showIf: { mode: ['reverse'] } } }
+      preRoll: { def: REVERSE_PREROLL_DEF, range: REVERSE_PREROLL_RANGE, unit: 's', label: 'Reverse: Vorlauf', ui: { min: 0.3, max: 2, grid: UI_GRID_SECONDS, showIf: { mode: ['reverse'] } } }
     } },
   // Phase 14a (additiv): Modi mono (Standard = bisheriges Delay) | stereo | pingpong, Low-/High-Cut und Schutzsättigung in der Rückkopplung,
   // Modulation der Verzögerung. Mono mit neutralen neuen Feldern (delayIsLegacy) baut exakt den bisherigen Graphen.
@@ -573,11 +1012,11 @@ export const MODULES = [
     tail: p => delayTailSeconds(p),
     params: {
       mode: { def: 'mono', enum: DELAY_MODES, label: 'Modus', ui: { options: DELAY_MODE_LABELS } },
-      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['mono', 'pingpong', 'reverse', 'granular'] } } },
+      time: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS, showIf: { mode: ['mono', 'pingpong', 'reverse', 'granular'] } } },
       feedback: { def: 0.35, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['mono', 'stereo', 'pingpong', 'reverse', 'granular'] } } },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
-      timeL: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit links', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
-      timeR: { def: 0.33, range: [0, 2], unit: 's', label: 'Zeit rechts', ui: { min: 0.01, max: 2, step: 0.01, showIf: { mode: ['stereo'] } } },
+      timeL: { def: 0.22, range: [0, 2], unit: 's', label: 'Zeit links', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS, showIf: { mode: ['stereo'] } } },
+      timeR: { def: 0.33, range: [0, 2], unit: 's', label: 'Zeit rechts', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS, showIf: { mode: ['stereo'] } } },
       crossFeedback: { def: 0, range: [0, 0.95], label: 'Kreuz-Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true, showIf: { mode: ['stereo'] } } },
       lowCut: { def: DELAY_LOWCUT_OFF, range: [DELAY_LOWCUT_OFF, 2000], unit: 'Hz', label: 'Low-Cut (je Wiederholung)', ui: { min: 20, max: 2000, step: 5, scale: 'log', digits: 0, showIf: { mode: DELAY_FILTER_MODES } } },
       highCut: { def: DELAY_HIGHCUT_OFF, range: [500, DELAY_HIGHCUT_OFF], unit: 'Hz', label: 'High-Cut (je Wiederholung)', ui: { min: 500, max: 20000, step: 50, scale: 'log', digits: 0, showIf: { mode: DELAY_FILTER_MODES } } },
@@ -595,7 +1034,7 @@ export const MODULES = [
     params: {
       baseDelay: { def: 15, range: [1, 40], unit: 'ms', label: 'Grundverzögerung', ui: { min: 5, max: 40, step: 0.5 } },
       depth: { def: 8, range: [0, 20], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 20, step: 0.5 } },
-      rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      rate: { def: 0.8, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, grid: UI_GRID_LFO_HZ } },
       mix: { def: 0.3, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       // Phase 12b (additiv): Stimmen und Stereo-Verteilung, Ensemble als Modus (3 Stimmen). voices 1 + mode 'chorus' (Standard, auch bei
       // fehlenden Feldern) = Graph wie bisher; `spread` wirkt erst ab 2 Stimmen bzw. im Ensemble.
@@ -612,7 +1051,7 @@ export const MODULES = [
     params: {
       baseDelay: { def: 2, range: [0.5, 10], unit: 'ms', label: 'Grundverzögerung', ui: { min: 0.5, max: 5, step: 0.1 } },
       depth: { def: 1.5, range: [0, 10], unit: 'ms', label: 'Tiefe', ui: { min: 0, max: 10, step: 0.1 } },
-      rate: { def: 0.2, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      rate: { def: 0.2, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, grid: UI_GRID_LFO_HZ } },
       feedback: { def: 0.5, range: [0, 0.95], label: 'Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       // Phase 12c (additiv): LFO-Form (Sinus = bisher; Rechteck/Säge bewusst nicht: Sprünge der Verzögerung knacken) und L/R-Versatz (E3, Standard 0 = mono).
@@ -735,7 +1174,7 @@ export const MODULES = [
       toY: { def: 0, range: [-1000, 1000], label: 'Ziel Y (unten ↔ oben)', ui: { min: -50, max: 50, step: 0.1, showIf: { motion: ['once', 'loop'] } } },
       toZ: { def: -1, range: [-1000, 1000], label: 'Ziel Z (vorn ↔ hinten)', ui: { min: -50, max: 50, step: 0.1, showIf: { motion: ['once', 'loop'] } } },
       motionUnit: { def: 'seconds', enum: ['seconds', 'relative'], label: 'Dauer angeben', ui: { options: { seconds: 'in Sekunden', relative: 'als Anteil der Clip-Dauer' }, showIf: { motion: ['once', 'loop'] } } },
-      motionTime: { def: 2, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, step: 0.05, scale: 'log', digits: 2, showIf: { motion: ['once', 'loop'], motionUnit: ['seconds'] } } },
+      motionTime: { def: 2, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, scale: 'log', grid: UI_GRID_SECONDS, showIf: { motion: ['once', 'loop'], motionUnit: ['seconds'] } } },
       motionShare: { def: 1, range: [0.01, 1], label: 'Dauer (Anteil)', ui: { min: 0.01, max: 1, step: 0.01, percent: true, showIf: { motion: ['once', 'loop'], motionUnit: ['relative'] } } },
       curve: { def: 'linear', enum: ['linear', 'easeIn', 'easeOut', 'easeInOut'], label: 'Verlauf', ui: { options: { linear: 'Gleichmäßig', easeIn: 'Beschleunigen', easeOut: 'Abbremsen', easeInOut: 'Weich (an- und abschwellend)' }, showIf: { motion: ['once', 'loop'] } } }
     } },
@@ -819,7 +1258,7 @@ export const MODULES = [
   // Eine Mono-Quelle wird hier bewusst stereo (Zweck des Moduls). Ohne Worklet, ohne Latenz.
   { key: 'autoPan', ui: { generated: true }, family: 'modulation', label: 'Auto-Pan', layerOrder: 132, consumers: ALL_CONSUMERS, cost: autoPanCost,
     params: {
-      rate: { def: 0.5, range: [0.01, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      rate: { def: 0.5, range: [0.01, 20], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, grid: UI_GRID_LFO_HZ } },
       depth: { def: 1, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       waveform: lfoWaveParam(),
       phase: { def: 0, range: [0, 360], unit: '°', label: 'Startphase', ui: { min: 0, max: 360, step: 1 } },
@@ -841,7 +1280,7 @@ export const MODULES = [
   { key: 'phaser', stageHint: { stage: 'source', weight: 1 }, ui: { generated: true }, family: 'modulation', label: 'Phaser', layerOrder: 102, consumers: ALL_CONSUMERS, cost: phaserCost,
     workletModules: ['delayline'],
     params: {
-      rate: { def: 0.5, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, step: 0.01 } },
+      rate: { def: 0.5, range: [0.01, 10], unit: 'Hz', label: 'Rate', ui: { min: 0.01, max: 10, grid: UI_GRID_LFO_HZ } },
       depth: { def: 0.7, range: [0, 1], label: 'Tiefe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       feedback: { def: 0, range: [-0.9, 0.9], label: 'Rückkopplung', ui: { min: -0.9, max: 0.9, step: 0.01, percent: true, signed: true } },   // K2: Anzeige −90 … +90 % (Daten −0,9 … +0,9)
       stages: { def: 4, range: [2, 12], label: 'Stufen', ui: { min: 2, max: 12, step: 2, digits: 0 } },
@@ -911,7 +1350,7 @@ export const MODULES = [
       closest: { def: 0.5, range: [0, 1], label: 'Größte Nähe bei', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       motion: { def: 'once', enum: ['once', 'loop'], label: 'Vorbeifahrt', ui: { options: { once: 'Einmal je Start', loop: 'Je Durchlauf (Loop)' } } },
       motionUnit: { def: 'relative', enum: ['seconds', 'relative'], label: 'Dauer angeben', ui: { options: { seconds: 'in Sekunden', relative: 'als Anteil der Clip-Dauer' } } },
-      motionTime: { def: 4, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, step: 0.05, scale: 'log', digits: 2, showIf: { motionUnit: ['seconds'] } } },
+      motionTime: { def: 4, range: [0.05, 600], unit: 's', label: 'Dauer', ui: { min: 0.05, max: 60, scale: 'log', grid: UI_GRID_SECONDS, showIf: { motionUnit: ['seconds'] } } },
       motionShare: { def: 1, range: [0.01, 1], label: 'Dauer (Anteil)', ui: { min: 0.01, max: 1, step: 0.01, percent: true, showIf: { motionUnit: ['relative'] } } },
       pitchAmount: { def: 1, range: [0, 1], label: 'Anteil Tonhöhe', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       levelAmount: { def: 1, range: [0, 1], label: 'Anteil Pegel (Abstand)', ui: { min: 0, max: 1, step: 0.01, percent: true } },
@@ -927,13 +1366,13 @@ export const MODULES = [
     params: {
       crossLow: { def: 300, range: [40, 1000], unit: 'Hz', label: 'Weiche Tiefen/Mitten', ui: { min: 40, max: 1000, step: 5, scale: 'log', digits: 0 } },
       crossHigh: { def: 3000, range: [1000, 12000], unit: 'Hz', label: 'Weiche Mitten/Höhen', ui: { min: 1000, max: 12000, step: 50, scale: 'log', digits: 0 } },
-      lowTime: { def: 0.3, range: [0, 2], unit: 's', label: 'Tiefen: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      lowTime: { def: 0.3, range: [0, 2], unit: 's', label: 'Tiefen: Zeit', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS } },
       lowFeedback: { def: 0.4, range: [0, 0.95], label: 'Tiefen: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       lowLevel: { def: 1, range: [0, 1], label: 'Tiefen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
-      midTime: { def: 0.2, range: [0, 2], unit: 's', label: 'Mitten: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      midTime: { def: 0.2, range: [0, 2], unit: 's', label: 'Mitten: Zeit', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS } },
       midFeedback: { def: 0.3, range: [0, 0.95], label: 'Mitten: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       midLevel: { def: 1, range: [0, 1], label: 'Mitten: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
-      highTime: { def: 0.12, range: [0, 2], unit: 's', label: 'Höhen: Zeit', ui: { min: 0.01, max: 2, step: 0.01 } },
+      highTime: { def: 0.12, range: [0, 2], unit: 's', label: 'Höhen: Zeit', ui: { min: 0.01, max: 2, step: 0.01, display: UI_DISPLAY_MS } },
       highFeedback: { def: 0.2, range: [0, 0.95], label: 'Höhen: Rückkopplung', ui: { min: 0, max: 0.95, step: 0.01, percent: true } },
       highLevel: { def: 1, range: [0, 1], label: 'Höhen: Pegel', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       wet: { def: 0.35, range: [0, 1], label: 'Anteil (Wet)', ui: { min: 0, max: 0.95, step: 0.01, percent: true } }
@@ -1025,6 +1464,93 @@ export const MODULES = [
       chance: { def: 1, range: [0, 1], label: 'Wahrscheinlichkeit', ui: { min: 0, max: 1, step: 0.01, percent: true } },
       decay: { def: 0, range: RETRIGGER_DECAY_RANGE, label: 'Abklingen je Wiederholung', ui: { min: 0, max: 0.9, step: 0.01, percent: true } },
       mix: { def: 1, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } }
+    } },
+  // Phase 21a: Kammfilter (Einzelkamm, Masterliste Comb) im Worklet `delayline`, Prozessor `combbank-processor` (Rechenkern dsp-lib/combbank.js).
+  // Rückkopplungskamm mit Bruchteil-Verzögerung, Dämpfung (Tiefpass in der Schleife) und weichem Limiter; Gain-Staging: Eingang × √(1 − g²)
+  // (gleiche Leistung bei Rauschen), Regler „Ausgang“ (Entscheidung F = b). layerOrder 37: hinter dem Bandpass (35), vor dem Wah-Wah (40)
+  // (Entscheidung E = a). Filter-Sektion (D = a). Ohne Worklet: übersprungen (C = a). Alle Regler live (Kern glättet 10 ms).
+  { key: 'comb', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'filter', label: 'Kammfilter', layerOrder: 37, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['delayline'], cost: () => ({ base: 3, measured: false, estimate: 'plan-p21' }), tail: p => combTailSeconds(p),
+    params: {
+      frequency: { def: 220, range: COMB_FREQ_RANGE, unit: 'Hz', label: 'Frequenz (Kammabstand)', ui: { min: 20, max: 5000, step: 1, scale: 'log', digits: 0 } },
+      feedback: { def: 0.7, range: COMB_FB_RANGE, label: 'Rückkopplung', ui: { min: -0.99, max: 0.99, step: 0.01, percent: true, signed: true } },
+      damping: { def: 0.2, range: [0, 1], label: 'Dämpfung', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      output: { def: 0, range: COMB_OUTPUT_RANGE, unit: 'dB', label: 'Ausgang', ui: { min: -24, max: 12, step: 0.5, signed: true } }
+    } },
+  // Phase 21b: Resonator (bis 8 Kämme auf k · Grundton, Saiten-Streckung) in derselben Kamm-Bank (Prozessor `combbank-processor`, Worklet `delayline`).
+  // layerOrder 106: nach dem Vibrato (104), vor dem Hall (110) (Entscheidung E = a). Neue Familie `resonance` (F = a), UI-Sektion „Resonanz“ (D = a).
+  // Gain-Staging: Kompensation aus der Impulsenergie der Bank (wg) + weicher Limiter auf dem Nass-Signal + Regler „Ausgang“ (F = b; „Pegel“ = a).
+  // Ohne Worklet: übersprungen (C = a). Alle Regler live (Kern glättet 10 ms; Kämme blenden ein/aus).
+  { key: 'resonator', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'resonance', label: 'Resonator', layerOrder: 106, consumers: ALL_CONSUMERS,
+    needsWorklet: true, workletModules: ['delayline'], cost: resonatorCost, tail: p => resonatorTailSeconds(p),
+    params: {
+      frequency: { def: 110, range: RESONATOR_FREQ_RANGE, unit: 'Hz', label: 'Grundton', ui: { min: 20, max: 2000, scale: 'log', grid: UI_GRID_PITCH_HZ } },
+      combs: { def: 4, range: RESONATOR_COMBS_RANGE, label: 'Anzahl Kämme', ui: { min: 1, max: 8, step: 1, digits: 0 } },
+      decay: { def: 2, range: RESONATOR_DECAY_RANGE, unit: 's', label: 'Abklingzeit (RT60)', ui: { min: 0.1, max: 30, scale: 'log', grid: UI_GRID_SECONDS } },
+      inharmonicity: { def: 0, range: [0, 1], label: 'Inharmonizität', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      spread: { def: 10, range: RESONATOR_SPREAD_RANGE, unit: 'ct', label: 'Stereo-Breite', ui: { min: 0, max: 100, step: 1, digits: 0 } },
+      damping: { def: 0.3, range: [0, 1], label: 'Dämpfung', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      output: { def: 0, range: COMB_OUTPUT_RANGE, unit: 'dB', label: 'Ausgang', ui: { min: -24, max: 12, step: 0.5, signed: true } }
+    } },
+  // Phase 21c (layerOrder 107, Familie resonance): Tuned Resonator — ein Kamm je Akkordton, gestimmt auf Note/Oktave (A4 = 440 Hz), Akkordtyp,
+  // Umkehrung, Feinstimmung. Gain-Staging wie Resonator (wg aus der Impulsenergie, weicher Limiter, Ausgang). Ohne Worklet übersprungen (C = a).
+  { key: 'tunedResonator', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'resonance', label: 'Tuned Resonator', layerOrder: 107,
+    consumers: ALL_CONSUMERS, needsWorklet: true, workletModules: ['delayline'], cost: tunedCost, tail: p => tunedTailSeconds(p),
+    params: {
+      note: { def: 'a', enum: TUNED_NOTES, label: 'Note', ui: { options: TUNED_NOTE_LABELS } },
+      octave: { def: 2, range: TUNED_OCTAVE_RANGE, label: 'Oktave', ui: { min: 1, max: 6, step: 1, digits: 0 } },
+      chord: { def: 'single', enum: TUNED_CHORD_KEYS, label: 'Akkordtyp', ui: { options: TUNED_CHORD_LABELS } },
+      inversion: { def: 0, range: TUNED_INVERSION_RANGE, label: 'Umkehrung', ui: { min: 0, max: 3, step: 1, digits: 0, showIf: { chord: TUNED_INVERTIBLE } } },
+      fine: { def: 0, range: TUNED_FINE_RANGE, unit: 'ct', label: 'Feinstimmung', ui: { min: -50, max: 50, step: 1, digits: 0, signed: true } },
+      decay: { def: 2, range: RESONATOR_DECAY_RANGE, unit: 's', label: 'Abklingzeit (RT60)', ui: { min: 0.1, max: 30, scale: 'log', grid: UI_GRID_SECONDS } },
+      spread: { def: 10, range: RESONATOR_SPREAD_RANGE, unit: 'ct', label: 'Stereo-Breite', ui: { min: 0, max: 100, step: 1, digits: 0 } },
+      damping: { def: 0.3, range: [0, 1], label: 'Dämpfung', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      output: { def: 0, range: COMB_OUTPUT_RANGE, unit: 'dB', label: 'Ausgang', ui: { min: -24, max: 12, step: 0.5, signed: true } }
+    } },
+  // Phase 21d (layerOrder 108, Familie resonance): Modal — bis 16 parallele Bandpass-Biquads nach Materialsatz, nativ (kein Worklet, läuft
+  // immer). Gain-Staging wie die Kamm-Module: Kompensation für Rauschen (≤ MODAL_COMP_MAX_DB = +36 dB seit 21e), weicher Limiter (WaveShaper, Kennlinie combSoft), Ausgang.
+  // Alle Regler live ohne Neubau (16 Biquads werden immer gebaut, E = a); Moden werden über ihren Pegel ein- und ausgeblendet.
+  { key: 'modal', stageHint: { stage: 'medium', weight: 1 }, ui: { generated: true }, family: 'resonance', label: 'Modal', layerOrder: 108,
+    consumers: ALL_CONSUMERS, cost: modalCost, tail: p => modalTailSeconds(p),
+    params: {
+      material: { def: 'bell', enum: MODAL_MATERIAL_KEYS, label: 'Material', ui: { options: MODAL_MATERIAL_LABELS } },
+      frequency: { def: 220, range: MODAL_FREQ_RANGE, unit: 'Hz', label: 'Grundton', ui: { min: 20, max: 5000, scale: 'log', grid: UI_GRID_PITCH_HZ } },
+      decay: { def: 1.5, range: MODAL_DECAY_RANGE, unit: 's', label: 'Abklingzeit (RT60)', ui: { min: 0.05, max: 10, scale: 'log', grid: UI_GRID_SECONDS } },
+      modes: { def: 8, range: MODAL_MODES_RANGE, label: 'Anzahl Moden', ui: { min: 1, max: 16, step: 1, digits: 0 } },
+      damping: { def: 0.3, range: [0, 1], label: 'Dämpfung', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      width: { def: 0.3, range: [0, 1], label: 'Stereo-Breite', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      mix: { def: 0.5, range: [0, 1], label: 'Mix', ui: { min: 0, max: 1, step: 0.01, percent: true } },
+      output: { def: 0, range: COMB_OUTPUT_RANGE, unit: 'dB', label: 'Ausgang', ui: { min: -24, max: 12, step: 0.5, signed: true } }
+    } },
+  // Phase 22a (layerOrder 149, Familie routing, Entscheidung B = a): Frequenz-Splitter am Layer-Ende vor der 3D-Position. Zweige s. SPLIT_KEYS oben.
+  // Live: Weichen, Pegel und alle live-fähigen Werte der Zweigmodule; ein anderer Aufbau eines Zweigs (Module an/aus, Latenz) = Neubau des Layers.
+  { key: 'freqSplit', ui: { generated: true }, family: 'routing', label: 'Frequenz-Splitter', layerOrder: 149, consumers: ALL_CONSUMERS,
+    cost: p => splitCost('freqSplit', p), tail: p => splitTailSeconds('freqSplit', p), latencySamples: (p, sr) => splitLatencySamples('freqSplit', p, sr),
+    params: {
+      bandCount: { def: '3', enum: ['2', '3'], label: 'Bänder', ui: { options: FREQSPLIT_BANDS_OPTIONS } },
+      crossLow: { def: 250, range: FREQSPLIT_LOW_RANGE, unit: 'Hz', label: 'Weiche 1', ui: { min: 20, max: 8000, step: 1, scale: 'log', digits: 0 } },
+      crossHigh: { def: 2500, range: FREQSPLIT_HIGH_RANGE, unit: 'Hz', label: 'Weiche 2', ui: { min: 100, max: 16000, step: 10, scale: 'log', digits: 0, showIf: { bandCount: ['3'] } } },
+      lowLevel: splitLevelParam('Pegel Tief'),
+      midLevel: { ...splitLevelParam('Pegel Mitte'), ui: { min: -60, max: 12, step: 0.5, signed: true, showIf: { bandCount: ['3'] } } },
+      highLevel: splitLevelParam('Pegel Hoch'),
+      low: splitBranchParam('Tief'),
+      mid: { ...splitBranchParam('Mitte'), ui: { showIf: { bandCount: ['3'] } } },
+      high: splitBranchParam('Hoch')
+    } },
+  // Phase 22a (layerOrder 149.5): Transient-Splitter direkt hinter dem Frequenz-Splitter. Worklet `dynamics` (Modus 4); ohne Worklet alles im Ausklang-Zweig.
+  { key: 'transientSplit', ui: { generated: true }, family: 'routing', label: 'Transient-Splitter', layerOrder: 149.5, consumers: ALL_CONSUMERS,
+    workletModules: ['dynamics'], cost: p => splitCost('transientSplit', p), tail: p => splitTailSeconds('transientSplit', p),
+    latencySamples: (p, sr) => splitLatencySamples('transientSplit', p, sr),
+    params: {
+      sensitivity: sensitivityParam(),
+      hold: { def: 20, range: TSPLIT_HOLD_RANGE, unit: 'ms', label: 'Halten', ui: { min: 0, max: 200, step: 1, digits: 0 } },
+      transientLevel: splitLevelParam('Pegel Anschlag'),
+      sustainLevel: splitLevelParam('Pegel Ausklang'),
+      transient: splitBranchParam('Anschlag'),
+      sustain: splitBranchParam('Ausklang')
     } }
 ];
 
@@ -1051,7 +1577,8 @@ export const NUM_RANGES = (() => {
   return out;
 })();
 
-const cloneDef = v => (Array.isArray(v) ? v.map(x => (x && typeof x === 'object' ? { ...x } : x)) : v);   // Bänderlisten (P10d) enthalten Objekte
+const cloneDef = v => (Array.isArray(v) ? v.map(x => (x && typeof x === 'object' ? { ...x } : x))
+  : (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v));   // Bänderlisten (P10d) enthalten Objekte; Zweige (P22) sind Objekte
 
 /** Frisches Default-Objekt EINES Moduls ({ enabled:false, …Parameter }), Schlüsselreihenfolge wie bisher. */
 export function defaultModule(key) {

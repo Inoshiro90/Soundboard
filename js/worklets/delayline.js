@@ -8,8 +8,15 @@
  * 1 Dreieck), phase in Grad; Phaser: center in Hz, sweep 0…1 (± 2 Oktaven), stages 2…12; gemeinsam: rate in Hz, feedback, mix.
  * Ohne Eingang (Quelle beendet) läuft die Rückkopplung mit Stille weiter und klingt aus. Rechenkern: audio/dsp-lib/delayline.js (per `import`,
  * wie dynamics.js: Chrome/Firefox/Node [S], Safari/iOS offen [H]).
+ *
+ * Phase 21a: zweiter Prozessor 'combbank-processor' in derselben Datei (Worklet-ID `delayline`, Plan P21 „Modus combBank“). Eigener Prozessor statt
+ * Modus 2, damit Flanger und Phaser unverändert bleiben (gleiche Parameterliste, gleiche Kosten). Rechenkern audio/dsp-lib/combbank.js.
+ * Parameter (k-rate, im Kern je Sample geglättet; Startwerte über `parameterData`, damit der erste Block schon stimmt — Export = Live):
+ * f0 (Hz), r0…r7 (Frequenzverhältnis je Kamm, 0 = aus), decay (RT60 in s; 0 = direkte Rückkopplung fb), fb (−0,99…0,99), damp (0…1),
+ * spread (Cent L/R), mix (0…1), out (linear).
  */
 import { DelayLine, Phaser } from '../audio/dsp-lib/delayline.js';
+import { CombBank, COMB_MAX, COMB_MIN_FREQ, COMB_MAX_FB, COMB_DECAY_RANGE, COMB_SPREAD_MAX } from '../audio/dsp-lib/combbank.js';
 
 const K = 'k-rate';
 class DelayLineProcessor extends AudioWorkletProcessor {
@@ -62,3 +69,50 @@ class DelayLineProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('delayline-processor', DelayLineProcessor);
+
+class CombBankProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    const r = [];
+    for (let j = 0; j < COMB_MAX; j++) r.push({ name: 'r' + j, defaultValue: j === 0 ? 1 : 0, minValue: 0, maxValue: 64, automationRate: K });
+    return [
+      { name: 'f0',     defaultValue: 220, minValue: COMB_MIN_FREQ, maxValue: 20000, automationRate: K },
+      ...r,
+      { name: 'decay',  defaultValue: 0,   minValue: COMB_DECAY_RANGE[0], maxValue: COMB_DECAY_RANGE[1], automationRate: K },
+      { name: 'fb',     defaultValue: 0,   minValue: -COMB_MAX_FB, maxValue: COMB_MAX_FB, automationRate: K },
+      { name: 'damp',   defaultValue: 0,   minValue: 0, maxValue: 1, automationRate: K },
+      { name: 'spread', defaultValue: 0,   minValue: 0, maxValue: COMB_SPREAD_MAX, automationRate: K },
+      { name: 'mix',    defaultValue: 1,   minValue: 0, maxValue: 1, automationRate: K },
+      { name: 'out',    defaultValue: 1,   minValue: 0, maxValue: 16, automationRate: K },
+      // Phase 21b (Resonator): Nass-Verstärkung (Pegelkompensation, ≤ +24 dB) und weicher Limiter auf dem Nass-Signal; Standard = Rechenweg wie 21a
+      { name: 'wg',     defaultValue: 1,   minValue: 0, maxValue: 16, automationRate: K },
+      { name: 'lim',    defaultValue: 0,   minValue: 0, maxValue: 1, automationRate: K }
+    ];
+  }
+
+  constructor() {
+    super();
+    this._alive = true;
+    this.port.onmessage = e => { if (e && e.data === 'dispose') this._alive = false; };
+    this._bank = new CombBank(sampleRate, 2);
+    this._ratios = new Float64Array(COMB_MAX);
+    this._p = { f0: 220, ratios: this._ratios, decay: 0, fb: 0, damp: 0, spread: 0, mix: 1, out: 1, wg: 1, lim: 0 };
+    this._zero = [new Float32Array(128), new Float32Array(128)];
+  }
+
+  process(inputs, outputs, params) {
+    if (!this._alive) return false;
+    const out = outputs[0];
+    if (!out || !out.length) return true;
+    const n = out[0].length;
+    let inp = inputs[0];
+    if (!inp || !inp.length) { if (this._zero[0].length < n) this._zero = [new Float32Array(n), new Float32Array(n)]; inp = this._zero; }
+    const p = this._p;
+    p.f0 = params.f0[0]; p.decay = params.decay[0]; p.fb = params.fb[0]; p.damp = params.damp[0];
+    p.spread = params.spread[0]; p.mix = params.mix[0]; p.out = params.out[0]; p.wg = params.wg[0]; p.lim = params.lim[0];
+    for (let j = 0; j < COMB_MAX; j++) this._ratios[j] = params['r' + j][0];
+    this._bank.process(inp, out, n, p);
+    return true;
+  }
+}
+
+registerProcessor('combbank-processor', CombBankProcessor);
